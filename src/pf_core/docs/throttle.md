@@ -2,7 +2,7 @@
 
 `pf_core.utils.throttle.Throttle` enforces a **minimum interval between operations** so a client stays under a fixed request rate. Foundation tier — pure stdlib, no extra, importable on the bare install.
 
-Reach for it whenever you call a rate-limited service yourself: many open-data / public APIs cap callers at ~1 req/s (MusicBrainz, OSM Nominatim, Wikipedia, OpenLibrary) and answer `429`/`503` if you exceed it. Instead of re-implementing the sleep-between-calls dance in every client, share one `Throttle`.
+Reach for it whenever you call a rate-limited service yourself: many open-data / public APIs cap callers at ~1 req/s (OSM Nominatim and Wikipedia, for example) and answer `429`/`503` if you exceed it. Instead of re-implementing the sleep-between-calls dance in every client, share one `Throttle`.
 
 > This is the **outbound** counterpart to [`pf_core.web.rate_limit`](web.md), which limits
 > **inbound** requests per IP on a FastAPI app.

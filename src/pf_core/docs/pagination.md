@@ -16,7 +16,7 @@ p = paginate_params(
     per_page,
     sort,
     dir,
-    allowed_sorts={"date", "title", "tier"},
+    allowed_sorts={"date", "title", "status"},
     default_sort="date",
 )
 # p = {"page": 1, "per_page": 50, "offset": 0, "limit": 51, "sort": "date", "dir": "desc"}
@@ -44,8 +44,8 @@ Builds pagination metadata from a result set.
 ```python
 from pf_core.web.pagination import paginate_result
 
-rows = repo.list_entries(sort_by=p["sort"], sort_dir=p["dir"], limit=p["limit"], offset=p["offset"])
-total = repo.count_entries()
+rows = repo.list_items(sort_by=p["sort"], sort_dir=p["dir"], limit=p["limit"], offset=p["offset"])
+total = repo.count_items()
 result = paginate_result(rows, total=total, page=p["page"], per_page=p["per_page"])
 ```
 
@@ -65,8 +65,8 @@ from fastapi import Query, Request
 from pf_core.web.pagination import paginate_params, paginate_result
 
 
-@router.get("/incidents")
-async def incidents_page(
+@router.get("/items")
+async def items_page(
     request: Request,
     page: int = Query(1, ge=1),
     per_page: int = Query(100, ge=1, le=200),
@@ -78,23 +78,23 @@ async def incidents_page(
         per_page,
         sort,
         dir,
-        allowed_sorts={"date", "tier", "section", "type"},
+        allowed_sorts={"date", "title", "category", "status"},
         default_sort="date",
     )
-    rows = repo.list_incidents(
+    rows = repo.list_items(
         sort_by=p["sort"],
         sort_dir=p["dir"],
         limit=p["limit"],
         offset=p["offset"],
     )
-    total = repo.count_incidents()
+    total = repo.count_items()
     pg = paginate_result(rows, total=total, page=p["page"], per_page=p["per_page"])
 
     return templates.TemplateResponse(
         request,
-        "pages/incidents.html",
+        "pages/items.html",
         {
-            "incidents": pg["items"],
+            "items": pg["items"],
             "sort": p["sort"],
             "dir": p["dir"],
             **pg,  # page, per_page, total, total_pages, has_prev, has_next
@@ -109,18 +109,18 @@ from pf_core.web.pagination import paginate_params, paginate_result
 from pf_core.web.json import safe_json_response
 
 
-@router.get("/api/entries")
-async def list_entries(
+@router.get("/api/items")
+async def list_items(
     page: int = Query(1, ge=1),
     per_page: int = Query(25, ge=1, le=100),
     sort: str = Query("created_at"),
     dir: str = Query("desc"),
 ):
     p = paginate_params(page, per_page, sort, dir, allowed_sorts={"created_at", "title"})
-    rows = repo.list_entries(
+    rows = repo.list_items(
         sort_by=p["sort"], sort_dir=p["dir"], limit=p["limit"], offset=p["offset"]
     )
-    total = repo.count_entries()
+    total = repo.count_items()
     return safe_json_response(
         paginate_result(rows, total=total, page=p["page"], per_page=p["per_page"])
     )

@@ -1,9 +1,8 @@
 """Shared data shapes for content-parser pipelines.
 
-Currently scoped to the parser-side primitives — types that any consumer
-extracting structured records from HTML or feeds will produce.
-Orchestrator-side shapes (``PostRef``, ``Post``) stay in consumers
-until a second consumer's orchestrator wants the same handoff.
+Parser-side primitives only — types that any project extracting
+structured records from HTML or feeds will produce. Orchestrator-side
+handoff types stay in the project.
 """
 
 from __future__ import annotations

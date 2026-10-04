@@ -10,7 +10,7 @@ The validity model is mtime-based plus optional run-record flag matching:
   - Its mtime must be >= every upstream file's mtime (catches "upstream
     changed since the snapshot was written").
   - Its mtime must be >= the latest file matching any upstream-glob spec
-    (e.g., `<output_dir>/.extract-cache/*.json` — catches "an intermediate
+    (e.g., `<output_dir>/.cache/*.json` — catches "an intermediate
     cache was updated after the snapshot, so the snapshot is stale").
   - If a run-record path is given, the snapshot is invalid unless the
     record exists, parses as JSON, and its `resolved_flags` match the

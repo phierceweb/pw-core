@@ -8,8 +8,8 @@ Usage::
 
     from pf_core.web.pagination import paginate_params, paginate_result
 
-    @router.get("/entries")
-    async def list_entries(
+    @router.get("/items")
+    async def list_items(
         page: int = Query(1, ge=1),
         per_page: int = Query(50, ge=1, le=200),
         sort: str = Query("date"),
@@ -17,13 +17,13 @@ Usage::
     ):
         p = paginate_params(
             page, per_page, sort, dir,
-            allowed_sorts={"date", "title", "tier"},
+            allowed_sorts={"date", "title", "status"},
         )
-        rows = repo.list_entries(
+        rows = repo.list_items(
             sort_by=p["sort"], sort_dir=p["dir"],
             limit=p["limit"], offset=p["offset"],
         )
-        total = repo.count_entries()
+        total = repo.count_items()
         return paginate_result(rows, total=total, page=p["page"], per_page=p["per_page"])
 """
 

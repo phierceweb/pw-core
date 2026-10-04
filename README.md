@@ -53,7 +53,7 @@ pip install pf-core[llm]             # + LLM clients (includes [validate])
 pip install pf-core[full,postgres]   # the whole app framework
 ```
 
-Pin a **compatible release** for stability — e.g. `pip install "pf-core[llm]~=0.24.0"` (picks up `0.24.x` fixes, holds below the next minor; substitute the current release from the [changelog](https://github.com/phierceweb/pf-core/blob/main/CHANGELOG.md)). To track unreleased work, install from git instead — `main` is the development line and may contain work between releases:
+Pin a **compatible release** for stability — e.g. `pip install "pf-core[llm]~=0.25.0"` (picks up `0.25.x` fixes, holds below the next minor; substitute the current release from the [changelog](https://github.com/phierceweb/pf-core/blob/main/CHANGELOG.md)). To track unreleased work, install from git instead — `main` is the development line and may contain work between releases:
 
 ```bash
 pip install "pf-core[llm] @ git+https://github.com/phierceweb/pf-core.git@main"
@@ -150,6 +150,7 @@ python -c "import pf_core, pathlib; print(pathlib.Path(pf_core.__file__).parent 
 - [versioned-config](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/versioned-config.md)
 - [vocab](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/vocab.md)
 - [web](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/web.md)
+- [yaml-utils](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/yaml-utils.md)
 - Recipes: [batch-llm-service](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/recipes/batch-llm-service.md) · [critic](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/recipes/critic.md) · [job-refs-bridge](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/recipes/job-refs-bridge.md) · [self-consistency](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/recipes/self-consistency.md)
 
 </details>

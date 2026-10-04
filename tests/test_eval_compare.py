@@ -9,9 +9,10 @@ from pf_core.eval._compare import (
     get_comparator,
     list_comparators,
     register_comparator,
+    split_comparator_result,
     structured_diff,
 )
-from pf_core.exceptions import ConfigurationError
+from pf_core.exceptions import ConfigurationError, InvalidInputError
 
 
 # ---------------------------------------------------------------------------
@@ -205,3 +206,48 @@ def test_structured_diff_field_absent_from_golden_present_in_replay():
 def test_structured_diff_all_diff_fields_missing_from_golden():
     with pytest.raises(ConfigurationError, match="diff_fields"):
         structured_diff({"title": "A"}, {"title": "X"}, context={"diff_fields": ["titel", "scoer"]})
+
+
+# ---------------------------------------------------------------------------
+# split_comparator_result
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("score", [0, 1, True, 0.25, "0.5"])
+def test_split_comparator_result_accepts_a_score_in_0_to_1(score):
+    assert split_comparator_result(score) == (float(score), {})
+
+
+def test_split_comparator_result_keeps_finite_metrics_of_any_size():
+    assert split_comparator_result((0.25, {"n_items": 40})) == (0.25, {"n_items": 40.0})
+
+
+@pytest.mark.parametrize(
+    "score", [85.0, 1.0001, -0.1, float("inf"), float("-inf"), float("nan"), "high", None]
+)
+def test_split_comparator_result_rejects_a_score_outside_0_to_1(score):
+    with pytest.raises(InvalidInputError, match="comparator score"):
+        split_comparator_result(score)
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), "many", None])
+def test_split_comparator_result_rejects_a_metric_that_is_not_a_finite_number(value):
+    with pytest.raises(InvalidInputError, match="field_ratio"):
+        split_comparator_result((0.5, {"field_ratio": value}))
+
+
+def test_split_comparator_result_clamps_float_rounding_at_a_bound():
+    total = 0.0
+    for weight in (0.65, 0.2, 0.05, 0.1):
+        total += weight * 1.0
+    assert total > 1.0
+    assert split_comparator_result(total) == (1.0, {})
+    assert split_comparator_result(-1e-12) == (0.0, {})
+
+
+@pytest.mark.parametrize(
+    "result", [10**400, (0.5, {"n": 10**400}), (0.5,), (0.5, {}, "extra"), (0.5, [1, 2])]
+)
+def test_split_comparator_result_raises_invalid_input_for_any_malformed_result(result):
+    with pytest.raises(InvalidInputError, match="comparator"):
+        split_comparator_result(result)

@@ -20,11 +20,10 @@ def _exact_tag_rows(rows: list, tag: str) -> list:
 
 
 def _fetch_tag_rows(repo: Repository, tag: str, agent_type: str) -> list:
-    """Scored replay rows the server matches for *tag*.
+    """Every replay row the server matches for *tag*, with its eval_score or None.
 
-    Ordered by child run id ascending so the dict build keeps the latest
-    replay's score when a golden has duplicates. Callers must filter through
-    :func:`_exact_tag_rows`.
+    Ordered by child run id ascending, so a later replay of a golden overwrites
+    an earlier one. Callers must filter through :func:`_exact_tag_rows`.
     """
     from sqlalchemy import and_, select
 
@@ -40,7 +39,7 @@ def _fetch_tag_rows(repo: Repository, tag: str, agent_type: str) -> list:
             s.llm_run_tags,
             s.llm_run_tags.c.llm_run_id == s.llm_run_links.c.child_run_id,
         )
-        .join(
+        .outerjoin(
             s.llm_run_outcomes,
             and_(
                 s.llm_run_outcomes.c.llm_run_id == s.llm_run_links.c.child_run_id,
@@ -58,17 +57,24 @@ def _fetch_tag_rows(repo: Repository, tag: str, agent_type: str) -> list:
         .where(s.llm_run_tags.c.tag == tag)
         .where(s.llm_run_links.c.relation == "replay")
         .where(s.llm_agent_types.c.slug == agent_type)
-        .where(s.llm_run_outcomes.c.score.is_not(None))
         .order_by(s.llm_run_links.c.child_run_id)
     )
     with repo._tx() as conn:
         return list(conn.execute(stmt).mappings().fetchall())
 
 
-def _scores_for_tag(repo: Repository, tag: str, agent_type: str) -> tuple[dict[int, float], int]:
-    """Return (golden_id -> eval_score, matched row count) for one tag."""
+def _tag_replays(
+    repo: Repository, tag: str, agent_type: str
+) -> tuple[dict[int, float], set[int], int]:
+    """(golden_id -> score, goldens replayed, scored row count) for one tag.
+
+    A golden's latest replay decides it: one that errored, or whose score is NULL,
+    leaves the golden unscored even when an earlier replay under the tag scored.
+    """
     rows = _exact_tag_rows(_fetch_tag_rows(repo, tag, agent_type), tag)
-    return {int(r["golden_id"]): float(r["score"]) for r in rows}, len(rows)
+    latest = {int(r["golden_id"]): r["score"] for r in rows}
+    scores = {gid: float(score) for gid, score in latest.items() if score is not None}
+    return scores, set(latest), sum(1 for r in rows if r["score"] is not None)
 
 
 def compare_experiments(*, baseline: str, candidate: str, agent_type: str) -> dict:
@@ -81,14 +87,18 @@ def compare_experiments(*, baseline: str, candidate: str, agent_type: str) -> di
 
     Raises:
         InvalidInputError: If both tags are the same string.
-        PreconditionError: If either tag matches zero scored replay runs, or if
-            the two tags share no golden parent.
+        PreconditionError: If the baseline has no scored replay runs, the
+            candidate has no replay runs at all, or the two share no golden
+            parent.
 
     Returns:
-        ``{"pairs", "baseline_runs", "candidate_runs"}`` — ``pairs`` holds
-        ``golden_id``, ``baseline_score``, ``candidate_score`` and ``delta``
-        per shared golden, sorted by ``golden_id``; the counts are matched
-        scored-replay rows per tag. ``docs/eval-harness.md`` reads them.
+        ``{"pairs", "baseline_runs", "candidate_runs", "baseline_only",
+        "candidate_only"}`` — ``pairs`` holds ``golden_id``, ``baseline_score``,
+        ``candidate_score`` and ``delta`` per shared golden, sorted by
+        ``golden_id``; the counts are matched scored-replay rows per tag; the
+        ``*_only`` lists are golden ids scored under that tag alone. A golden's
+        latest replay under a tag decides whether it is scored there. Shape:
+        ``docs/eval-harness.md``.
     """
     if baseline == candidate:
         raise InvalidInputError(
@@ -97,11 +107,11 @@ def compare_experiments(*, baseline: str, candidate: str, agent_type: str) -> di
         )
 
     repo = Repository()
-    base_scores, base_rows = _scores_for_tag(repo, baseline, agent_type)
-    cand_scores, cand_rows = _scores_for_tag(repo, candidate, agent_type)
+    base_scores, _, base_rows = _tag_replays(repo, baseline, agent_type)
+    cand_scores, cand_replayed, cand_rows = _tag_replays(repo, candidate, agent_type)
 
     empty_tags = [
-        tag for tag, scores in ((baseline, base_scores), (candidate, cand_scores)) if not scores
+        tag for tag, found in ((baseline, base_scores), (candidate, cand_replayed)) if not found
     ]
     if empty_tags:
         names = ", ".join(repr(t) for t in empty_tags)
@@ -112,7 +122,7 @@ def compare_experiments(*, baseline: str, candidate: str, agent_type: str) -> di
         )
 
     shared_golden_ids = sorted(set(base_scores) & set(cand_scores))
-    if not shared_golden_ids:
+    if not set(base_scores) & cand_replayed:
         raise PreconditionError(
             f"Tags {baseline!r} ({base_rows} scored runs) and {candidate!r} "
             f"({cand_rows} scored runs) share no golden parent, so there is "
@@ -132,4 +142,6 @@ def compare_experiments(*, baseline: str, candidate: str, agent_type: str) -> di
         ],
         "baseline_runs": base_rows,
         "candidate_runs": cand_rows,
+        "baseline_only": sorted(set(base_scores) - set(cand_scores)),
+        "candidate_only": sorted(set(cand_scores) - set(base_scores)),
     }

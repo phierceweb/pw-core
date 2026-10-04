@@ -28,7 +28,10 @@ Usage::
 from __future__ import annotations
 
 import json
+import math
+from typing import Any
 
+from pf_core.exceptions import ClientError
 from pf_core.log import get_logger
 from pf_core.llm.parse import parse_llm_json
 from pf_core.llm.router import resolve_agent
@@ -60,6 +63,24 @@ Evaluate the candidate. Return JSON only.
 """
 
 
+def resolve_judge(judge_agent_type: str) -> tuple[Any, dict[str, Any]]:
+    """Client and chat kwargs for the judge, which model_router.yaml must declare."""
+    client, cfg, _backend = resolve_agent(judge_agent_type)
+    return client, cfg
+
+
+def _usable_score(parsed: Any) -> float | None:
+    """The verdict's score clamped to 0.0–1.0, or None when it has no finite numeric score."""
+    value = parsed.get("score") if isinstance(parsed, dict) else None
+    if not isinstance(value, int | float | str) or isinstance(value, bool):
+        return None
+    try:
+        score = float(value)
+    except ValueError:
+        return None
+    return max(0.0, min(1.0, score)) if math.isfinite(score) else None
+
+
 def run_judge(
     *,
     agent_type: str,
@@ -83,7 +104,11 @@ def run_judge(
         replay_run_id: ID of the replay ``llm_runs`` row (for linking).
 
     Returns:
-        Float score 0.0–1.0. Returns 0.0 on any judge failure.
+        The judge's score, clamped to 0.0–1.0.
+
+    Raises:
+        ClientError: If the judge call fails, or its reply has no finite numeric
+            ``score``. A reply that came back is still recorded and linked.
     """
     task_desc = (golden_payload.get("rendered_user") or "")[:2000]
     golden_out = json.dumps(golden_payload.get("parsed_output") or {}, indent=2)[:3000]
@@ -99,33 +124,24 @@ def run_judge(
         {"role": "user", "content": user_msg},
     ]
 
-    # No hardcoded judge model or backend: the judge agent must be declared
-    # in model_router.yaml like any other agent. A missing slug or
-    # unresolvable backend raises ConfigurationError here — config problems
-    # fail the eval run loudly instead of silently scoring with a stale
-    # framework-chosen model.
-    client, cfg, _backend = resolve_agent(judge_agent_type)
+    # Routed like any agent: an undeclared judge raises, never a framework-chosen model.
+    client, cfg = resolve_judge(judge_agent_type)
     model = cfg.pop("model")
     # Deterministic defaults only — the judge agent's YAML sampling wins when
     # set (a reasoning judge may need max_tokens well past 512).
     cfg.setdefault("temperature", 0.0)
     cfg.setdefault("max_tokens", 512)
 
+    context = {"agent_type": agent_type, "judge_agent_type": judge_agent_type}
     try:
         raw_content, usage_raw = client.chat(messages=messages, model=model, **cfg)
     except Exception as exc:
-        logger.warning("judge_call_failed", agent_type=agent_type, error=str(exc)[:200])
-        return 0.0
+        raise ClientError(f"judge call failed: {exc}", context=context, cause=exc) from exc
 
     parsed = parse_llm_json(raw_content)
-    score = 0.0
-    if isinstance(parsed, dict) and "score" in parsed:
-        try:
-            score = max(0.0, min(1.0, float(parsed["score"])))
-        except (TypeError, ValueError):
-            score = 0.0
+    score = _usable_score(parsed)
+    no_score = "judge reply has no usable score"
 
-    # Record the judge run and link it to the replay
     judge_run_id = LlmRunRepo().record(
         agent_type=judge_agent_type,
         model=model,
@@ -134,9 +150,16 @@ def run_judge(
         raw_response=raw_content,
         parsed_output=parsed if isinstance(parsed, dict) else None,
         tags=["eval:judge"],
+        status="success" if score is not None else "failed",
+        error=None if score is not None else no_score,
         usage=usage_raw,
     )
     LlmRunLinkRepo().link(parent_id=replay_run_id, child_id=judge_run_id, relation="critic")
+    if score is None:
+        raise ClientError(
+            f"{no_score}: {raw_content[:200]!r}",
+            context={**context, "judge_run_id": judge_run_id},
+        )
 
     logger.debug(
         "judge_scored",

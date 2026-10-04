@@ -41,8 +41,7 @@ class PydanticValidator:
             Pydantic ``errors()`` list (location + type + message per error).
 
         Raises:
-            InvalidInputError: a validator raised one; it escapes as itself, as
-                it did before pydantic wrapped it.
+            InvalidInputError: a validator raised one; it escapes unwrapped.
         """
         name = f"{agent_type}_shape"
         try:

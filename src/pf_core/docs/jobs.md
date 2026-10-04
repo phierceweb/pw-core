@@ -30,7 +30,7 @@ This doc is the implementation reference.
 ## Concepts
 
 - **job** — one row in `jobs` = one user-triggered unit of work. Has a `kind`, declared state machine, validated inputs/outputs (JSON).
-- **kind** — the discriminator (`'summarize_pass'`, `'classify_batch'`). Registered at import time, declares states, transitions, and optional Pydantic schemas.
+- **kind** — the discriminator (`'summarize_pass'`, `'label_batch'`). Registered at import time, declares states, transitions, and optional Pydantic schemas.
 - **step** — one row in `job_steps`. The ordered narrative: `'load_inputs'`, `'summarize_item_3'`. Idempotent: re-entering a step whose prior run succeeded short-circuits.
 - **event** — one row in `job_events`. Cheaper than steps; used for retries, rate-limit warnings, budget events. Rendered as a timeline in admin UIs.
 - **active job** — the job set on a ContextVar by `Job.__enter__`. The LLM tracking decorator reads this and populates `llm_runs.job_id` without services needing to know a job is active.
@@ -251,7 +251,7 @@ ORDER BY cost DESC;
 from pf_core.jobs import JobRepo
 
 claimed = JobRepo().claim_next(
-    kinds=["summarize_pass", "classify_batch"],   # optional filter
+    kinds=["summarize_pass", "label_batch"],   # optional filter
     worker_id="worker-3",
     lease_seconds=300,
 )

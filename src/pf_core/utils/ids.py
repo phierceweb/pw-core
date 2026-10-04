@@ -16,7 +16,7 @@ Usage::
     from pf_core.db import transaction
 
     with transaction() as conn:
-        entry_id = allocate_id(conn, table="entries")
+        order_id = allocate_id(conn, table="orders")
 """
 
 from __future__ import annotations

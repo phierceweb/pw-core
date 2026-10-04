@@ -32,11 +32,16 @@ The ``custom:`` prefix is optional: bare names like ``my_compare`` also resolve.
 
 from __future__ import annotations
 
+import math
+from collections.abc import Mapping
 from typing import Any, Callable
 
-from pf_core.exceptions import ConfigurationError
+from pf_core.exceptions import ConfigurationError, InvalidInputError
 
 _registry: dict[str, Callable[..., float]] = {}
+
+# Float rounding in a weighted sum can put a perfect score at 1.0000000000000002.
+_BOUND_SLACK = 1e-9
 
 
 def register_comparator(name: str) -> Callable:
@@ -76,15 +81,36 @@ def list_comparators() -> list[str]:
     return sorted(_registry)
 
 
+def _finite(value: Any, what: str) -> float:
+    try:
+        number = float(value)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise InvalidInputError(f"comparator {what} {value!r} is not a number") from exc
+    if not math.isfinite(number):
+        raise InvalidInputError(f"comparator {what} {value!r} is not finite")
+    return number
+
+
 def split_comparator_result(result: Any) -> tuple[float, dict[str, float]]:
     """Normalize a comparator return value into ``(score, metrics)``.
 
-    Accepts a bare float or a ``(score, {metric_name: value})`` pair.
+    Accepts a bare float or a ``(score, {metric_name: value})`` pair. A score
+    within float rounding of 0.0 or 1.0 is clamped to it.
+
+    Raises:
+        InvalidInputError: If the result has another shape, the score does not
+            convert to a float in 0.0–1.0, or a metric to a finite float.
     """
-    if isinstance(result, tuple):
-        score, metrics = result
-        return float(score), {str(k): float(v) for k, v in (metrics or {}).items()}
-    return float(result), {}
+    if isinstance(result, tuple) and len(result) != 2:
+        raise InvalidInputError(f"comparator result {result!r} is not a (score, metrics) pair")
+    score, metrics = result if isinstance(result, tuple) else (result, None)
+    if metrics is not None and not isinstance(metrics, Mapping):
+        raise InvalidInputError(f"comparator metrics {metrics!r} is not a mapping")
+    value = _finite(score, "score")
+    if not -_BOUND_SLACK <= value <= 1.0 + _BOUND_SLACK:
+        raise InvalidInputError(f"comparator score {value!r} is outside 0.0–1.0")
+    clamped = min(1.0, max(0.0, value))
+    return clamped, {str(k): _finite(v, f"metric {k!r}") for k, v in (metrics or {}).items()}
 
 
 # ---------------------------------------------------------------------------

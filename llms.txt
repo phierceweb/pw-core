@@ -86,6 +86,7 @@ Published to PyPI as `pf-core` (Python 3.12+); pin a compatible release (`pf-cor
 - [versioned-config](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/versioned-config.md)
 - [vocab](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/vocab.md)
 - [web](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/web.md)
+- [yaml-utils](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/yaml-utils.md)
 
 ## Recipes
 

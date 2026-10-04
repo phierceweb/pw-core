@@ -59,21 +59,19 @@ results, _ = client.search(
 )
 ```
 
-### Forwarding usage into an agent-run logger
+### Forwarding usage into run tracking
 
-The `usage` dict carries `cost_usd`, `duration_ms`, `prompt_tokens`, and `completion_tokens` (the token counts are always `0` — Brave bills per-call). Those are the keys an agent-run logger expects, so it forwards directly:
+The `usage` dict carries `cost_usd`, `duration_ms`, `prompt_tokens`, and `completion_tokens` (the token counts are always `0` — Brave bills per-call). Those are the keys `LlmRunRepo.record` reads from `usage`, so it forwards directly:
 
 ```python
+from pf_core.llm.tracking import LlmRunRepo
+
 results, usage = client.search(query)
 
-db.log_agent_run(
-    job_id,
-    "brave_searcher",
-    "brave-web-search-v1",
-    cost_usd=usage["cost_usd"],
-    duration_ms=usage["duration_ms"],
-    prompt_tokens=usage["prompt_tokens"],  # always 0
-    completion_tokens=usage["completion_tokens"],  # always 0
+LlmRunRepo().record(
+    agent_type="web_searcher",
+    model="brave-web-search-v1",
+    usage=usage,  # prompt/completion tokens are always 0
     status="success",
 )
 ```

@@ -35,6 +35,7 @@ import yaml
 
 from pf_core.exceptions import ConfigurationError, InvalidInputError
 from pf_core.utils.config_path import resolve_config_path
+from pf_core.utils.yaml import safe_load
 
 
 def load_prompts(path: str | Path) -> dict[str, Any]:
@@ -54,7 +55,7 @@ def load_prompts(path: str | Path) -> dict[str, Any]:
     if not p.exists():
         raise ConfigurationError(f"Prompt file not found: {p}")
     try:
-        data = yaml.safe_load(p.read_text(encoding="utf-8"))
+        data = safe_load(p.read_text(encoding="utf-8"))
         if not isinstance(data, dict):
             raise ConfigurationError(f"Prompt file must be a YAML mapping: {p}")
         return data
@@ -134,19 +135,7 @@ def _render_token(template: str, variables: dict[str, Any]) -> str:
 # ---------------------------------------------------------------------------
 # Per-agent spec loader (single-agent YAML spec files)
 # ---------------------------------------------------------------------------
-#
-# Two YAML shapes are supported across consumer apps:
-#
-# 1. Flat multi-agent files: one YAML file listing every agent. Load with
-#    :func:`load_prompts`; caller looks up by key.
-#
-# 2. Per-agent spec files: one YAML file per agent, with a required schema
-#    that carries version and provenance metadata. Load with
-#    :func:`load_prompt_spec`. Recommended for apps with many agents
-#    or long prompts.
-#
-# Use :func:`render_spec` to render a loaded spec + return its version as a
-# tuple — pairs cleanly with ``resolve_prompt_id`` for DB registration.
+# The two prompt-file shapes and when to use each: docs/prompts.md.
 
 
 _SPEC_REQUIRED = ("agent", "version", "system")
@@ -209,9 +198,7 @@ def render_spec(
 
     Thin wrapper over :func:`render` that pulls the template from a spec
     loaded by :func:`load_prompt_spec` and returns it with the spec's
-    version number — the tuple shape pairs cleanly with callers that
-    pass both into a DB logger (e.g., ``db.log_agent_run(
-    prompt_version=version, system_prompt=text, ...)``).
+    version number, for callers that record both.
 
     Args:
         spec: spec dict with at least ``version`` and ``<part>`` keys.

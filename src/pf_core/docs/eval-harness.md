@@ -24,6 +24,8 @@ print(report.summary())  # pass/fail, mean score, distribution
 report.write_html("out/summarizer_opus47.html")
 ```
 
+From a shell or CI, the same replay is `pf-eval run --version golden_v1 --agent-type summarizer --target model=anthropic/claude-opus-4-7` — see [CLI](#cli--pf-eval).
+
 ## Concepts
 
 ### The golden set
@@ -45,18 +47,18 @@ Given a golden run, the replay engine:
 
 1. Loads the stored rendered prompts from `llm_run_payloads`
 2. Overlays the target config (new model, eval sampling)
-3. Resolves the agent's client through the model router, so the replay runs on the backend the agent declares — the eval measures the transport production uses. `target` keys `backend` and `model` override the routed choice; an agent absent from the router degrades, with a `replay_router_unavailable` warning, to the OpenRouter client and the target-supplied model. Any resolution failure other than `ConfigurationError` surfaces as that golden's error result
+3. Resolves the agent's client through the model router, so the replay runs on the backend the agent declares — the eval measures the transport production uses. `target` keys `backend` and `model` override the routed choice. Before any replay, the run resolves the client once as a check, with the judge's for `compare: llm_judge` or the comparator otherwise; a failure — a `backend` the agent doesn't declare or nobody registered, a client that cannot be built (a missing API key), no model, a `model_router.yaml` that exists but fails to load, a comparator nobody registered — raises from `run()` and no replay runs. An agent absent from the router degrades, with a `replay_router_unavailable` warning, to the target's backend (OpenRouter when none is named) and the target-supplied model. An agent the router declares never falls back.
 4. Records the new `llm_runs` row, links it to the golden via `llm_run_links(relation='replay')`
 5. Compares golden output vs replay output; writes score to `llm_run_outcomes(outcome_kind='eval_score')`. If the golden's stored `parsed_output` is empty (e.g. a post-record validator wrote JSON null), the comparison falls back to re-parsing the golden's stored `raw_response` instead of scoring against `{}`. Structured comparison requires a non-empty **dict** golden: a golden whose parsed output is a list, or irrecoverably empty, errors before the replay call is spent — `{}` vs `{}` never scores 1.0
 
-All replay runs are regular tracked runs — they appear in cost reports, the admin dashboard, etc. Each is tagged `eval:replay:<version>` and `agent:<agent_type>` (plus your `tag_as` label); the bare `eval:<version>` tag is golden-set membership and never appears on replays.
+All replay runs are regular tracked runs — they appear in cost reports, the admin dashboard, etc. Each is tagged `eval:replay:<version>` and `agent:<agent_type>` (plus your `tag_as` label); the bare `eval:<version>` tag is golden-set membership and never appears on replays. A `tag_as` that starts with `eval:` or equals `agent:<agent_type>`, in any case, raises `InvalidInputError` before anything runs.
 
 ### Comparators
 
 | Name | Description |
 |---|---|
 | `structured_diff` | Field-by-field comparison with per-field tolerances. Returns mean score across `diff_fields`. A named field missing from the golden output scores 0.0 (an explicit null on both sides still scores 1.0); if *no* name in `diff_fields` exists in the golden output — a typo'd or renamed field — it raises `ConfigurationError` rather than scoring every replay 1.0. |
-| `llm_judge` | Sends golden + replay output to a judge LLM; parses `{"score": 0-1, "rationale": "..."}`. The judge agent is routed via `resolve_agent(judge_agent_type)` and must be declared in `model_router.yaml` — an unconfigured or unresolvable judge agent raises `ConfigurationError` (the eval fails loudly rather than scoring against a default model). The judge call is itself a tracked `llm_runs` row, linked to the replay run via `llm_run_links(relation='critic')`. The judge agent's YAML sampling is honored — `temperature: 0.0` and `max_tokens: 512` apply only as defaults for unset keys. |
+| `llm_judge` | Sends golden + replay output to a judge LLM; parses `{"score": 0-1, "rationale": "..."}`. The judge agent is routed via `resolve_agent(judge_agent_type)` and must be declared in `model_router.yaml` — an unconfigured or unresolvable judge agent raises `ConfigurationError` (the eval fails loudly rather than scoring against a default model). The judge call is itself a tracked `llm_runs` row, linked to the replay run via `llm_run_links(relation='critic')`. The judge agent's YAML sampling is honored — `temperature: 0.0` and `max_tokens: 512` apply only as defaults for unset keys. A judge call that fails, or a reply without a finite numeric `score`, errors that replay: it records no `eval_score`, so the run fails and `compare` counts the golden as unscored. A reply that came back is still recorded, with status `failed`. |
 | `custom:<name>` | Project-registered comparator via `@register_comparator("name")`. |
 
 ### Job tracking
@@ -83,8 +85,8 @@ repo.add(
     notes="edge case: ambiguous input",
 )
 
-# List (returns llm_runs dicts, optionally filtered by agent_type)
-members = repo.list(version="golden_v2", agent_type="summarizer", limit=200)
+# List (returns llm_runs dicts, optionally filtered by agent_type; limit=None returns all)
+members = repo.list(version="golden_v2", agent_type="summarizer", limit=None)
 
 # Remove tag (outcomes + metrics kept as history)
 repo.remove(run_id=1042, version="golden_v2")
@@ -144,21 +146,30 @@ result = runner.compare_experiments(
 #     ],
 #     "baseline_runs": 20,
 #     "candidate_runs": 20,
+#     "baseline_only": [],   # golden ids scored under the baseline tag alone
+#     "candidate_only": [],  # golden ids scored under the candidate tag alone
 # }
 ```
 
 An empty comparison can never read as "no regressions". `PreconditionError` is
-raised when either tag matches zero scored replay runs for the agent type
-(naming the empty tag(s)), and when both tags are populated but share no golden
-parent — two experiments over different golden sets. Passing the same tag as
+raised when the baseline matches zero scored replay runs for the agent type or
+the candidate matches no replay runs at all (naming the empty tag(s)), and when
+the two share no golden parent — two experiments over different golden sets. Passing the same tag as
 both `baseline` and `candidate` raises `InvalidInputError`, since every delta
 would be 0.0. A replay whose `eval_score` outcome has a NULL score is not a
-scored replay and is excluded from both the pairing and the counts. Compare `baseline_runs`/`candidate_runs`
-against `len(result["pairs"])` to spot a shrunken pairing (e.g. only 3 of 20
-goldens replayed under both tags). When a reused tag gives a golden multiple
-scored replays, the latest replay's score wins in the pairing; and because
+scored replay and is excluded from both the pairing and the counts. A replay
+that errored records no score either, so a golden one side failed on drops out
+of the pairs and lands in `baseline_only` or `candidate_only` — the mean delta
+alone cannot show it. A candidate that errored on every baseline golden it
+replayed returns empty `pairs` with those goldens in `baseline_only` — a failed
+comparison, not an unrunnable one. `pf-eval compare` fails when `baseline_only`
+is non-empty. When a reused tag gives a golden several replays, the latest
+one decides it: its score is paired, and a latest replay that errored leaves
+the golden unscored under that tag even if an earlier one scored. Because
 `baseline_runs`/`candidate_runs` count scored replay *rows* (not distinct
 goldens), a count above the golden count is how a reused tag shows up.
+`baseline_only` also lists goldens demoted since the baseline ran, so re-run
+the baseline after changing the golden set.
 
 ---
 
@@ -167,13 +178,15 @@ goldens), a count above the golden count is how a reused tag shows up.
 ```python
 report.mean_score  # float
 report.median_score  # float
-report.pass_rate  # fraction of runs above threshold
-report.passed  # bool — mean_score >= pass_threshold
+report.pass_rate  # fraction of completed runs above threshold
+report.passed  # bool — every replay completed and mean_score >= pass_threshold
 
 report.summary()  # human-readable text block
-report.write_html("out/rep.html")  # self-contained HTML diff file
+report.write_html("out/rep.html")  # self-contained HTML report (jinja2, installed with [eval])
 report.results  # list[EvalResult]
 ```
+
+`mean_score`, `median_score` and `pass_rate` cover completed replays only, so they say nothing about a golden whose replay errored. `passed` is false whenever any replay errored, and for a report with no results.
 
 ---
 
@@ -229,11 +242,13 @@ agents:
 | `compare` | `structured_diff` | Comparator name. One of `structured_diff`, `llm_judge`, `custom:<name>`. |
 | `pass_threshold` | `0.85` | Mean score required for the overall eval to pass. |
 | `parallelism` | `4` | Concurrent replay workers. |
-| `sampling` | `{temperature: 0.0}` | Sampling overrides for replay calls (merged over base agent config). |
+| `sampling` | `{temperature: 0.0}` | Sampling overrides for replay calls (merged over base agent config). It may not set `model` or `backend` — `model_router.yaml` and the run's target choose those. |
 | `diff_fields` | all golden fields | Fields to compare in `structured_diff`. Names must exist in the golden output — see the comparator table for how missing names are scored. |
 | `tolerances` | `{}` | Per-field abs tolerance for numeric fields (int or float; bools always compare exact). |
 | `judge_agent_type` | `null` (falls back to `<agent>_judge`) | Slug of the judge agent type when `compare: llm_judge`. When unset, the runner uses `<agent_type>_judge`. The resolved slug must exist in `model_router.yaml`. |
 | `metrics` | `[]` | Optional metric gates (see below). |
+
+A file that is not a mapping, a key other than `imports`/`defaults`/`agents` or the keys above, a `defaults`/`agents` entry that is not a mapping, or a value these keys reject raises `ConfigurationError` naming the entry — a misspelled `pass_threshold` fails the load instead of leaving the default in force. Every agent block is checked when the config loads, not only the agent being run. Once `agents` lists any agent, the agent being run must be listed too — `summarizer: {}` runs it on the defaults — so a misspelled block name raises `ConfigurationError` instead of leaving the defaults in force. Quote an agent name YAML would read as something other than a string (`"on"`, `"1"`).
 
 ### Metric gates
 
@@ -252,20 +267,54 @@ Gates check `llm_run_metrics` on the replay run. The runner writes those rows fr
 
 Gates fail closed: a run scores `0.0` when a gate's bound is breached **and** when the named metric is absent — a gate nothing can satisfy is a config error, logged as `eval_metric_gate_unavailable`, not a silent pass. `compare: structured_diff` and `compare: llm_judge` return a bare score, so gating an agent means giving it a comparator that returns metrics.
 
+### Project imports
+
+A top-level `imports:` list names modules imported when the config loads. Put your `register_comparator` calls, and any settings bootstrap the eval needs, in such a module so every `pf-eval` command, and `EvalRunner`, has them:
+
+```yaml
+imports: [app.eval_comparators]
+```
+
+A module that fails to import, or an `imports` that is not a list of module names, raises `ConfigurationError`.
+
 ### Environment variable
 
 - `EVAL_CONFIG` — path to eval.yaml. Default: `config/eval.yaml`.
 
+A path named by `EVAL_CONFIG`, `--config`, `EvalRunner(config_path=)` or `load_eval_config(path=)` must exist, and an empty one is refused; either raises `ConfigurationError`. Only the default may be missing, which runs every agent on the framework defaults.
+
 ---
 
-## CLI status — Python API only
+## CLI — `pf-eval`
 
-**No console script ships.** The harness is driven through the Python API
-(`GoldenSetRepo`, `EvalRunner`); every operation above maps one-to-one. For
-command-line and CI use, wire a small runner script in your project — the
-recommended shape is a `bin/eval-gate` wrapper over a `scripts/run_eval.py`
-that builds an `EvalRunner`, prints `report.summary()`, and exits `0` when
-`report.passed` else `1` (so CI can gate merges on the exit code).
+Installed with `[eval]`, which includes jinja2 for `--output`. Run it from the project root: it loads `./.env` (variables already set in the shell win) and puts the root on `sys.path`, so `imports:` resolve as they would in the project's own scripts.
+
+```bash
+pf-eval run --version golden_v1 --agent-type summarizer \
+    [--target model=<slug>] [--target backend=<name>] \
+    [--tag-as experiment:<name>] [--output report.html] [--config path/to/eval.yaml]
+pf-eval compare --baseline experiment:<a> --candidate experiment:<b> --agent-type summarizer
+pf-eval list-golden --version golden_v1 [--agent-type summarizer]
+pf-eval seed --version golden_v1 --outcome-kind <kind> [--agent-type <slug>] [--dry-run]
+pf-eval promote <run_id> --version golden_v1 [--notes "..."]
+pf-eval demote <run_id> --version golden_v1
+```
+
+`--target backend=<name>` replays on that router backend with the model the router declares for it; add `model=<slug>` to override the model as well. Those are the only two keys: any other key, an empty value, or a key given twice exits 2. Anything that keeps the replay client or the judge from resolving exits 2 before any replay (see step 3 under the replay engine). `--output` creates its directory; a report that cannot be rendered or written also exits 2, checked before the replays where it can be.
+
+Exit codes are the gate contract:
+
+| Code | `run` | `compare` |
+|---|---|---|
+| `0` | Every golden replayed and the mean score met `pass_threshold`. | The candidate scored every golden the baseline scored, and the mean delta is ≥ 0. |
+| `1` | A replay or its judge call errored, or the mean score fell short. | The candidate left a baseline golden unscored — including a candidate whose every replay errored — or the mean delta is negative. |
+| `2` | Could not evaluate: no goldens for the version, a config, `--target` or `--tag-as` error, a replay or judge client that cannot be resolved, the database or another dependency failing, or an `--output` report that cannot be written. | Could not evaluate: the baseline has no scored replays, the candidate has no replays, the tags share no golden, both name the same tag, or the database failing. |
+
+Exit `1` only ever means the eval ran to completion and failed; anything that stops it finishing is `2`. A comparator error, `structured_diff`'s `ConfigurationError` for `diff_fields` the golden lacks included, surfaces per replay after its call, so it fails the run with `1`.
+
+Every command takes `--config` and loads eval.yaml first, so `imports:` apply to the golden-set commands too. The table covers `run` and `compare`; the golden-set commands exit `1` on any error, a config error included.
+
+The commands are also a plain Typer sub-app to mount in your own CLI: `from pf_core.eval.cli import app as eval_app`, then `my_cli.add_typer(eval_app, name="eval")`. A mounted sub-app skips the `.env` load and the path setup — your CLI owns those.
 
 ---
 
@@ -283,6 +332,8 @@ def amount_compare(golden: dict, replay: dict, *, context: dict) -> float:
     within_3 = abs(gold_amount - repl_amount) <= 3.0
     return 1.0 if within_3 else 0.0
 ```
+
+The score must convert to a float in 0.0–1.0, and each [metric](#returning-metrics-for-gates) to a finite float; a score past a bound by float rounding alone (`1.0000000000000002`) is clamped. Anything else — `85.0` for a percentage, NaN, inf, a result of another shape — errors that replay: it keeps its run id, records no `eval_score`, and fails the report. So does a comparator that raises.
 
 Reference in `eval.yaml`:
 
@@ -358,20 +409,20 @@ for item in reviewed_items:
 ## CI integration
 
 ```yaml
-# .github/workflows/eval.yml — via your project's runner script (see "CLI status")
+# .github/workflows/eval.yml
 - name: Run summarizer eval
   run: |
-    python scripts/run_eval.py \
+    pf-eval run \
       --version golden_v1 \
       --agent-type summarizer \
-      --target-model anthropic/claude-sonnet-4-6 \
+      --target model=anthropic/claude-sonnet-4-6 \
       --tag-as ci:pr-${{ github.event.pull_request.number }}
   env:
     DATABASE_URL: ${{ secrets.DATABASE_URL }}
     OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
 ```
 
-The runner exits non-zero when the eval fails, blocking the PR merge.
+Any non-zero exit fails the step and blocks the merge — including `2`, an eval that could not run.
 
 ---
 
@@ -564,18 +615,15 @@ result = runner.compare_experiments(
     baseline="experiment:baseline", candidate="experiment:opus47", agent_type="summarizer"
 )
 pairs = result["pairs"]
-# result["baseline_runs"] / result["candidate_runs"]: per-tag matched-run
-# counts — assert they equal len(pairs) so a partial replay can't slip through.
+# result["baseline_only"]: goldens the candidate left unscored — refuse the
+# comparison when it is non-empty, as `pf-eval compare` does.
 ```
 
-(Wrap this in your project runner script for command-line / CI use — see
-"CLI status" above.)
+The same steps from a shell: `pf-eval run ... --tag-as experiment:baseline`, `pf-eval run ... --target model=anthropic/claude-opus-4-7 --tag-as experiment:opus47`, then `pf-eval compare --baseline experiment:baseline --candidate experiment:opus47 --agent-type summarizer`.
 
 ### Step 5 — Wire CI
 
-Add a workflow step that runs your project's runner script on router/prompt
-changes — the full example is in "CI integration" above. The runner's
-non-zero exit on a failed eval blocks the PR merge automatically.
+Add a workflow step that runs `pf-eval` on router/prompt changes — the full example is in "CI integration" above. Its non-zero exit on a failed or unrunnable eval blocks the PR merge.
 
 ---
 

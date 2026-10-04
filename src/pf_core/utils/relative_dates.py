@@ -38,9 +38,6 @@ Design rules:
 
 The function never raises on malformed input — callers use ``None`` as
 the "don't know" signal.
-
-The pattern generalizes to any tool that reads dated text and asks an
-LLM to identify event dates.
 """
 
 from __future__ import annotations

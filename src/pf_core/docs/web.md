@@ -61,7 +61,7 @@ Exceptions are mapped to HTTP responses automatically. Each `FlowException` subc
 | `HTTPException` | Status from exception | Standard FastAPI behavior |
 | Unhandled `Exception` | 500 | Logged with traceback; generic message shown |
 
-A validator's `InvalidInputError` used to escape validation and reach the `InvalidInputError` handler directly; pydantic now wraps it because it is a `ValueError` (see [exceptions.md](exceptions.md#builtin-bases-valueerror-and-runtimeerror)). The handlers for the four validation-error classes are wrapped when the app builds its middleware stack, so a handler you register for one of them — before or after `create_app`, or through `exception_handlers=` — still receives only the ordinary ones.
+pydantic wraps a validator's `InvalidInputError` because it is a `ValueError` (see [exceptions.md](exceptions.md#builtin-bases-valueerror-and-runtimeerror)). The handlers for the four validation-error classes are wrapped when the app builds its middleware stack, so a handler you register for one of them — before or after `create_app`, or through `exception_handlers=` — still receives only the ordinary ones.
 
 ### Error pages
 
@@ -103,7 +103,7 @@ Use in route handlers:
 ```python
 @app.get("/")
 async def home(request: Request):
-    return templates.TemplateResponse(request, "pages/home.html", {"sections": sections})
+    return templates.TemplateResponse(request, "pages/home.html", {"items": items})
 ```
 
 ## JSON response helpers
@@ -114,9 +114,9 @@ Handles types the stdlib JSON encoder can't serialize: `date`, `datetime`, `Deci
 from pf_core.web.json import safe_json_response
 
 
-@router.get("/api/events")
-async def list_events():
-    rows = repo.list_events()  # may contain dates, Decimals, Row objects
+@router.get("/api/items")
+async def list_items():
+    rows = repo.list_items()  # may contain dates, Decimals, Row objects
     return safe_json_response(rows)
 ```
 
@@ -215,7 +215,7 @@ html = safe_markdown("**bold** and [link](https://example.com)")
 
 # Jinja2 filter
 setup_markdown_filter(templates)
-# In template: {{ section.summary | markdown }}
+# In template: {{ item.summary | markdown }}
 ```
 
 For project-specific inline patterns, pass `extra_transforms` — see [markdown.md](markdown.md) for details.
@@ -232,10 +232,10 @@ Returns the value if not None, raises `NotFoundError` (mapped to 404) otherwise:
 from pf_core.web.helpers import resolve_or_404
 
 
-@router.get("/entries/{entry_id}")
-async def get_entry(entry_id: str):
-    entry = resolve_or_404(entry_repo.get_by_id(entry_id), "Entry")
-    return entry
+@router.get("/items/{item_id}")
+async def get_item(item_id: str):
+    item = resolve_or_404(item_repo.get_by_id(item_id), "Item")
+    return item
 ```
 
 Works with any return type — dicts, ORM objects, strings, even falsy values like `0` or `""` (only `None` triggers the 404).
@@ -276,9 +276,9 @@ templates = setup_templates(
 # Health + Routes
 app.include_router(health_router())
 
-from app.api import pages, entries, admin  # noqa: E402
+from app.api import pages, items, admin  # noqa: E402
 
 app.include_router(pages.router)
-app.include_router(entries.router, prefix="/api")
+app.include_router(items.router, prefix="/api")
 app.include_router(admin.router, prefix="/api/admin")
 ```

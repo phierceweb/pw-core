@@ -9,23 +9,23 @@ Usage::
 
     from pf_core.db.repository import Repository
 
-    class EntryRepo(Repository):
-        def get_by_id(self, entry_id: str) -> dict | None:
+    class ItemRepo(Repository):
+        def get_by_id(self, item_id: str) -> dict | None:
             with self._tx() as conn:
                 row = conn.execute(
-                    text("SELECT * FROM entries WHERE id = :id"),
-                    {"id": entry_id},
+                    text("SELECT * FROM items WHERE id = :id"),
+                    {"id": item_id},
                 ).mappings().fetchone()
                 return dict(row) if row else None
 
     # Standalone — creates its own transaction:
-    repo = EntryRepo()
-    entry = repo.get_by_id("abc")
+    repo = ItemRepo()
+    item = repo.get_by_id("abc")
 
     # Inside a caller's transaction:
     with transaction() as conn:
-        repo = EntryRepo(conn)
-        entry = repo.get_by_id("abc")
+        repo = ItemRepo(conn)
+        item = repo.get_by_id("abc")
         # both queries share the same transaction
 """
 

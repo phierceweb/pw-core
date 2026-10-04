@@ -46,9 +46,9 @@ from pf_core.log import get_logger
 
 logger = get_logger(__name__)
 
-logger.info("search_started", model="sonar-pro", task_id=42)
+logger.info("summarize_started", model="gpt-4o", task_id=42)
 logger.warning("retry", attempt=3, reason="timeout")
-logger.error("search_failed", task_id=42)
+logger.error("summarize_failed", task_id=42)
 ```
 
 All key-value pairs are included as structured fields in the log record.
@@ -60,9 +60,9 @@ Attach fields to all log records within a scope:
 ```python
 from pf_core.log import log_context
 
-with log_context(task_id=42, section_name="intro"):
-    logger.info("search_started")  # includes task_id=42, section_name="intro"
-    logger.info("search_complete")  # same context
+with log_context(task_id=42, item_id=7):
+    logger.info("summarize_started")  # includes task_id=42, item_id=7
+    logger.info("summarize_complete")  # same context
 # Context cleared after the block
 ```
 
@@ -78,21 +78,21 @@ from pf_core.log import log_exception
 try:
     do_something()
 except AppError as e:
-    log_exception(e, message_prepend="pipeline failed", event_prefix="COMP")
+    log_exception(e, message_prepend="pipeline failed", event_prefix="MYAPP")
 ```
 
 | Exception type | Log level | Traceback | Event key |
 |---------------|-----------|-----------|-----------|
-| `AppError` | ERROR | Full traceback | `COMP-SearchError` |
-| `FlowException` | WARNING | No traceback | `COMP-ConfigurationError` |
-| Other | ERROR | No traceback | `COMP-ValueError` |
+| `AppError` | ERROR | Full traceback | `MYAPP-SummarizeError` |
+| `FlowException` | WARNING | No traceback | `MYAPP-ConfigurationError` |
+| Other | ERROR | No traceback | `MYAPP-ValueError` |
 
 A validation error wrapping a validator's `InvalidInputError` is logged as that `InvalidInputError` — see [exceptions.md](exceptions.md#builtin-bases-valueerror-and-runtimeerror).
 
 The event key format `{prefix}-{ClassName}` is designed for grep:
 
 ```bash
-grep COMP-SearchError logs/app.jsonl
+grep MYAPP-SummarizeError logs/app.jsonl
 ```
 
 ## Verbose helper
@@ -130,5 +130,5 @@ PF_ARTICLE_EXTRACTOR_LOG_LEVEL=DEBUG bin/run my-command
 **File** (production): JSON-lines via `structlog.processors.JSONRenderer`. Rotates at 10MB, keeps 5 backups.
 
 ```json
-{"event": "search_started", "model": "sonar-pro", "task_id": 42, "level": "info", "timestamp": "2026-04-12T14:30:00Z", "logger": "app.services.search"}
+{"event": "summarize_started", "model": "gpt-4o", "task_id": 42, "level": "info", "timestamp": "2026-04-12T14:30:00Z", "logger": "app.services.summarize"}
 ```

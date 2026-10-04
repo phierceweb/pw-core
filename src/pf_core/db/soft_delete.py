@@ -10,11 +10,11 @@ Usage::
     from pf_core.db.soft_delete import soft_delete, restore, not_deleted
 
     with transaction() as conn:
-        soft_delete(conn, "entries", "id", entry_id, reason="duplicate")
-        restore(conn, "entries", "id", entry_id)
+        soft_delete(conn, "items", "id", item_id, reason="duplicate")
+        restore(conn, "items", "id", item_id)
 
     # In SQL queries:
-    sql = f"SELECT * FROM entries WHERE section_id = :sid {not_deleted()}"
+    sql = f"SELECT * FROM items WHERE category_id = :cid {not_deleted()}"
 """
 
 from __future__ import annotations

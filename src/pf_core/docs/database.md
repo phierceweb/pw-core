@@ -99,27 +99,27 @@ from pf_core.db import transaction
 with transaction() as conn:
     rows = (
         conn.execute(
-            text("SELECT * FROM entries WHERE section_id = :sid"),
-            {"sid": 3},
+            text("SELECT * FROM items WHERE category_id = :cid"),
+            {"cid": 3},
         )
         .mappings()
         .fetchall()
     )
-    entries = [dict(r) for r in rows]
+    items = [dict(r) for r in rows]
 
 # Write (auto-commits on exit)
 with transaction() as conn:
     conn.execute(
-        text("INSERT INTO entries (id, title) VALUES (:id, :title)"),
-        {"id": "ENTRY_001", "title": "New entry"},
+        text("INSERT INTO items (id, title) VALUES (:id, :title)"),
+        {"id": "ITEM_001", "title": "New item"},
     )
 
 # Multiple writes in one transaction
 with transaction() as conn:
-    conn.execute(text("DELETE FROM entry_sections WHERE entry_id = :eid"), {"eid": "ENTRY_001"})
+    conn.execute(text("DELETE FROM item_tags WHERE item_id = :iid"), {"iid": "ITEM_001"})
     conn.execute(
-        text("INSERT INTO entry_sections (entry_id, section_id) VALUES (:eid, :sid)"),
-        {"eid": "ENTRY_001", "sid": 3},
+        text("INSERT INTO item_tags (item_id, tag_id) VALUES (:iid, :tid)"),
+        {"iid": "ITEM_001", "tid": 3},
     )
 ```
 
@@ -146,7 +146,7 @@ params = {f"id_{i}": v for i, v in enumerate(ids)}
 placeholders = ", ".join(f":id_{i}" for i in range(len(ids)))
 rows = (
     conn.execute(
-        text(f"SELECT * FROM entries WHERE id IN ({placeholders})"),
+        text(f"SELECT * FROM items WHERE id IN ({placeholders})"),
         params,
     )
     .mappings()
@@ -243,7 +243,7 @@ Convert a SQLAlchemy Row, RowMapping, or dict to a plain dict:
 
 ```python
 row = conn.execute(text("SELECT ...")).fetchone()
-entry = row_to_dict(row)  # plain dict or None
+item = row_to_dict(row)  # plain dict or None
 ```
 
 ## Column type variants — `pf_core.db.types`
@@ -288,25 +288,25 @@ from pf_core.db.repository import Repository
 from sqlalchemy import text
 
 
-class EntryRepo(Repository):
-    def get_by_id(self, entry_id: str) -> dict | None:
+class ItemRepo(Repository):
+    def get_by_id(self, item_id: str) -> dict | None:
         with self._tx() as conn:
             row = (
                 conn.execute(
-                    text("SELECT * FROM entries WHERE id = :id"),
-                    {"id": entry_id},
+                    text("SELECT * FROM items WHERE id = :id"),
+                    {"id": item_id},
                 )
                 .mappings()
                 .fetchone()
             )
             return dict(row) if row else None
 
-    def list_by_section(self, section_id: int) -> list[dict]:
+    def list_by_category(self, category_id: int) -> list[dict]:
         with self._tx() as conn:
             rows = (
                 conn.execute(
-                    text("SELECT * FROM entries WHERE section_id = :sid ORDER BY created_at"),
-                    {"sid": section_id},
+                    text("SELECT * FROM items WHERE category_id = :cid ORDER BY created_at"),
+                    {"cid": category_id},
                 )
                 .mappings()
                 .fetchall()
@@ -318,14 +318,14 @@ class EntryRepo(Repository):
 
 ```python
 # Standalone — each method creates its own transaction
-repo = EntryRepo()
-entry = repo.get_by_id("ENTRY_001")
+repo = ItemRepo()
+item = repo.get_by_id("ITEM_001")
 
 # Shared — multiple operations in one transaction
 with transaction() as conn:
-    repo = EntryRepo(conn)
-    entry = repo.get_by_id("ENTRY_001")
-    sections = repo.list_by_section(3)
+    repo = ItemRepo(conn)
+    item = repo.get_by_id("ITEM_001")
+    in_category = repo.list_by_category(3)
     # Both queries share the same transaction
 ```
 
@@ -337,11 +337,11 @@ Helpers for soft-deleting rows using a `deleted_at` timestamp column. See [soft-
 from pf_core.db.soft_delete import soft_delete, restore, not_deleted
 
 with transaction() as conn:
-    soft_delete(conn, "entries", "id", entry_id, reason="duplicate")
-    restore(conn, "entries", "id", entry_id)
+    soft_delete(conn, "items", "id", item_id, reason="duplicate")
+    restore(conn, "items", "id", item_id)
 
 # In queries:
-sql = f"SELECT * FROM entries WHERE section_id = :sid {not_deleted()}"
+sql = f"SELECT * FROM items WHERE category_id = :cid {not_deleted()}"
 ```
 
 ## Connectivity check

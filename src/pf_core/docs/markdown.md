@@ -40,7 +40,7 @@ setup_markdown_filter(templates)
 Then in templates:
 
 ```html
-<div>{{ section.summary | markdown }}</div>
+<div>{{ item.summary | markdown }}</div>
 ```
 
 ## Parameters
@@ -64,19 +64,19 @@ Then in templates:
 
 ## Extra transforms
 
-For project-specific inline patterns (e.g. converting entry IDs to links), pass `extra_transforms`. Each callable receives HTML-escaped text and returns transformed text. They run before the standard inline transforms (links, bold, italic, code).
+For project-specific inline patterns (e.g. converting record IDs to links), pass `extra_transforms`. Each callable receives HTML-escaped text and returns transformed text. They run before the standard inline transforms (links, bold, italic, code).
 
 ```python
 import re
 
-_ENTRY_ID = re.compile(r"\b([A-Za-z0-9_-]{8,14})\b")
+_RECORD_ID = re.compile(r"\b([A-Za-z0-9_-]{8,14})\b")
 
 
-def linkify_entry_ids(text: str) -> str:
-    return _ENTRY_ID.sub(r'<a href="/event/\1">\1</a>', text)
+def linkify_record_ids(text: str) -> str:
+    return _RECORD_ID.sub(r'<a href="/records/\1">\1</a>', text)
 
 
-setup_markdown_filter(templates, extra_transforms=[linkify_entry_ids])
+setup_markdown_filter(templates, extra_transforms=[linkify_record_ids])
 ```
 
 ## Security
@@ -106,8 +106,8 @@ from pf_core.web.markdown import setup_markdown_filter
 setup_markdown_filter(
     templates,
     filter_name="md_links",  # keep existing filter name
-    extra_transforms=[_replace_entry_links, _replace_bare_entry_ids],
+    extra_transforms=[_link_record_refs, _link_bare_ids],
 )
 ```
 
-Project-specific transforms (entry ID links, bare ID citations) stay in your project as `extra_transforms`.
+Project-specific transforms (links to your own records, bare ID citations) stay in your project as `extra_transforms`.

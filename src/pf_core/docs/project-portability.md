@@ -8,7 +8,7 @@ When portability is broken — when a proper noun is hardcoded in a prompt YAML,
 
 ## Why it matters
 
-pf-core consumers tend to ship with one obvious user. A document-conversion pipeline ships pointed at one library of manuals. A knowledge-base assistant ships pointed at one product. A data-extraction tool ships pointed at one source format. **Each is a worked example, not the only valid configuration.**
+An app usually ships with one obvious user in mind — one company, one product, one corpus. **That first configuration is a worked example, not the only valid one.**
 
 Project-specific values that bleed into framework-shaped code (prompts, services, helpers) eventually get noticed by the next person who tries to point the codebase at a different subject. The cost of *adding* a placeholder when the value is first introduced is small. The cost of *finding and removing* a hardcoded value scattered across files months later is large.
 
@@ -38,17 +38,17 @@ system: |
 
 ### 2. Project-specific domain lists, source rosters, and vocabulary live in the config layer
 
-Lists of trusted domains, prohibited sources, controlled tags, controlled action types, scope filters, curated source lists — all data, not framework. Hand them to prompts via builders that read from config:
+Lists of trusted domains, blocked sources, controlled tags and categories — all data, not framework. Hand them to prompts via builders that read from config:
 
 ```python
 # In a prompt builder module (per-consumer):
-def _build_tier1_domain_block() -> str:
-    """Render the Tier-1 trusted-domain list from config."""
-    domains = MY_PROJECT.source_tiers[0].get("trusted_domains", [])
+def _build_trusted_domain_block() -> str:
+    """Render the trusted-domain list from config."""
+    domains = MY_PROJECT.trusted_domains
     return "\n".join(f"  - {d}" for d in domains)
 ```
 
-The prompt YAML then uses `{tier1_domain_block}` — a generic placeholder name that doesn't bake the project's specific list into the prompt.
+The prompt YAML then uses `{trusted_domain_block}` — a generic placeholder name that doesn't bake the project's specific list into the prompt.
 
 ### 3. Tests must not assert literal project-specific strings
 
@@ -100,22 +100,18 @@ A change is suspect if it:
 
 When the linter, code review, or CI flags this, fix it by promoting the value to the project config and rendering it via a placeholder. Do not silence the warning.
 
-## Worked example — a content-aggregation app
+## Worked example — a support assistant
 
-A content-aggregation consumer ships with `project.yaml` as its project config layer. The same principles in this doc are applied:
+A support assistant keeps its project values in `project.yaml`:
 
 | Project-specific concern | Lives at |
 |---|---|
 | Display name of the app | `project.yaml:name` (rendered via `cfg.APP_NAME` / `@@APP_NAME@@`) |
 | Noun phrase naming the subject the app covers | `project.yaml:subject` (rendered via `{subject}` / `@@SUBJECT@@`) |
-| Temporal scope start | `project.yaml:start_date` (rendered via `cfg.START_DATE`) |
-| Trusted primary-source domains | `project.yaml:source_tiers[0].trusted_domains` (rendered via `{tier1_domain_block}`) |
-| Trusted secondary-source domains | `project.yaml:source_tiers[1].trusted_domains` |
-| Prohibited source domains | `project.yaml:prohibited_sources` / `prohibited_domains` |
-| Curated source list | `project.yaml:curated_sources` |
+| Domains the assistant may cite | `project.yaml:trusted_domains` (rendered via `{trusted_domain_block}`) |
+| Domains it must not cite | `project.yaml:blocked_domains` |
 | Controlled-tag vocabulary | `project.yaml:tags` |
 | Category vocabulary | `project.yaml:categories` |
-| Scope filter entity names | `project.yaml:scope_filters` |
 
 Projects scaffolded by pf-core's `bin/new-consumer` carry a rule codifying these bindings (`no-hardcoded-project-values`) in their own rules directory, linking back to this doc as the source of the principle.
 

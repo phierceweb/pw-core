@@ -8,8 +8,8 @@ mounted into a consumer app with one call::
 
     app.include_router(make_jobs_router(
         auth_dep=require_admin,            # required; allow_unauthenticated=True to run open
-        kind_labels={"report_pass": "report"},
-        describe=lambda job: {"label": short_scope(job), "href": section_url(job)},
+        kind_labels={"sync_pass": "sync"},
+        describe=lambda job: {"label": project_label(job), "href": project_url(job)},
         terminate_hook=terminate_job,      # subprocess-mode consumers only
     ))
 
@@ -73,7 +73,7 @@ def make_jobs_router(
         auth_dep: FastAPI dependency that protects every route.
         kind_labels: kind → human action label for the list/detail pages.
         describe: ``job_row -> {"label": str, "href": str} | None`` — the
-            consumer's scope link (a section, a document, …).
+            consumer's scope link (a project, a document, …).
         terminate_hook: ``job_id -> bool`` invoked before the soft cancel;
             pass :func:`pf_core.jobs.workers.terminate_job` when jobs run
             as subprocesses. ``None`` for thread-mode consumers.

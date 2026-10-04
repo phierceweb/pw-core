@@ -519,6 +519,19 @@ def test_record_writes_payload_when_provided(tracking_db):
     assert full["payload"]["parsed_output"] == {"ok": True}
 
 
+def test_record_stores_non_finite_parsed_floats_as_null(tracking_db):
+    raw = '{"score": NaN, "xs": [Infinity, 1.5, {"y": -Infinity}]}'
+    run_id = LlmRunRepo().record(
+        agent_type="drafter",
+        model="claude-opus-4-7",
+        raw_response=raw,
+        parsed_output={"score": float("nan"), "xs": [float("inf"), 1.5, {"y": float("-inf")}]},
+    )
+    full = LlmRunRepo().get_with_payload(run_id)
+    assert full["payload"]["parsed_output"] == {"score": None, "xs": [None, 1.5, {"y": None}]}
+    assert full["payload"]["raw_response"] == raw
+
+
 def test_record_skips_payload_when_all_fields_none(tracking_db):
     run_id = LlmRunRepo().record(agent_type="drafter", model="claude-opus-4-7")
     full = LlmRunRepo().get_with_payload(run_id)
@@ -635,6 +648,39 @@ def test_truncated_tag_composes_with_caller_tags(tracking_db):
         tags=["env:prod"],
     )
     assert _run_tags(tracking_db, run_id) >= {"env:prod", "truncated"}
+
+
+def test_record_dedupes_repeated_caller_tags(tracking_db):
+    run_id = LlmRunRepo().record(agent_type="drafter", model="m", tags=["env:prod", "env:prod"])
+    assert _run_tags(tracking_db, run_id) == {"env:prod"}
+
+
+def test_record_dedupes_caller_truncated_tag_on_truncated_run(tracking_db):
+    run_id = LlmRunRepo().record(
+        agent_type="drafter",
+        model="m",
+        usage={"finish_reason": "length"},
+        tags=["truncated"],
+    )
+    assert _run_tags(tracking_db, run_id) == {"truncated"}
+
+
+def test_record_dedupes_tags_case_insensitively_first_spelling_wins(tracking_db):
+    """MySQL's default collation makes case variants collide on the tag PK."""
+    run_id = LlmRunRepo().record(
+        agent_type="drafter", model="m", tags=["Env:Prod", "env:prod", "ENV:PROD"]
+    )
+    assert _run_tags(tracking_db, run_id) == {"Env:Prod"}
+
+
+def test_record_keeps_canonical_truncated_spelling_over_caller_variant(tracking_db):
+    run_id = LlmRunRepo().record(
+        agent_type="drafter",
+        model="m",
+        usage={"finish_reason": "length"},
+        tags=["Truncated"],
+    )
+    assert _run_tags(tracking_db, run_id) == {"truncated"}
 
 
 def test_record_writes_parent_run_link(tracking_db):

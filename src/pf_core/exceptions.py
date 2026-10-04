@@ -219,7 +219,7 @@ def _validation_errors(exc: BaseException) -> list[Any]:
 
 
 def _converted_before(cls: type) -> bool:
-    """Whether pydantic (or click) converted ``cls`` before InvalidInputError became a ValueError."""
+    """Whether ``cls`` is a ValueError or AssertionError other than through InvalidInputError."""
     if cls is InvalidInputError:
         return False
     return cls in (ValueError, AssertionError) or any(map(_converted_before, cls.__bases__))
@@ -228,11 +228,12 @@ def _converted_before(cls: type) -> bool:
 def unwrap_flow_exception(exc: BaseException) -> FlowException | None:
     """The FlowException a pydantic validator raised, when pydantic wrapped it, else None.
 
-    Before InvalidInputError was a ValueError, one raised in a validator escaped validation as
-    itself. pydantic now wraps it in a ``ValidationError`` (FastAPI: a ``RequestValidationError``,
-    ``WebSocketRequestValidationError`` or ``ResponseValidationError``), keeping each original
-    in its error's ``ctx``. This returns the first that would have escaped, whatever else is in
-    the error, so a boundary answers it as it did before; None for ordinary bad input.
+    InvalidInputError is a ValueError, so pydantic wraps one raised in a validator in a
+    ``ValidationError`` (FastAPI: a ``RequestValidationError``, ``WebSocketRequestValidationError``
+    or ``ResponseValidationError``), keeping each original in its error's ``ctx``. This returns
+    the first, whatever else is in the error, so a boundary can answer it as itself; None for
+    ordinary bad input. A class that is a ValueError or AssertionError in its own right is not
+    returned.
     """
     for error in _validation_errors(exc):
         raised = (error.get("ctx") or {}).get("error") if isinstance(error, dict) else None

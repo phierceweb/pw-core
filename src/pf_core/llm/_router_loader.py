@@ -4,7 +4,7 @@ Internal helper for :mod:`pf_core.llm.router` — owns file location, parse,
 schema validation (via :mod:`pf_core.llm._router_schema`), and the
 hot-reload cache (a :class:`pf_core.utils.reload_cache.ReloadCache`).
 Operators edit the YAML and changes land within
-``MODEL_ROUTER_RELOAD_SECONDS`` (default 60; ``0`` re-reads every call)
+``MODEL_ROUTER_RELOAD_SECONDS`` (``0`` re-reads every call)
 without a restart. A reload that fails to parse keeps serving the last
 good config with a warning rather than taking the app down.
 """
@@ -44,12 +44,14 @@ def _read_yaml(path: Path) -> dict[str, Any]:
 
     try:
         import yaml
+
+        from pf_core.utils.yaml import safe_load
     except ImportError as e:
         raise ConfigurationError("pyyaml is required to load model_router.yaml") from e
 
     try:
         with open(path, encoding="utf-8") as f:
-            raw = yaml.safe_load(f) or {}
+            raw = safe_load(f) or {}
     except yaml.YAMLError as e:
         raise ConfigurationError(f"failed to parse {path}: {e}") from e
 

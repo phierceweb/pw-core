@@ -10,7 +10,7 @@ mid-query worker can't outlive the test database.
 
 Dedup is scope-blind: pass ``dedup_key`` — a predicate over a candidate
 job's parsed ``inputs`` — to define what "already running" means for your
-domain (same section, same tenant, …). Without it, no dedup is applied.
+domain (same record, same tenant, …). Without it, no dedup is applied.
 """
 
 from __future__ import annotations

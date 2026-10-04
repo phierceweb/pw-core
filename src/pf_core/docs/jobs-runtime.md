@@ -52,17 +52,17 @@ Cancel is two-part, in either order: transition the row (`repo.cancel` or the da
 from pf_core.jobs.submit import JobAlreadyRunning, submit_detached, submit_tracked
 
 job_id = submit_tracked(
-    kind="report_pass",
-    inputs={"section_folder": str(folder)},
+    kind="sync_pass",
+    inputs={"project_dir": str(project_dir)},
     created_by="web",
-    run=lambda progress: service.run(folder, progress),
-    dedup_key=lambda inputs: inputs.get("section_folder", "").endswith(suffix),
+    run=lambda progress: service.run(project_dir, progress),
+    dedup_key=lambda inputs: inputs.get("project_dir") == str(project_dir),
 )
 ```
 
 - `submit_tracked` creates the row, returns its id immediately, and runs the work on a daemon thread inside a `Job` window: `running` → your `run(progress_callback)` → `succeeded` (failures are recorded by the `Job` context manager). The callback signature is `(done, total, message=None)`.
 - `submit_detached` is for services that create and manage their own job: it runs them on a thread and resolves the new job's id (or `None` when the service had nothing to do).
-- Dedup is opt-in and scope-blind: `dedup_key` receives each non-terminal same-kind job's parsed `inputs` and returns whether it occupies your scope; a match raises `JobAlreadyRunning`. What "scope" means (a section, a tenant) stays in the consumer.
+- Dedup is opt-in and scope-blind: `dedup_key` receives each non-terminal same-kind job's parsed `inputs` and returns whether it occupies your scope; a match raises `JobAlreadyRunning`. What "scope" means (a project, a tenant) stays in the consumer.
 
 ## Test-suite integration
 

@@ -38,6 +38,7 @@ from pf_core.db.repository import Repository
 from pf_core.db.upsert import upsert
 from pf_core.llm.tracking.schema import llm_runs
 from pf_core.exceptions import DataError
+from pf_core.llm._json import finite_json
 from pf_core.llm.cache._schema import llm_cache_entries
 from pf_core.llm.tracking._resolvers import (
     resolve_agent_type_id,
@@ -141,7 +142,7 @@ class ExactCacheRepo(Repository):
                     "agent_type_id": agent_type_id,
                     "model_id": model_id,
                     "source_run_id": source_run_id,
-                    "parsed_output": parsed_output,
+                    "parsed_output": finite_json(parsed_output),
                     "raw_response": raw_response,
                     "expires_at": expires_at,
                 },

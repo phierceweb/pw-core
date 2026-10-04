@@ -96,11 +96,13 @@ class AppConfig:
             if yp.exists():
                 import yaml
 
+                from pf_core.utils.yaml import safe_load
+
                 try:
                     with open(yp, encoding="utf-8") as f:
-                        self.yaml = yaml.safe_load(f) or {}
+                        self.yaml = safe_load(f) or {}
                 except yaml.YAMLError as e:
-                    raise ConfigurationError(f"Malformed YAML config file: {yp}") from e
+                    raise ConfigurationError(f"Malformed YAML config file: {yp}: {e}") from e
                 except Exception:
                     import warnings
 

@@ -120,6 +120,29 @@ def test_remove_preserves_outcomes(tracking_db, seed_run):
     assert row["outcome_kind"] == "golden_approved"
 
 
+def test_list_caps_at_limit_and_none_lists_every_member(tracking_db, seed_run):
+    from sqlalchemy import select
+
+    repo = GoldenSetRepo()
+    with tracking_db.begin() as conn:
+        template = conn.execute(select(llm_runs).where(llm_runs.c.id == seed_run)).mappings().one()
+        extra = [
+            conn.execute(
+                llm_runs.insert().values(
+                    agent_type_id=template["agent_type_id"],
+                    model_id=template["model_id"],
+                    status="success",
+                )
+            ).inserted_primary_key[0]
+            for _ in range(2)
+        ]
+    for run_id in (seed_run, *extra):
+        repo.add(run_id, version="golden_v1")
+
+    assert len(repo.list(version="golden_v1", limit=2)) == 2
+    assert len(repo.list(version="golden_v1", limit=None)) == 3
+
+
 def test_list_filtered_by_version(tracking_db, seed_run):
     repo = GoldenSetRepo()
     repo.add(seed_run, version="golden_v1")

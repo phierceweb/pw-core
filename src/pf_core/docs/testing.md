@@ -161,8 +161,8 @@ from sqlalchemy import text
 @pytest.fixture
 def pf_schema():
     return [
-        "CREATE TABLE sections (id INTEGER PRIMARY KEY, name TEXT NOT NULL)",
-        "CREATE TABLE entries (id TEXT PRIMARY KEY, section_id INTEGER REFERENCES sections(id))",
+        "CREATE TABLE categories (id INTEGER PRIMARY KEY, name TEXT NOT NULL)",
+        "CREATE TABLE items (id TEXT PRIMARY KEY, category_id INTEGER REFERENCES categories(id))",
     ]
 
 
@@ -173,17 +173,17 @@ def pf_app():
     return create_app()
 
 
-# test_entries.py
-def test_create_entry(pf_tables, pf_connection):
-    pf_connection.execute(text("INSERT INTO sections (id, name) VALUES (1, 'Test')"))
-    pf_connection.execute(text("INSERT INTO entries (id, section_id) VALUES ('E001', 1)"))
+# test_items.py
+def test_create_item(pf_tables, pf_connection):
+    pf_connection.execute(text("INSERT INTO categories (id, name) VALUES (1, 'Test')"))
+    pf_connection.execute(text("INSERT INTO items (id, category_id) VALUES ('I001', 1)"))
 
-    row = pf_connection.execute(text("SELECT * FROM entries WHERE id = 'E001'")).fetchone()
+    row = pf_connection.execute(text("SELECT * FROM items WHERE id = 'I001'")).fetchone()
     assert row is not None
 
 
-async def test_api_sections(pf_tables, pf_app_client):
-    resp = await pf_app_client.get("/api/sections")
+async def test_api_categories(pf_tables, pf_app_client):
+    resp = await pf_app_client.get("/api/categories")
     assert resp.status_code == 200
 ```
 

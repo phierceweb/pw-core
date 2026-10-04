@@ -1,6 +1,6 @@
 # Tracked LLM Call
 
-One function — `tracked_call` — that composes the pf-core LLM primitives consumers kept re-implementing by hand: render a prompt spec, resolve a versioned `system_prompt_id`, invoke an injected chat client, record exactly one `llm_runs` row, and (when JSON is expected) parse it with a single **tracked** retry.
+One function — `tracked_call` — that composes the pf-core LLM primitives a call site would otherwise wire by hand: render a prompt spec, resolve a versioned `system_prompt_id`, invoke an injected chat client, record exactly one `llm_runs` row, and (when JSON is expected) parse it with a single **tracked** retry.
 
 This is the orchestration layer on top of [LLM tracking](llm-tracking.md). It does not replace `LlmRunRepo.record()` or the `@track_run` decorator — use it when a call follows the common "spec → invoke → record → maybe-parse-with-retry" shape and you want the retry row linked automatically.
 

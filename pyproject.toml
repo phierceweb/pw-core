@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pf-core"
-version = "0.24.2"
+version = "0.25.0"
 description = "Python foundation for LLM apps whose prompts and spend you can actually see — versioned prompts, every call recorded and replayable, budgets, evals, and resumable jobs on one schema; opt-in LLM, database, and FastAPI layers"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -131,9 +131,9 @@ tracking = ["pf-core[db,llm]"]
 admin = ["pf-core[web,tracking]"]
 
 # Eval harness: pf_core.eval.* (golden-set replay, structured-diff and
-# LLM-judge comparators — Python API; consumers wire a small runner script).
-# Requires [tracking,jobs].
-eval = ["pf-core[tracking,jobs]"]
+# LLM-judge comparators) and the pf-eval CLI. Requires [tracking,jobs];
+# jinja2 renders the HTML report (EvalReport.write_html, pf-eval run --output).
+eval = ["pf-core[tracking,jobs]", "jinja2>=3.1.6"]
 
 # ---------------------------------------------------------------------------
 # Database driver extras — pick one per consumer (mutually exclusive).
@@ -183,7 +183,7 @@ crawl = ["pf-core[http,articles]"]
 anthropic = ["anthropic>=0.105,<1.0"]
 
 # Perceptual-hash image dedup: pf_core.utils.phash (DCT-based phash via
-# ImageHash + Pillow). Used by document-processing consumers to detect
+# ImageHash + Pillow). Used by document-processing pipelines to detect
 # repeated page decorations (header logos, footer marks) and re-encoded
 # duplicates that sha256 would miss.
 image-phash = [
@@ -239,6 +239,7 @@ Issues = "https://github.com/phierceweb/pf-core/issues"
 pf-guards = "pf_core.guards.structure:run_cli"
 pf-doctor = "pf_core.doctor:run_cli"
 pf-jobs = "pf_core.cli.jobs:app"
+pf-eval = "pf_core.eval.cli:main"
 pf-setup = "pf_core.wiring:run_cli"
 
 [project.entry-points.pytest11]

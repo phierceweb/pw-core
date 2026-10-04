@@ -62,7 +62,7 @@ def _imports(tree: ast.AST, pkg: list[str]) -> list[tuple[str, int]]:
 
     Relative imports are resolved against ``pkg`` — the importing file's
     package path (``['app', 'services']`` for ``app/services/x.py``) — so
-    ``from ..repo import entries`` becomes ``app.repo.entries`` and
+    ``from ..repo import items`` becomes ``app.repo.items`` and
     ``from .. import repo`` becomes ``app.repo``. A relative import that
     climbs above the scan root is skipped (nothing there is an app layer).
     """

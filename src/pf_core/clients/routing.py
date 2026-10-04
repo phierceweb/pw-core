@@ -17,7 +17,7 @@ Usage::
 
     # config/model_router.yaml may now route agents to it:
     #   agents:
-    #     rag_answerer:
+    #     classifier:
     #       default_backend: ollama
     #       backends:
     #         ollama: {model: "qwen2.5:14b"}

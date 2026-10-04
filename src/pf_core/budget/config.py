@@ -3,7 +3,7 @@ Budget configuration loader.
 
 Reads ``BUDGET_CONFIG`` env var (default ``config/budgets.yaml``) and syncs
 the defined scopes into ``llm_budgets``. In-process reload TTL controlled by
-``BUDGET_CONFIG_RELOAD_SECONDS`` (default 300).
+``BUDGET_CONFIG_RELOAD_SECONDS``.
 
 The YAML format and the read-failure policy are documented in
 ``docs/cost-budget.md``.
@@ -21,6 +21,7 @@ from pf_core.exceptions import ConfigurationError
 from pf_core.log import get_logger
 from pf_core.utils.env import resolve_int
 from pf_core.utils.reload_cache import ReloadCache
+from pf_core.utils.yaml import safe_load
 
 logger = get_logger(__name__)
 
@@ -47,7 +48,7 @@ def _read(key: str) -> dict[str, Any]:
     # permission error, a symlink loop, and a broken symlink out of "absent".
     try:
         with open(key) as fh:
-            raw = yaml.safe_load(fh)
+            raw = safe_load(fh)
     except FileNotFoundError as exc:
         if Path(key).is_symlink():
             raise ConfigurationError(

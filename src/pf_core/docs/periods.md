@@ -4,7 +4,7 @@ Resolve named period presets (`yesterday`, `last_7d`, `day:2026-05-12`) into con
 
 ## Why this exists
 
-Reporting CLIs (`report.py`, `trends.py`, daily-stats jobs, …) re-implement the same handful of preset names. Centralizing the resolution here keeps the label format consistent across consumers — which matters because the label is the natural cohort key on output rows (`WHERE period_label = 'day:2026-05-12'`).
+Reporting CLIs tend to re-implement the same handful of preset names. Resolving them here keeps the label format consistent across projects — which matters because the label is the natural cohort key on output rows (`WHERE period_label = 'day:2026-05-12'`).
 
 ## Usage
 
@@ -54,21 +54,21 @@ period = resolve(preset, anchor=anchor, now=datetime.now(timezone.utc))
 
 ## Project-specific whitelists
 
-Each consumer typically restricts which presets are valid for which CLI (e.g. report = short ranges only; trends = multi-day only). Build a small whitelist alongside your CLI:
+A project usually restricts which presets each CLI accepts (e.g. short ranges only for a daily report). Build a small whitelist alongside your CLI:
 
 ```python
 from pf_core.utils.periods import parse_period_arg, resolve, days_in_period
 
-REPORT_PRESETS = ("yesterday", "last_24h", "last_3d", "last_7d")
-REPORT_MAX_DAYS = 7
+SHORT_PRESETS = ("yesterday", "last_24h", "last_3d", "last_7d")
+MAX_DAYS = 7
 
 preset = parse_period_arg(args.period)
-if preset.startswith("last_") and preset not in REPORT_PRESETS:
+if preset.startswith("last_") and preset not in SHORT_PRESETS:
     raise SystemExit(f"--period {preset!r} not allowed for this command")
 
 period = resolve(preset, anchor=anchor, now=now)
-if days_in_period(period) > REPORT_MAX_DAYS:
-    raise SystemExit(f"--period spans more than {REPORT_MAX_DAYS} days")
+if days_in_period(period) > MAX_DAYS:
+    raise SystemExit(f"--period spans more than {MAX_DAYS} days")
 ```
 
 The framework owns the **vocabulary** (`ROLLING_PRESETS`, `day:*`, `yesterday`, `custom`); the project owns the **policy** (which subset is legal, what the cap is). Keep policy code in the project.

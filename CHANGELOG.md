@@ -2,6 +2,39 @@
 
 Notable changes to pf-core, newest first. The project is pre-1.0 — pin to a tagged release; `main` is the development line.
 
+## v0.25.0 — 2026-10-04
+
+### Breaking
+- `EvalReport.passed` is false when any replay errored, and for a report with no results. `mean_score`, `median_score` and `pass_rate` still cover completed replays only. A gate that exits on `report.passed` now fails a run in which a golden was never scored.
+- pf-core's YAML config loaders refuse a repeated mapping key instead of keeping the last value. `AppConfig`'s YAML tier, `model_router.yaml`, prompt files, `eval.yaml` and `budgets.yaml` raise `ConfigurationError` naming the key and its line; `cache.yaml` logs `cache_config_load_failed` and turns caching off.
+- A `cache.yaml` that exists but fails to parse, or whose top level is not a mapping, turns exact and semantic caching off instead of falling back to framework defaults, which enable exact caching. So does a `defaults`/`agents` section that is not a mapping, and an `agents.<slug>` entry that is not one turns caching off for that agent. A missing file still means defaults.
+- `cache.yaml` `exact` and `semantic` read quoted booleans: `"false"`, `"no"`, `"off"` and `"0"` are false, where any non-empty string was true. Any value that is not a boolean turns the feature off and logs `cache_config_invalid_flag`.
+- `EvalRunner.run` resolves the replay client, and the judge's for `compare: llm_judge` or the comparator otherwise, before any replay, and raises when one fails — an undeclared or unregistered backend, a client that cannot be built, no model, a `model_router.yaml` that fails to load, an unregistered comparator. Each of these was a per-golden error result. An agent the router declares no longer falls back to the OpenRouter client. An agent absent from the router replays on `target["backend"]`'s client, OpenRouter when none is named.
+- `eval.yaml` rejects a key it does not define — at the top level, in `defaults` or any agent block, or in a metric gate — with `ConfigurationError` naming it when the config loads, instead of ignoring it.
+- `eval.yaml` `sampling` rejects `model` and `backend`, which overrode the run's target.
+- `compare_experiments` decides each golden by its latest replay under a tag: one that errored leaves the golden unscored, even when an earlier replay under the same tag scored.
+- `EvalRunner.run` raises `InvalidInputError` for a `tag_as` that starts with `eval:` or equals `agent:<agent_type>`, in any case: tags the golden set and replays use.
+- `run_judge` raises `ClientError` when the judge call fails or its reply has no finite numeric `score`, instead of returning 0.0. That replay errors and records no `eval_score`, so the report fails and `compare_experiments` counts the golden as unscored. A reply that came back is recorded with status `failed`.
+- `compare_experiments` returns empty `pairs`, with the goldens in `baseline_only`, when the candidate errored on every baseline golden it replayed. It raises only when the candidate tag has no replay runs at all.
+- `load_eval_config(path=)`, `EvalRunner(config_path=)` and every `pf-eval` command's `--config` raise `ConfigurationError` for a named eval.yaml that does not exist, `EVAL_CONFIG` included, or an empty path, instead of running every agent on the framework defaults. A missing default `config/eval.yaml` still means the defaults.
+- `EvalConfig.for_agent` raises `ConfigurationError` for an agent that `agents` does not list when it lists others, instead of returning the defaults; `<agent>: {}` takes the defaults. `EvalRunner.run` raises it before any replay. An `agents` key YAML reads as a non-string (`on:`, `1:`) raises when the config loads.
+- A comparator score that does not convert to a float in 0.0–1.0, a metric that does not convert to a finite float, or a result of another shape errors that replay instead of being scored: no `eval_score` is recorded and the report fails. A score past a bound by float rounding alone is clamped. `split_comparator_result` raises `InvalidInputError`. A replay whose comparator fails this way, or raises, keeps its run id on the errored result instead of `-1`.
+
+### Added
+- `pf-eval` console script (`[eval]`): `run`, `compare`, `list-golden`, `seed`, `promote`, `demote`. Exit 0 when the gate passes, 1 when it ran and failed, 2 when anything stopped it finishing — a config, `--target` or `--tag-as` error, a replay or judge client that cannot be resolved, the database, an `--output` report that cannot be written. `compare` also fails when the candidate left unscored a golden the baseline scored, including when every candidate replay errored. `--target` takes `model` and `backend` only. Every command takes `--config` and runs eval.yaml's `imports:`. `--output` creates its directory. Run from a project root, it loads `./.env` and makes the root importable. `pf_core.eval.cli.app` mounts in a project's own CLI.
+- `eval.yaml` `imports:` — modules imported when the config loads, for comparator registration and settings.
+- `compare_experiments` results carry `baseline_only` and `candidate_only`: golden ids scored under one tag alone.
+- `pf_core.utils.yaml.safe_load` and `UniqueKeyLoader`: `yaml.safe_load` that raises on a repeated mapping key.
+- `[eval]` installs jinja2, which renders `EvalReport.write_html`.
+- `GoldenSetRepo.list(limit=None)` returns every member.
+
+### Fixed
+- A malformed `eval.yaml` — not a mapping, a `defaults`/`agents` entry that is not a mapping, or a value the schema rejects — raises `ConfigurationError` naming the entry, instead of `AttributeError`, `TypeError` or pydantic's `ValidationError`.
+- `EvalRunner.run` replays every golden of the version, instead of only as many as `GoldenSetRepo.list` returns by default.
+- `LlmRunRepo.record` drops repeated tags, case-insensitively and keeping the first spelling, instead of raising `IntegrityError` and losing the run. That includes a caller-supplied `truncated` on a truncated run.
+- A repeated `record_override` for the same run keeps one `budget:override` tag and replaces the outcome notes, instead of raising `IntegrityError` before the outcome is written.
+- `LlmRunRepo.record` and `ExactCacheRepo.store` store NaN and ±Infinity in `parsed_output` as null. Postgres and MySQL rejected the row, so a run or cache entry whose parsed reply held one was lost; `raw_response` keeps the original text.
+
 ## v0.24.2 — 2026-10-03
 
 ### Fixed

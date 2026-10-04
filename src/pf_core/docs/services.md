@@ -1,6 +1,6 @@
 # Services
 
-A **Service** is a single-domain business logic unit. It owns one slice of domain logic — text summarization, entry export, catalog scanning, etc.
+A **Service** is a single-domain business logic unit. It owns one slice of domain logic — text summarization, record export, catalog scanning, etc.
 
 ## Why use the Service base class?
 
@@ -52,11 +52,11 @@ Both are keyword-only.
 
 ```python
 class ExportService(Service):
-    def export_entries(self, ids: list[str]) -> list[dict]:
-        entry_repo = self._repo(EntryRepo)
+    def export_records(self, ids: list[str]) -> list[dict]:
+        record_repo = self._repo(RecordRepo)
         tag_repo = self._repo(TagRepo)
         # Both repos share the same connection if one was provided
-        entries = [entry_repo.get_by_id(i) for i in ids]
+        records = [record_repo.get_by_id(i) for i in ids]
         ...
 ```
 

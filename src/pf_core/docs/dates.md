@@ -1,6 +1,6 @@
 # Date Utilities
 
-Date and time helpers consolidated from consumer projects. Provides ISO timestamps, date and timestamp parsing, month labels, and range generation.
+Date and time helpers: ISO timestamps, date and timestamp parsing, month labels, and range generation.
 
 For resolving relative-date phrases (`yesterday`, `Tuesday`, `March 12`) emitted by an LLM reading dated articles, see [relative-dates.md](relative-dates.md).
 

@@ -33,15 +33,15 @@ Projects subclass these for domain-specific errors:
 ```python
 from pf_core.exceptions import ClientError
 
-class ExportError(ClientError):
-    """External export API call failed."""
+class UploadError(ClientError):
+    """External upload API call failed."""
 ```
 
 **Constructor:** `AppError(message, context=None, *, cause=None)`
 
 ```python
-raise ExportError(
-    "export API timed out",
+raise UploadError(
+    "upload API timed out",
     context={"task_id": task_id, "endpoint": endpoint},
     cause=original_exc,
 )
@@ -56,10 +56,10 @@ from pf_core.log import log_exception
 
 log_exception(
     exc,
-    message_prepend="export failed",
-    additional_context={"section": "intro"},
+    message_prepend="upload failed",
+    additional_context={"record_id": 7},
     log_level="warning",
-    event_prefix="EXP",  # default "APP"
+    event_prefix="UPL",  # default "APP"
 )
 ```
 
@@ -76,14 +76,14 @@ The CLI/API boundary handles it. No catch required.
 ```python
 except Exception as e:
     log_exception(
-        ExportError("unexpected failure", context={"task_id": tid}, cause=e),
-        message_prepend="export step failed",
+        UploadError("unexpected failure", context={"task_id": tid}, cause=e),
+        message_prepend="upload step failed",
     )
 ```
 
 ### Pattern 3 — Log with context and re-raise
 ```python
-except ExportError as e:
+except UploadError as e:
     log_exception(e, additional_context={"task_id": tid})
     raise
 ```

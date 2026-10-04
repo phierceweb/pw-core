@@ -571,6 +571,33 @@ def test_record_override_attaches_tag_and_outcome(budget_db):
     assert any("manual backfill" in (o["notes"] or "") for o in outcomes)
 
 
+def test_record_override_twice_keeps_one_tag_and_latest_notes(budget_db):
+    run_id = _spend("drafter", "claude-opus-4-7", 5.0)
+    record_override(run_id=run_id, reason="manual backfill", operator="ops")
+    record_override(run_id=run_id, reason="re-approved", operator="lead")
+
+    from pf_core.db.connection import transaction
+    from pf_core.llm.tracking.schema import llm_run_tags
+
+    with transaction() as conn:
+        tags = [
+            r.tag
+            for r in conn.execute(
+                llm_run_tags.select().where(llm_run_tags.c.llm_run_id == run_id)
+            ).fetchall()
+        ]
+    assert tags.count("budget:override") == 1
+
+    from pf_core.llm.tracking.subrepos import LlmRunOutcomeRepo
+
+    overrides = [
+        o
+        for o in LlmRunOutcomeRepo().list_for_run(run_id)
+        if o["outcome_kind"] == "budget_override"
+    ]
+    assert [o["notes"] for o in overrides] == ["re-approved (operator: lead)"]
+
+
 # ---------------------------------------------------------------------------
 # YAML sync
 # ---------------------------------------------------------------------------

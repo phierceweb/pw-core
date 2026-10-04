@@ -2,7 +2,7 @@
 
 Generic patterns for multi-stage pipelines: stamp run records, snapshot output for later comparison, diff baselines, invalidate caches by stage, resume from upstream snapshots, run a named slice of ordered phases.
 
-Promoted as a coherent group from a multi-stage pipeline's re-test ergonomics work. pf-core's API parameterizes the consumer-specific filenames / dir names / stage names so any consumer with a multi-stage pipeline can use the same machinery.
+The API parameterizes filenames, directory names and stage names, so any multi-stage pipeline can use the same machinery.
 
 The six modules are independent and composable — a consumer can adopt just `run_record` for traceable runs, or layer on `baseline` + `baseline_diff` for change detection, or add `cache` + `resume` for incremental re-runs.
 

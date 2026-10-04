@@ -1,10 +1,10 @@
 # Parsers
 
-`pf_core.parsers` holds framework-level pieces for content ingestion pipelines — the kind of consumer code that fetches from external sources (RSS feeds, sitemaps, web archives) and hands structured records to an orchestrator for downstream processing.
+`pf_core.parsers` holds framework-level pieces for content ingestion pipelines — code that fetches from external sources (RSS feeds, sitemaps, web archives) and hands structured records to an orchestrator.
 
-The package is intentionally small. Per-source parser modules and the parser-to-orchestrator data classes (`PostRef`, `Post`, link extractors) live in consumers until a second consumer needs the same shape — see "Lift policy" below.
+The package is intentionally small: the two exception types and the HTML body extractor below. Per-source parsers and the record types an orchestrator consumes stay in the project — see "Scope" below.
 
-## What's here today
+## What's here
 
 ### Exception types
 
@@ -16,8 +16,8 @@ Two exception classes form the contract between per-source parser modules and th
 
 | Exception | When to raise | Orchestrator response |
 |---|---|---|
-| `ParseError` | Network failure, shape mismatch, empty body — anything that means "this source failed for this run" | Skip the source, log a WARNING, increment a `parser_errors` counter. A single source failing should not fail the whole ingest. |
-| `PaywalledPost` | A specific post is paid-only and cannot be extracted | Skip the post, increment `posts_skipped_paywalled`, log at WARNING. Distinct from `ParseError` so paywall skips don't pollute the parser-health metric. |
+| `ParseError` | Network failure, shape mismatch, empty body — anything that means "this source failed for this run" | Skip the source, log a WARNING, count it as a failure. A single source failing should not fail the whole ingest. |
+| `PaywalledPost` | A specific post is paid-only and cannot be extracted | Skip the post, count the skip apart from failures, log at WARNING. Distinct from `ParseError` so paywall skips don't count as parser failures. |
 
 Individual parsers may subclass these for source-specific signals; orchestrators only need to catch the two base classes (and a generic `Exception` fallback).
 
@@ -31,7 +31,7 @@ text, links = parse_body_html(post_html)
 # links: list[PostLink] — each with url + anchor_text + surrounding_text
 ```
 
-Pure-stdlib (`html.parser.HTMLParser`) walker that turns post body HTML into a normalized plain-text rendering plus a list of inline links with surrounding-text context. Designed for the content ingestion pattern: the LLM gets clean prose for record extraction and per-link context for "which event does this URL back?" disambiguation.
+Pure-stdlib (`html.parser.HTMLParser`) walker that turns post body HTML into a normalized plain-text rendering plus a list of inline links with surrounding-text context. Designed for the content ingestion pattern: the LLM gets clean prose for record extraction and per-link context for "which claim does this link support?" disambiguation.
 
 | Symbol | Purpose |
 |---|---|
@@ -52,7 +52,7 @@ Empty-href and empty-anchor `<a>` tags are filtered automatically (many sites sp
 from pf_core.parsers import ParseError, PaywalledPost
 
 
-def fetch_post(ref):
+def fetch(ref):
     resp = httpx.get(ref.url)
     if resp.status_code != 200:
         raise ParseError(f"fetch failed: {resp.status_code}", context={"url": ref.url})
@@ -66,13 +66,13 @@ from pf_core.parsers import ParseError, PaywalledPost
 
 for source in sources:
     try:
-        posts = parser.list_posts(source, since, until)
+        refs = parser.list_refs(source, since, until)
     except ParseError as e:
         log_exception(e, message_prepend="parser failed, skipping source")
         continue
-    for ref in posts:
+    for ref in refs:
         try:
-            post = parser.fetch_post(ref)
+            post = parser.fetch(ref)
         except PaywalledPost:
             paywalled_count += 1
             continue
@@ -83,18 +83,6 @@ for source in sources:
         # ... handle `post` ...
 ```
 
-## Lift policy
+## Scope
 
-The `pf_core.parsers` surface grows by extraction, not by speculation. New entries land here only when:
-
-1. **A second consumer needs the same code.** The first consumer keeps its implementation local; the second triggers the lift. Today's contents (the two exception types) hit that bar via a content ingestion pipeline plus the framework's general-purpose error hierarchy — they're universal enough to belong here from day one.
-2. **The contract has stabilized.** Whatever moves up should not need versioning churn for at least 90 days of two consumers exercising it. Premature lift forces a generic abstraction that has not yet seen real use.
-3. **The piece is policy-free.** Anything that encodes a specific consumer's source-ranking rules, source list, or business logic stays in the consumer. Parsers belong here; "this is a Tier-1 source" does not.
-
-Today's deliberate non-goals:
-
-- **No per-source parser modules** (per-platform RSS/HTML, etc.) — those have one consumer today; they stay there until a second project needs the same content ingest.
-- **No `PostRef` / `Post` data classes** — these are the parser→orchestrator handoff shape. A different consumer's orchestrator will likely want a different shape; lifting forces a generic abstraction with one real user.
-- **No content ingestion framework** — the orchestration shape is consumer policy.
-
-When the next piece is ready to lift, follow the `parsers.md` contract: small, explicit, documented here.
+An addition belongs here only when it is policy-free: no source list, no source ranking, no business logic. Per-source parser modules and the parser-to-orchestrator record types stay in the project, since each orchestrator wants its own shape.

@@ -243,6 +243,7 @@ check_budget(
 - Short-circuits to pass, regardless of budget state.
 - After the call, attach the tag + outcome row with `record_override(run_id=..., reason=..., operator=...)`.
 - Writes `llm_run_outcomes.outcome_kind='budget_override'` with reason + operator.
+- Safe to repeat for the same run: the tag is written once and the latest call's reason + operator replace the outcome notes.
 
 ## Emergency kill-switch
 

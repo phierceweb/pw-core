@@ -81,7 +81,7 @@ def _seed(with_jobs: bool = True, with_budgets: bool = True, with_cache: bool = 
                     status="running",
                     progress_total=10,
                     progress_current=3,
-                    current_step="drafting_section_5",
+                    current_step="processing_item_5",
                 )
             )
             jid = res.inserted_primary_key[0]

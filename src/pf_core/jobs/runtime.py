@@ -8,7 +8,7 @@ Usage::
 
     from pf_core.jobs import Job, JobRepo
 
-    job_id = JobRepo().create(kind="export_pass", inputs={...}, created_by="cli:run")
+    job_id = JobRepo().create(kind="summarize_pass", inputs={...}, created_by="cli:run")
 
     with Job(job_id) as job:
         job.transition("running")

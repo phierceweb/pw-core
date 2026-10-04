@@ -161,15 +161,15 @@ class TestSchemaFixture:
         ).fetchone()
         assert row[0] == "from_schema"
 
-    def test_llm_calls_table_exists(self, pf_tables, pf_connection):
+    def test_usage_events_table_exists(self, pf_tables, pf_connection):
         pf_connection.execute(
             text(
-                "INSERT INTO llm_calls (prompt_tokens, completion_tokens, cost_usd) "
+                "INSERT INTO usage_events (prompt_tokens, completion_tokens, cost_usd) "
                 "VALUES (:pt, :ct, :cost)"
             ),
             {"pt": 100, "ct": 50, "cost": 0.002},
         )
-        row = pf_connection.execute(text("SELECT cost_usd FROM llm_calls")).fetchone()
+        row = pf_connection.execute(text("SELECT cost_usd FROM usage_events")).fetchone()
         assert row[0] == pytest.approx(0.002)
 
 

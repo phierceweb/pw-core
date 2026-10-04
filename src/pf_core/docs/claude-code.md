@@ -77,11 +77,11 @@ Empty / missing content is skipped. An empty messages list (or one with only `sy
 
 | Default | Flags | Input tokens beyond your prompt, measured on Haiku |
 |---|---|---|
-| Claude Code's prompt and tools (before v0.23.0) | none | ~30k (26k cache read + 4.7k cache write) |
+| Claude Code's prompt and tools | `agent_prompt=True`, `tools=["default"]` | ~30k (26k cache read + 4.7k cache write) |
 | no tools | `--tools "" --strict-mcp-config` | ~4k |
 | no tools, your system prompt (**default**) | + `--system-prompt-file` | ~250, plus your system prompt |
 
-On a real 77-entry summarization prompt with a 2k-character system prompt (Sonnet), the default took 18k input tokens in one turn where the pre-v0.23.0 call took 57k over several tool turns.
+On a long summarization prompt with a 2k-character system prompt (Sonnet), the default took 18k input tokens in one turn where the call with Claude Code's prompt and tools took 57k over several tool turns.
 
 `--tools ""` removes only the built-in tools. Without `--safe-mode` (`isolate=False`) the user's MCP servers would still load theirs; `--strict-mcp-config` (with no `--mcp-config`) stops that. Under the default `isolate=True` no MCP server loads either way.
 
@@ -99,7 +99,7 @@ Tool turns are prompt-cached either way: once your system prompt, the tool defin
 
 - `tools` accepts built-in tool names only; an MCP name (`mcp__…`) raises `ConfigurationError`. MCP tools come from the user's MCP config, which `--safe-mode` switches off entirely, so they need `isolate=False` — then run from a neutral cwd, since the cwd's `CLAUDE.md`, skills and hooks load too. Grant them in `extra_args`: `new_client(isolate=False, tools=["Read"], extra_args=["--allowedTools", "Read,mcp__server__tool"])`. With named `tools` and `isolate=False`, every configured MCP server loads, and each server's tool definitions count as input tokens; `--allowedTools` pre-approves tools, it does not limit which load. For MCP tools and no built-ins, pass `--tools` yourself — `extra_args=["--tools", "", "--allowedTools", "mcp__server__tool"]` with `isolate=False`; a `--tools` in `extra_args` replaces the client's tool flags, `--strict-mcp-config` included.
 - Granting tools only through `--allowedTools` / `--allowed-tools` in `extra_args` raises `ConfigurationError` at construction: with `tools=()` those tools would not exist. So do `tools` given as a string, and `tools` together with a `--tools` in `extra_args`.
-- **Reasoning effort** is the CLI session's default, and on Sonnet it can dominate a call's output: the 77-entry prompt above produced ~29.5k output tokens for a ~2.5k-token answer in 6 minutes at the default, and ~3k tokens in under a minute with `extra_args=["--effort", "low"]` or `"medium"` — which also covered a few fewer entries. Set it per agent where output quality allows.
+- **Reasoning effort** is the CLI session's default, and on Sonnet it can dominate a call's output: the prompt above produced ~29.5k output tokens for a ~2.5k-token answer in 6 minutes at the default, and ~3k tokens in under a minute with `extra_args=["--effort", "low"]` or `"medium"` — at some cost in how much of the input the answer covered. Set it per agent where output quality allows.
 - The flags need a Claude Code CLI that supports them (`--no-session-persistence`, `--tools`, `--strict-mcp-config`, `--system-prompt-file`, `--append-system-prompt-file`; verified on 2.1.250). An older binary exits non-zero with `unknown option`.
 
 ## Class
@@ -230,8 +230,8 @@ A consumer can pin different tasks to different models in the same process — e
 from pf_core.clients.claude_code import get_client
 
 
-def get_classifier_client():
-    return get_client(model="haiku")  # cheap, fast — fine for short classification
+def get_extractor_client():
+    return get_client(model="haiku")  # cheap, fast — fine for short extraction
 
 
 def get_summarizer_client():

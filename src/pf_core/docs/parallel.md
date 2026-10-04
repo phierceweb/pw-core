@@ -50,8 +50,8 @@ def update_job(done, total):
 
 
 run_parallel(
-    items=sections,
-    fn=summarize_section,
+    items=items,
+    fn=summarize_item,
     workers=cfg.THREAD_MAX_WORKERS,
     label="Summarized",
     progress_callback=update_job,

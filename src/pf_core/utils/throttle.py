@@ -1,7 +1,7 @@
 """Client-side request throttle — enforce a minimum interval between operations.
 
-Many open-data / public APIs cap callers at a fixed rate (MusicBrainz ~1 req/s, OSM Nominatim,
-Wikipedia, OpenLibrary, …) and return ``503``/``429`` if you exceed it. Rather than have every
+Many open-data / public APIs cap callers at a fixed rate (~1 req/s for OSM Nominatim and
+Wikipedia, for example) and return ``503``/``429`` if you exceed it. Rather than have every
 client reimplement the sleep-between-calls dance, share this:
 
     from pf_core.utils.throttle import Throttle

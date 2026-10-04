@@ -155,13 +155,57 @@ def test_agent_cache_config_has_no_max_entries_field():
     ],
     ids=["agents-str", "agents-list", "defaults-str", "agent-section-str"],
 )
-def test_config_section_of_wrong_type_falls_back_to_defaults(tmp_path, monkeypatch, body):
-    """The loader is fail-empty: a mistyped section must not raise out of the getter."""
+def test_a_section_of_the_wrong_type_turns_caching_off(tmp_path, monkeypatch, caplog, body):
+    """Its own settings may be what disabled caching; the getter still never raises."""
     cfg_file = tmp_path / "cache.yaml"
     cfg_file.write_text(body)
     monkeypatch.setenv("CACHE_CONFIG", str(cfg_file))
     clear_config_cache()
-    assert get_agent_cache_config("searcher").exact is True
+    with caplog.at_level(logging.WARNING, logger="pf_core.llm.cache.config"):
+        cfg = get_agent_cache_config("searcher")
+    assert (cfg.exact, cfg.semantic) == (False, False)
+    assert _count_events(caplog, "cache_config_section_not_a_mapping") == 1
+
+
+def test_a_malformed_agent_section_leaves_other_agents_alone(tmp_path, monkeypatch):
+    cfg_file = tmp_path / "cache.yaml"
+    cfg_file.write_text('agents:\n  searcher: "nope"\n  summarizer:\n    ttl_seconds: 60\n')
+    monkeypatch.setenv("CACHE_CONFIG", str(cfg_file))
+    clear_config_cache()
+    cfg = get_agent_cache_config("summarizer")
+    assert (cfg.exact, cfg.ttl_seconds) == (True, 60)
+
+
+@pytest.mark.parametrize(
+    ("value", "exact"),
+    [
+        ("false", False),
+        ('"false"', False),
+        ('"no"', False),
+        ('"off"', False),
+        ('"0"', False),
+        ('"yes"', True),
+        ('"True"', True),
+        ("1", True),
+    ],
+)
+def test_exact_reads_quoted_booleans(tmp_path, monkeypatch, value, exact):
+    cfg_file = tmp_path / "cache.yaml"
+    cfg_file.write_text(f"defaults:\n  exact: {value}\n")
+    monkeypatch.setenv("CACHE_CONFIG", str(cfg_file))
+    clear_config_cache()
+    assert get_agent_cache_config("searcher").exact is exact
+
+
+def test_an_unrecognised_flag_turns_the_feature_off(tmp_path, monkeypatch, caplog):
+    cfg_file = tmp_path / "cache.yaml"
+    cfg_file.write_text('defaults:\n  exact: "maybe"\n  semantic: "sure"\n')
+    monkeypatch.setenv("CACHE_CONFIG", str(cfg_file))
+    clear_config_cache()
+    with caplog.at_level(logging.WARNING, logger="pf_core.llm.cache.config"):
+        cfg = get_agent_cache_config("searcher")
+    assert (cfg.exact, cfg.semantic) == (False, False)
+    assert _count_events(caplog, "cache_config_invalid_flag") == 2
 
 
 def _count_events(caplog, event: str) -> int:
@@ -223,7 +267,7 @@ def test_clear_config_cache_rearms_legacy_key_warning(tmp_path, monkeypatch, cap
     assert _count_events(caplog, "cache_config_ignored_key") == 2
 
 
-def test_non_mapping_config_falls_back_to_defaults(tmp_path, monkeypatch, caplog):
+def test_non_mapping_config_turns_caching_off(tmp_path, monkeypatch, caplog):
     cfg_file = tmp_path / "cache.yaml"
     cfg_file.write_text("- exact: false\n- ttl_seconds: 1\n")
     monkeypatch.setenv("CACHE_CONFIG", str(cfg_file))
@@ -232,9 +276,21 @@ def test_non_mapping_config_falls_back_to_defaults(tmp_path, monkeypatch, caplog
     with caplog.at_level(logging.WARNING, logger="pf_core.llm.cache.config"):
         cfg = get_agent_cache_config("searcher")
 
-    assert cfg.exact is True
-    assert cfg.ttl_seconds == 86400
+    assert (cfg.exact, cfg.semantic) == (False, False)
     assert _count_events(caplog, "cache_config_not_a_mapping") == 1
+
+
+def test_unparseable_config_turns_caching_off(tmp_path, monkeypatch, caplog):
+    cfg_file = tmp_path / "cache.yaml"
+    cfg_file.write_text("defaults:\n  exact: [true\n")
+    monkeypatch.setenv("CACHE_CONFIG", str(cfg_file))
+    clear_config_cache()
+
+    with caplog.at_level(logging.WARNING, logger="pf_core.llm.cache.config"):
+        cfg = get_agent_cache_config("searcher")
+
+    assert (cfg.exact, cfg.semantic) == (False, False)
+    assert _count_events(caplog, "cache_config_load_failed") == 1
 
 
 def test_agent_cache_config_missing_file_uses_defaults(monkeypatch):
@@ -268,6 +324,22 @@ def test_exact_cache_store_and_lookup(cache_db):
     assert row["parsed_output"] == {"label": "tech"}
     assert row["source_run_id"] == run_id
     assert row["model"] == "openai/gpt-4o"
+
+
+def test_exact_cache_stores_non_finite_parsed_floats_as_null(cache_db):
+    run_id = _make_run()
+    raw = '{"score": NaN, "xs": [Infinity, 0.5]}'
+    ExactCacheRepo().store(
+        input_hash="9" * 64,
+        agent_type="classifier",
+        model="openai/gpt-4o",
+        source_run_id=run_id,
+        parsed_output={"score": float("nan"), "xs": [float("inf"), 0.5]},
+        raw_response=raw,
+    )
+    row = ExactCacheRepo().lookup(input_hash="9" * 64, agent_type="classifier")
+    assert row["parsed_output"] == {"score": None, "xs": [None, 0.5]}
+    assert row["raw_response"] == raw
 
 
 def test_exact_cache_miss_returns_none(cache_db):

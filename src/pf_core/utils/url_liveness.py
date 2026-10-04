@@ -10,7 +10,7 @@ needed in production but absent from the bare primitive:
    detection. The bare ``check_url``
    already uses a browser-like UA but doesn't reissue as GET. This module
    does — distinguishing a dead link from a bot-block.
-3. **A kill switch.** Audit pipelines need a single boolean to bypass liveness
+3. **A kill switch.** Pipelines need a single boolean to bypass liveness
    during incidents (network outage, mass false positives) without code edits.
 
 Usage::
@@ -33,10 +33,10 @@ Usage::
     # Kill switch (consumer derives the boolean from env, config, etc.):
     check_url_cached(url, disabled=os.environ.get("URL_LIVENESS_DISABLED") == "1")
 
-The "trusted domain" short-circuit some consumers want (skip liveness for
-known-good trusted sites that frequently bot-block) is **NOT** in this
-module — the trusted-domain list is project policy, not framework
-infrastructure. Consumers wrap this function with their own short-circuit.
+A "trusted domain" short-circuit (skip liveness for known-good sites that
+frequently bot-block) is **NOT** in this module — that list is project
+policy, not framework infrastructure. Wrap this function with your own
+short-circuit.
 """
 
 from __future__ import annotations

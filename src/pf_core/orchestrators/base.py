@@ -2,7 +2,7 @@
 Base orchestrator class for multi-step workflow coordination.
 
 An orchestrator coordinates services to accomplish a multi-step task —
-exporting entries, running auto-review, scanning a catalog.  It never
+exporting records, running a review pass, scanning a catalog.  It never
 touches the database directly; all data access goes through services
 (which use repos).
 
@@ -11,15 +11,15 @@ Usage::
     from pf_core.orchestrators import Orchestrator
 
     class ExportOrchestrator(Orchestrator):
-        def run(self, entry_ids: list[str]) -> ExportResult:
-            entry_svc = self._service(EntryService)
+        def run(self, record_ids: list[str]) -> ExportResult:
+            record_svc = self._service(RecordService)
             tag_svc = self._service(TagService)
 
-            self._report(1, 3, "Loading entries")
-            entries = entry_svc.load_many(entry_ids)
+            self._report(1, 3, "Loading records")
+            records = record_svc.load_many(record_ids)
 
             self._report(2, 3, "Resolving tags")
-            tagged = tag_svc.attach_tags(entries)
+            tagged = tag_svc.attach_tags(records)
 
             self._report(3, 3, "Building export")
             return ExportResult(tagged)

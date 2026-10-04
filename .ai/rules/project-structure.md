@@ -94,7 +94,7 @@ File-size budgets are by layer-directory name. Under an `app/` tree the build ga
 
 | Layer | Action when over its limit |
 |-------|---------------------------|
-| Service (`app/services/`) | Split by concern: `{domain}_{concern}.py` (e.g. `synthesis_summaries.py`, `synthesis_cascade.py`) |
+| Service (`app/services/`) | Split by concern: `{domain}_{concern}.py` (e.g. `report_summaries.py`, `report_exports.py`) |
 | Repo (`app/repo/`) | Split by entity or operation type |
 | Orchestrator (`app/orchestrators/`) | Extract logic into services; orchestrator keeps coordination only |
 | API route (`app/api/`) | Split by resource or page group |
@@ -112,7 +112,7 @@ In `pyproject.toml`:
 ```toml
 [project]
 dependencies = [
-    "pf-core~=0.24.0",  # pin the current release (see CHANGELOG)
+    "pf-core~=0.25.0",  # pin the current release (see CHANGELOG)
     # local co-development instead: "pf-core @ file:///${PROJECT_ROOT}/../pf-core",
 ]
 ```

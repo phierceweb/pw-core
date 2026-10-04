@@ -332,7 +332,7 @@ Returns `dict[str, str]` with keys `title`, `description`, `og_title`, `og_descr
 
 ## Migrating from consumer projects
 
-**Example consumer** — `app/utils/sources.py` re-exports from pf-core:
+**Example** — a project's URL helpers module re-exports from pf-core:
 
 ```python
 # Before
@@ -344,4 +344,4 @@ def archive_timestamp_is_round(url): ...
 from pf_core.utils import archive_timestamp_is_round, domain_of  # noqa: F401
 ```
 
-No downstream caller changes needed — all callers import from `app.utils.sources`.
+No downstream caller changes needed — callers keep importing from the project's module.

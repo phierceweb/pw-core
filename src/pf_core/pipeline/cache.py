@@ -1,12 +1,11 @@
 """Stage-cascade cache invalidation.
 
 Pipelines often have multiple stages, each with its own caches. When the
-user wants to re-run from a specific stage (e.g., after changing
-splitter logic, re-run `split` without re-doing the upstream
-conversion stage), they need to invalidate that stage's cache and
-every downstream stage's STRUCTURAL caches — while preserving
-CONTENT-KEYED caches (phash, content hashes) that self-invalidate via
-their key.
+user wants to re-run from a specific stage (e.g., after changing one
+stage's logic, re-run it without redoing the stages before it), they
+need to invalidate that stage's cache and every downstream stage's
+STRUCTURAL caches — while preserving CONTENT-KEYED caches that
+self-invalidate via their key.
 
 This module provides:
   - `StageDefinition` — describes one stage: name + structural file
@@ -19,7 +18,7 @@ This module provides:
 
 File templates use `{stem}` as the only placeholder (the source input's
 filename stem). Other path components are literal — `images`, `sections`,
-`.extract-cache/`, etc.
+`.cache/`, etc.
 
 Each caller registers its own stage registry.
 """
@@ -44,8 +43,8 @@ class StageDefinition:
     they depend on upstream content being unchanged, so cascade busts
     them on every downstream re-run.
 
-    `content_keyed_files` are caches keyed by content hash / perceptual
-    hash. They self-invalidate via their key, so they're PRESERVED
+    `content_keyed_files` are caches keyed by a content hash. They
+    self-invalidate via their key, so they're PRESERVED
     across cascade and only busted when the user explicitly targets
     this stage.
     """

@@ -11,8 +11,8 @@ Usage::
     # In any module:
     logger = get_logger(__name__)
 
-    with log_context(task_id=42, section_name="intro"):
-        logger.info("search_started", model="perplexity/sonar-pro")
+    with log_context(task_id=42, item_id=7):
+        logger.info("summary_started", model="openai/gpt-4o")
 
 Environment (read by setup_logging when no explicit args):
     LOG_LEVEL   Console log level: DEBUG / INFO / WARNING / ERROR  (default INFO)
@@ -186,7 +186,7 @@ def log_exception(
     """Log an exception with structured context.
 
     Log event key: {event_prefix}-{ClassName} — use as the primary search key in
-    log files, e.g. ``grep APP-SearchError app.log``.
+    log files, e.g. ``grep APP-SummarizeError app.log``.
 
     Behaviour by exception type:
         AppError: full traceback + merged context chain; default ERROR.

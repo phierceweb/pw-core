@@ -59,18 +59,18 @@ A `CacheRegion` is the standard [dogpile.cache API](https://dogpilecache.sqlalch
 
 ```python
 # Calls loader() on cache miss, returns cached value on hit
-result = region.get_or_create("sections_list", lambda: db.list_sections())
+result = region.get_or_create("categories_list", lambda: db.list_categories())
 ```
 
 ### Decorator style
 
 ```python
 @region.cache_on_arguments()
-def get_sections():
-    return db.list_sections()
+def get_categories():
+    return db.list_categories()
 
 
-sections = get_sections()  # cached after first call
+categories = get_categories()  # cached after first call
 ```
 
 ### Manual operations
@@ -124,7 +124,7 @@ api_cache.invalidate()  # only API cache is invalidated
 
 ## Example: wrapping regions in a project module
 
-A consumer uses three regions wrapped in a `redis_cache.py` module:
+A project can wrap its regions in one module:
 
 ```python
 # app/redis_cache.py
@@ -134,7 +134,7 @@ from app.config import cfg
 _api_region = None
 
 
-def _get_api_region():
+def _region():
     global _api_region
     if _api_region is None:
         _api_region = create_region(
@@ -148,23 +148,23 @@ def _get_api_region():
 def cached_json(key_parts, query, loader):
     """Cache an API response."""
     key = ":".join(str(p) for p in key_parts)
-    return _get_api_region().get_or_create(key, loader)
+    return _region().get_or_create(key, loader)
 
 
-def bump_cache_generation():
+def invalidate_api_cache():
     """Invalidate all API caches (called after data writes)."""
-    _get_api_region().invalidate()
+    _region().invalidate()
 ```
 
 Callers don't know or care about Redis:
 
 ```python
 # In an API route
-sections = redis_cache.cached_json(("sections",), None, db.list_sections)
+categories = redis_cache.cached_json(("categories",), None, db.list_categories)
 
 # After a write
-db.update_entry(entry_id, data)
-redis_cache.bump_cache_generation()
+db.update_item(item_id, data)
+redis_cache.invalidate_api_cache()
 ```
 
 ## Backward compatibility

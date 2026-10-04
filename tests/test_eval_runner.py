@@ -128,6 +128,33 @@ def test_report_summary_fail_mode():
     assert "FAIL" in report.summary()
 
 
+def _report_with_errored_replays(n_errored: int) -> EvalReport:
+    results = [EvalResult(golden_id=1, run_id=10, score=1.0, passed=True)] + [
+        EvalResult(golden_id=i, run_id=-1, score=0.0, passed=False, error="timeout")
+        for i in range(2, 2 + n_errored)
+    ]
+    return EvalReport(
+        agent_type="drafter",
+        version="golden_v1",
+        target={},
+        results=results,
+        cfg=AgentEvalConfig(pass_threshold=0.8),
+    )
+
+
+def test_report_with_an_errored_replay_fails():
+    """An errored replay is a golden nobody scored; the scored ones cannot vouch for it."""
+    assert _report_with_errored_replays(9).passed is False
+
+
+def test_report_with_no_results_fails():
+    assert _make_report([], threshold=0.0).passed is False
+
+
+def test_report_summary_counts_errored_replays():
+    assert "9 errored" in _report_with_errored_replays(9).summary()
+
+
 def test_report_write_html(tmp_path):
     report = _make_report([0.8, 0.9, 0.7])
     out_path = tmp_path / "report.html"
@@ -182,6 +209,7 @@ def test_eval_runner_run_dispatches_to_each_golden(tracking_db, monkeypatch):
         return EvalResult(golden_id=golden_id, run_id=9000 + golden_id, score=1.0, passed=True)
 
     monkeypatch.setattr(EvalRunner, "_run_single_replay", _fake_replay)
+    monkeypatch.setattr("pf_core.clients.openrouter.get_client", lambda *a, **k: object())
 
     cfg = EvalConfig({"agents": {"runner_test_agent": {"compare": "structured_diff"}}})
     runner = EvalRunner.__new__(EvalRunner)
@@ -382,17 +410,81 @@ def test_replay_resolves_client_through_the_router(tracking_db, monkeypatch):
     runner = EvalRunner.__new__(EvalRunner)
     runner._cfg = cfg
 
-    # No target model: the router supplies it — previously impossible for
-    # nested-form agents.
+    # No target model: the router supplies it.
     report = runner.run(version="routed_v1", agent_type="routed_agent", target={})
     assert report.results[0].error is None
     assert report.results[0].score == 1.0
     assert models_called == ["routed-model"]
 
 
-def test_replay_non_config_router_error_becomes_error_result(tracking_db, monkeypatch):
+def test_a_failed_judge_errors_the_replay_and_records_no_score(tracking_db, monkeypatch):
+    from sqlalchemy import select
+
+    from pf_core.eval._golden import GoldenSetRepo
+    from pf_core.eval._runner import EvalRunner
+    from pf_core.llm.tracking import llm_run_outcomes
+
+    gid = _seed_golden(tracking_db, slug="judged_agent", parsed_output={"answer": 1})
+    GoldenSetRepo().add(gid, version="judged_v1")
+
+    class _Replay:
+        def chat(self, *, messages, model="", **kwargs):
+            return '{"answer": 1}', {"duration_ms": 1}
+
+    class _UnreachableJudge:
+        def chat(self, *, messages, model="", **kwargs):
+            raise ConnectionError("judge unreachable")
+
+    monkeypatch.setattr(
+        "pf_core.eval._runner.resolve_agent", lambda slug, **k: (_Replay(), {"model": "m"}, "fake")
+    )
+    monkeypatch.setattr(
+        "pf_core.eval._judge.resolve_agent",
+        lambda slug, **k: (_UnreachableJudge(), {"model": "judge-m"}, "fake"),
+    )
+    runner = EvalRunner.__new__(EvalRunner)
+    runner._cfg = EvalConfig({"agents": {"judged_agent": {"compare": "llm_judge"}}})
+
+    report = runner.run(version="judged_v1", agent_type="judged_agent", target={})
+
+    result = report.results[0]
+    assert "judge unreachable" in (result.error or "")
+    assert result.run_id > 0
+    assert not report.passed
+    with tracking_db.connect() as conn:
+        kinds = conn.execute(
+            select(llm_run_outcomes.c.outcome_kind).where(
+                llm_run_outcomes.c.llm_run_id == result.run_id
+            )
+        ).scalars()
+        assert "eval_score" not in list(kinds)
+
+
+def test_run_rejects_a_tag_in_the_eval_namespace(tracking_db, monkeypatch):
+    from pf_core.eval._golden import GoldenSetRepo
+    from pf_core.eval._runner import EvalRunner
+    from pf_core.exceptions import InvalidInputError
+
+    gid = _seed_golden(tracking_db, slug="tagged_agent", parsed_output={"answer": 1})
+    GoldenSetRepo().add(gid, version="tagged_v1")
+
+    def _never(*args, **kwargs):
+        raise AssertionError("no replay may run")
+
+    monkeypatch.setattr("pf_core.eval._runner.resolve_agent", _never)
+    runner = EvalRunner.__new__(EvalRunner)
+    runner._cfg = EvalConfig({})
+
+    with pytest.raises(InvalidInputError, match="Eval:tagged_v1"):
+        runner.run(
+            version="tagged_v1", agent_type="tagged_agent", target={}, tag_as="Eval:tagged_v1"
+        )
+    assert [r["id"] for r in GoldenSetRepo().list(version="tagged_v1")] == [gid]
+
+
+def test_a_non_config_router_error_stops_the_run(tracking_db, monkeypatch):
     """Only ConfigurationError degrades to the OpenRouter fallback; any other
-    resolution failure surfaces as an error result, never silently swallowed."""
+    resolution failure stops the run before a replay, never silently swallowed."""
     from pf_core.eval._golden import GoldenSetRepo
     from pf_core.eval._runner import EvalRunner
 
@@ -408,12 +500,43 @@ def test_replay_non_config_router_error_becomes_error_result(tracking_db, monkey
     runner = EvalRunner.__new__(EvalRunner)
     runner._cfg = cfg
 
-    report = runner.run(
-        version="broken_v1", agent_type="broken_resolve_agent", target={"model": "x"}
-    )
-    result = report.results[0]
-    assert result.error is not None and "client exploded" in result.error
-    assert result.passed is False
+    with pytest.raises(RuntimeError, match="client exploded"):
+        runner.run(version="broken_v1", agent_type="broken_resolve_agent", target={"model": "x"})
+
+
+def test_replay_of_a_routed_agent_never_falls_back_to_openrouter(
+    tracking_db, monkeypatch, tmp_path
+):
+    """The OpenRouter fallback is for agents the router doesn't know; a routed agent's
+    config error must stop the run, not silently run on another transport."""
+    from pf_core.eval._golden import GoldenSetRepo
+    from pf_core.eval._runner import EvalRunner
+    from pf_core.exceptions import ConfigurationError
+    from pf_core.llm.router import clear_cache
+
+    router = tmp_path / "model_router.yaml"
+    router.write_text("agents:\n  exhausted_agent:\n    model: routed-model\n")
+    monkeypatch.setenv("MODEL_ROUTER_CONFIG", str(router))
+    clear_cache()
+    gid = _seed_golden(tracking_db, slug="exhausted_agent", parsed_output={"a": 1})
+    GoldenSetRepo().add(gid, version="exhausted_v1")
+
+    def _exhausted(slug, **kwargs):
+        raise ConfigurationError("agent 'exhausted_agent': no available backend")
+
+    def _boom(*a, **k):
+        raise AssertionError("OpenRouter fallback must not be used for a routed agent")
+
+    monkeypatch.setattr("pf_core.eval._runner.resolve_agent", _exhausted)
+    monkeypatch.setattr("pf_core.clients.openrouter.get_client", _boom)
+
+    runner = EvalRunner.__new__(EvalRunner)
+    runner._cfg = EvalConfig({"agents": {"exhausted_agent": {"compare": "structured_diff"}}})
+    try:
+        with pytest.raises(ConfigurationError, match="no available backend"):
+            runner.run(version="exhausted_v1", agent_type="exhausted_agent", target={})
+    finally:
+        clear_cache()
 
 
 def test_array_golden_errors_instead_of_silent_pass(tracking_db, monkeypatch):
@@ -431,11 +554,14 @@ def test_array_golden_errors_instead_of_silent_pass(tracking_db, monkeypatch):
     )
     GoldenSetRepo().add(gid, version="array_v1")
 
-    def _no_resolve(*a, **k):
-        raise AssertionError("replay call must not be spent on an uncomparable golden")
+    class _UnspentClient:
+        def chat(self, **kwargs):
+            raise AssertionError("replay call must not be spent on an uncomparable golden")
 
-    monkeypatch.setattr("pf_core.eval._runner.resolve_agent", _no_resolve)
-    monkeypatch.setattr("pf_core.clients.openrouter.get_client", _no_resolve)
+    monkeypatch.setattr(
+        "pf_core.eval._runner.resolve_agent",
+        lambda *a, **k: (_UnspentClient(), {"model": "x"}, "fake"),
+    )
 
     cfg = EvalConfig({"agents": {"array_agent": {"compare": "structured_diff"}}})
     runner = EvalRunner.__new__(EvalRunner)
@@ -559,6 +685,83 @@ def test_metric_gate_with_no_source_fails_closed(tracking_db, monkeypatch):
     result = report.results[0]
     assert result.score == 0.0
     assert result.passed is False
+
+
+@pytest.mark.parametrize(
+    ("value", "gate"),
+    [
+        (float("nan"), {"min": 0.5}),
+        (float("nan"), {"max": 2.0}),
+        (float("inf"), {"min": 0.5}),
+        (float("-inf"), {"max": 2.0}),
+    ],
+)
+def test_a_non_finite_metric_fails_its_gate(value, gate):
+    from pf_core.eval._config import MetricGate
+    from pf_core.eval._runner import _apply_metric_gates
+
+    gates = [MetricGate(name="field_ratio", **gate)]
+    assert _apply_metric_gates(1.0, gates, {"field_ratio": value}, run_id=1) == 0.0
+
+
+@pytest.mark.parametrize("returned", [85.0, float("inf"), (0.9, {"field_ratio": float("nan")})])
+def test_a_comparator_result_out_of_contract_errors_the_replay(tracking_db, monkeypatch, returned):
+    """Scored as-is, 85.0 or inf would carry the mean past any threshold."""
+    from sqlalchemy import select
+
+    from pf_core.eval._compare import register_comparator
+    from pf_core.llm.tracking import llm_run_metrics, llm_run_outcomes
+
+    register_comparator("contract_test_out_of_range")(lambda golden, replay, *, context: returned)
+    report = _run_gated(
+        tracking_db,
+        monkeypatch,
+        slug="contract_agent",
+        comparator="contract_test_out_of_range",
+        gates=[],
+    )
+    result = report.results[0]
+    assert "comparator" in (result.error or "")
+    assert result.run_id > 0
+    assert report.passed is False
+
+    with tracking_db.connect() as conn:
+        outcomes = conn.execute(
+            select(llm_run_outcomes.c.outcome_kind).where(
+                llm_run_outcomes.c.llm_run_id == result.run_id
+            )
+        ).fetchall()
+        metrics = conn.execute(
+            select(llm_run_metrics.c.metric_name).where(
+                llm_run_metrics.c.llm_run_id == result.run_id
+            )
+        ).fetchall()
+    assert outcomes == [] and metrics == []
+
+
+def test_a_raising_comparator_errors_the_replay_and_keeps_its_run_id(tracking_db, monkeypatch):
+    from sqlalchemy import select
+
+    from pf_core.eval._compare import register_comparator
+    from pf_core.llm.tracking import llm_run_outcomes
+
+    def _raises(golden, replay, *, context):
+        raise KeyError("missing")
+
+    register_comparator("contract_test_raises")(_raises)
+    report = _run_gated(
+        tracking_db, monkeypatch, slug="raising_agent", comparator="contract_test_raises", gates=[]
+    )
+    result = report.results[0]
+    assert result.error and result.run_id > 0
+    assert report.passed is False
+    with tracking_db.connect() as conn:
+        outcomes = conn.execute(
+            select(llm_run_outcomes.c.outcome_kind).where(
+                llm_run_outcomes.c.llm_run_id == result.run_id
+            )
+        ).fetchall()
+    assert outcomes == []
 
 
 # ---------------------------------------------------------------------------
@@ -764,6 +967,114 @@ def test_compare_experiments_reports_partial_overlap_not_raises(tracking_db):
     assert result["candidate_runs"] == 2
     assert len(result["pairs"]) == 1
     assert result["pairs"][0]["golden_id"] == g2
+
+
+def test_compare_experiments_names_goldens_only_one_side_scored(tracking_db):
+    """An errored replay records no score, so it drops out of the pairs; the caller
+    needs to know which goldens went unpaired to refuse a partial comparison."""
+    aid, mid = _seed_compare_agent(tracking_db, slug="cmp_unpaired_agent")
+    g1, g2, g3 = (_seed_golden_run(tracking_db, agent_type_id=aid, model_id=mid) for _ in range(3))
+    for tag, goldens in (("experiment:base", (g1, g2)), ("experiment:cand", (g2, g3))):
+        for gid in goldens:
+            _seed_scored_replay(
+                tracking_db, agent_type_id=aid, model_id=mid, golden_id=gid, tag=tag, score=0.7
+            )
+
+    result = _compare_runner().compare_experiments(
+        baseline="experiment:base", candidate="experiment:cand", agent_type="cmp_unpaired_agent"
+    )
+    assert result["baseline_only"] == [g1]
+    assert result["candidate_only"] == [g3]
+
+
+def _seed_unscored_replay(
+    tracking_db, *, agent_type_id: int, model_id: int, golden_id: int, tag: str
+) -> int:
+    """A replay recorded with no eval_score outcome, as a failed client call leaves it."""
+    from pf_core.llm.tracking import llm_run_links, llm_run_tags, llm_runs
+
+    with tracking_db.begin() as conn:
+        rid = conn.execute(
+            llm_runs.insert().values(
+                agent_type_id=agent_type_id, model_id=model_id, status="failed"
+            )
+        ).inserted_primary_key[0]
+        conn.execute(
+            llm_run_links.insert().values(
+                parent_run_id=golden_id, child_run_id=rid, relation="replay"
+            )
+        )
+        conn.execute(llm_run_tags.insert().values(llm_run_id=rid, tag=tag))
+    return rid
+
+
+def test_compare_experiments_a_later_errored_replay_unscores_the_golden(tracking_db):
+    aid, mid = _seed_compare_agent(tracking_db, slug="cmp_rerun_agent")
+    gid = _seed_golden_run(tracking_db, agent_type_id=aid, model_id=mid)
+    seed = {"agent_type_id": aid, "model_id": mid, "golden_id": gid}
+    _seed_scored_replay(tracking_db, **seed, tag="experiment:base", score=0.8)
+    _seed_scored_replay(tracking_db, **seed, tag="experiment:cand", score=0.9)
+    _seed_unscored_replay(tracking_db, **seed, tag="experiment:cand")
+
+    result = _compare_runner().compare_experiments(
+        baseline="experiment:base", candidate="experiment:cand", agent_type="cmp_rerun_agent"
+    )
+    assert result["pairs"] == []
+    assert result["baseline_only"] == [gid]
+
+
+def test_compare_experiments_a_later_scored_replay_restores_the_golden(tracking_db):
+    aid, mid = _seed_compare_agent(tracking_db, slug="cmp_restore_agent")
+    gid = _seed_golden_run(tracking_db, agent_type_id=aid, model_id=mid)
+    seed = {"agent_type_id": aid, "model_id": mid, "golden_id": gid}
+    _seed_scored_replay(tracking_db, **seed, tag="experiment:base", score=0.8)
+    _seed_unscored_replay(tracking_db, **seed, tag="experiment:cand")
+    _seed_scored_replay(tracking_db, **seed, tag="experiment:cand", score=0.9)
+
+    result = _compare_runner().compare_experiments(
+        baseline="experiment:base", candidate="experiment:cand", agent_type="cmp_restore_agent"
+    )
+    assert [p["golden_id"] for p in result["pairs"]] == [gid]
+    assert result["baseline_only"] == []
+
+
+def test_compare_experiments_reports_a_candidate_that_scored_nothing(tracking_db):
+    """A candidate whose every replay errored is a failed comparison, not an
+    unrunnable one: no pairs, and every baseline golden in ``baseline_only``."""
+    aid, mid = _seed_compare_agent(tracking_db, slug="cmp_all_errored_agent")
+    g1, g2 = (_seed_golden_run(tracking_db, agent_type_id=aid, model_id=mid) for _ in range(2))
+    for gid in (g1, g2):
+        _seed_scored_replay(
+            tracking_db, agent_type_id=aid, model_id=mid, golden_id=gid, tag="base", score=0.9
+        )
+        _seed_unscored_replay(
+            tracking_db, agent_type_id=aid, model_id=mid, golden_id=gid, tag="cand"
+        )
+
+    result = _compare_runner().compare_experiments(
+        baseline="base", candidate="cand", agent_type="cmp_all_errored_agent"
+    )
+    assert result["pairs"] == []
+    assert result["baseline_only"] == [g1, g2]
+    assert result["candidate_runs"] == 0
+
+
+def test_compare_experiments_raises_when_an_unscored_candidate_replayed_other_goldens(
+    tracking_db,
+):
+    from pf_core.exceptions import PreconditionError
+
+    aid, mid = _seed_compare_agent(tracking_db, slug="cmp_errored_elsewhere_agent")
+    g1, g2 = (_seed_golden_run(tracking_db, agent_type_id=aid, model_id=mid) for _ in range(2))
+    _seed_scored_replay(
+        tracking_db, agent_type_id=aid, model_id=mid, golden_id=g1, tag="base", score=0.9
+    )
+    _seed_unscored_replay(tracking_db, agent_type_id=aid, model_id=mid, golden_id=g2, tag="cand")
+
+    with pytest.raises(PreconditionError, match="share no golden parent"):
+        _compare_runner().compare_experiments(
+            baseline="base", candidate="cand", agent_type="cmp_errored_elsewhere_agent"
+        )
 
 
 def test_compare_experiments_raises_when_tags_share_no_golden(tracking_db):

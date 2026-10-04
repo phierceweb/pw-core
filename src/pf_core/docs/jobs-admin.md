@@ -21,8 +21,8 @@ from pf_core.jobs.workers import terminate_job
 app.include_router(
     make_jobs_router(
         auth_dep=require_admin,  # required — see Auth below
-        kind_labels={"report_pass": "report"},
-        describe=lambda job: {"label": section_label(job), "href": section_url(job)},
+        kind_labels={"sync_pass": "sync"},
+        describe=lambda job: {"label": project_label(job), "href": project_url(job)},
         terminate_hook=terminate_job,  # only when jobs run as subprocesses
         prefix="/jobs",
     )

@@ -79,7 +79,7 @@ These are tested explicitly so consumers can rely on the behavior.
 
 ## Worked example — a content_type vocabulary
 
-A consumer classifies ingested documents by *content type* (article, memo, post, report, etc.). The classifier LLM emits free-text labels like `"blog article"`, `"social media post"`, `"advertisement"`, but the entries table needs canonical slugs. `SlugNormalizer` centralizes the mapping:
+A consumer classifies ingested documents by *content type* (article, memo, post, report, etc.). The classifier LLM emits free-text labels like `"blog article"`, `"social media post"`, `"advertisement"`, but the documents table needs canonical slugs. `SlugNormalizer` centralizes the mapping:
 
 ```python
 # myapp/content_types.py
@@ -94,13 +94,13 @@ _NORMALIZER = SlugNormalizer(
         "social media post": "post",
         "white paper": "report",
         "press release": "release",
-        # ... ~150 more domain-specific mappings ...
+        # ... more domain-specific mappings ...
     },
     explicit_rejects={
         "advertisement",  # ads aren't catalogued content
         "spam",  # junk, not content
         "boilerplate",  # template text, not content either
-        # ... ~30 more non-content categories ...
+        # ... more non-content categories ...
     },
 )
 

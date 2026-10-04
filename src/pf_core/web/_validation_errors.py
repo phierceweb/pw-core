@@ -1,11 +1,11 @@
 """Validation errors that wrap a validator's InvalidInputError are answered as that error.
 
-Before InvalidInputError was a ValueError, one raised in a validator escaped validation and
-reached the app's FlowException handlers. pydantic now wraps it — in its own ``ValidationError``,
-or FastAPI's request, websocket or response validation error — so the handler for each of those
-four classes is wrapped: a wrapped InvalidInputError goes to the handler for its own class, and
-anything else to the handler that answered it before. The wrapping happens when the middleware
-stack is built, so a handler the app registers after ``create_app`` is wrapped too.
+InvalidInputError is a ValueError, so pydantic wraps one raised in a validator — in its own
+``ValidationError``, or FastAPI's request, websocket or response validation error. The handler for
+each of those four classes is wrapped: a wrapped InvalidInputError goes to the handler for its own
+class, and anything else to the handler registered for the validation error. The wrapping happens
+when the middleware stack is built, so a handler the app registers after ``create_app`` is wrapped
+too.
 """
 
 from __future__ import annotations

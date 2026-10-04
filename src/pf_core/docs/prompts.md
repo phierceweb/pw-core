@@ -162,15 +162,14 @@ system_text, version = render_spec(spec)
 # → ("You are a summarizer. Summarize the text.\n...", 7)
 ```
 
-`render_spec()` returns a `(text, version)` tuple — pass both to your agent-run logger in one step:
+`render_spec()` returns a `(text, version)` tuple, so a run logger that records the prompt version gets both in one step:
 
 ```python
-db.log_agent_run(
-    job_id, "summarizer", model,
+log_run(
+    agent_type="summarizer",
+    model=model,
     prompt_version=version,
-    system_prompt=system_text,
     rendered_prompts=(system_text, user_text),
-    ...
 )
 ```
 
@@ -277,7 +276,7 @@ prompts = load_prompts("config/prompts.yaml")
 
 ```python
 # Before
-def _inject_domain(text: str) -> str:
+def _inject_settings(text: str) -> str:
     return (
         text.replace("@@APP_NAME@@", cfg.APP_NAME).replace("@@START_DATE@@", str(START_DATE))
         # ... more .replace() calls
@@ -288,7 +287,7 @@ def _inject_domain(text: str) -> str:
 from pf_core.llm.prompts import render
 
 
-def _inject_domain(text: str) -> str:
+def _inject_settings(text: str) -> str:
     return render(
         text,
         style="@@",

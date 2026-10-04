@@ -57,14 +57,14 @@ Pattern for testing that framework helpers handle bad stored data gracefully:
 4. Assert the fallback value matches the function's contract
 
 ```python
-def test_get_config_malformed_json(pf_tables):
-    configs.upsert_config(folder, SAMPLE_CONFIG)
+def test_get_settings_malformed_json(pf_tables):
+    settings_repo.save(project_id, SAMPLE_SETTINGS)
     with transaction() as conn:
         conn.execute(
-            text("UPDATE configs SET data_json = :v WHERE id = (SELECT MAX(id) FROM configs)"),
+            text("UPDATE settings SET data_json = :v WHERE id = (SELECT MAX(id) FROM settings)"),
             {"v": "{{bad json{{"},
         )
-    result = configs.get_config(folder)
+    result = settings_repo.get(project_id)
     assert result["data"] == []  # fallback value
 ```
 

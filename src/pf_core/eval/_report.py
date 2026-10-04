@@ -51,7 +51,7 @@ pre { background: #f5f5f5; padding: 0.5rem; overflow-x: auto; font-size: 0.85em;
     ({{ "%.0f"|format(pass_rate * 100) }}%)</p>
   <p><strong>Overall:</strong>
     {% if overall_pass %}<span class="pass">PASS</span>{% else %}<span class="fail">FAIL</span>{% endif %}
-    (threshold {{ "%.2f"|format(threshold) }})</p>
+    (threshold {{ "%.2f"|format(threshold) }}{% if n_total > n_completed %}; {{ n_total - n_completed }} errored{% endif %})</p>
 </div>
 
 {% if failures %}
@@ -150,7 +150,13 @@ class EvalReport:
 
     @property
     def passed(self) -> bool:
-        """True if mean_score meets the pass_threshold in the agent config."""
+        """True when every replay completed and mean_score meets the agent's pass_threshold.
+
+        An errored replay is a golden nothing scored, so it fails the report however the
+        completed replays scored.
+        """
+        if not self.results or any(r.error is not None for r in self.results):
+            return False
         return self.mean_score >= self.cfg.pass_threshold
 
     # ------------------------------------------------------------------
@@ -172,9 +178,10 @@ class EvalReport:
         ]
         if n_ok > 1:
             lines.append(f"Median:  {self.median_score:.3f}")
-        lines.append(
-            f"Pass:    {verdict} ({n_pass}/{n_ok} above threshold {self.cfg.pass_threshold:.2f})"
-        )
+        detail = f"{n_pass}/{n_ok} above threshold {self.cfg.pass_threshold:.2f}"
+        if n > n_ok:
+            detail += f"; {n - n_ok} errored"
+        lines.append(f"Pass:    {verdict} ({detail})")
         failures = [r for r in self.results if r.score < 0.5]
         if failures:
             lines.append("")
@@ -187,7 +194,7 @@ class EvalReport:
         return "\n".join(lines)
 
     def write_html(self, path: str) -> None:
-        """Write a self-contained HTML diff report to ``path``."""
+        """Write a self-contained HTML report to ``path``; needs jinja2 (the ``[eval]`` extra)."""
         import jinja2
 
         env = jinja2.Environment(loader=jinja2.BaseLoader(), autoescape=True)

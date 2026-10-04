@@ -14,8 +14,8 @@ Usage::
 
     # Use dogpile.cache API directly
     @api_cache.cache_on_arguments()
-    def get_sections():
-        return db.list_sections()
+    def get_categories():
+        return db.list_categories()
 
     # Manual get/set/delete
     api_cache.set("mykey", "myvalue")

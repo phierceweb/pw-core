@@ -3,9 +3,8 @@
 Framework-level pieces shared by any consumer building a "fetch from
 external source → extract structured records" pipeline. Per-source
 parser modules (per-platform RSS/HTML, sitemap walkers) and the
-parser-to-orchestrator handoff classes (``PostRef``, ``Post``) stay
-in consumers until a second consumer needs them. See
-``pf_core/docs/parsers.md`` for the lift policy.
+parser-to-orchestrator handoff types stay in the project. See
+``pf_core/docs/parsers.md`` for the scope.
 
 Public API::
 

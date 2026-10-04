@@ -59,7 +59,7 @@ Per-agent policy. Place in `config/cache.yaml` (or set `CACHE_CONFIG` env var).
 
 To disable caching entirely with no config file, set `CACHE_CONFIG` to `off` (also accepted: `disabled`, `none`, `0`) — exact and semantic caching turn off for every agent. This is what test suites should use (`hermetic_test_env()` sets it — see [testing.md](testing.md)); a missing file, by contrast, means framework defaults, which have `exact: true`.
 
-The loader never raises on a bad config: a file that fails to parse, or whose top level is not a mapping, logs a warning (`cache_config_load_failed` / `cache_config_not_a_mapping`) and falls back to framework defaults.
+The loader never raises on a bad config. A missing file means framework defaults. A file that exists but fails to parse (a repeated key included — see [yaml-utils](yaml-utils.md)), or whose top level is not a mapping, logs a warning (`cache_config_load_failed` / `cache_config_not_a_mapping`) and turns caching off — exact and semantic — since the unreadable file may be what disabled it. A `defaults` or `agents` section that is not a mapping turns caching off for every agent, and an `agents.<slug>` entry that is not a mapping turns it off for that agent (`cache_config_section_not_a_mapping`). `exact` and `semantic` accept YAML booleans and their quoted forms (`"false"`, `"no"`, `"off"`, `"0"` and the true counterparts); any other value turns that feature off (`cache_config_invalid_flag`).
 
 ```yaml
 # config/cache.yaml
@@ -121,7 +121,7 @@ The value written to `llm_runs.input_hash`. Use it as the primary key for both t
 
 **Accepts** either `messages` list or pre-rendered `rendered_system` / `rendered_user` strings. Non-sampling keys in the `sampling` dict (e.g. `model`, `agent_type`) are automatically stripped before hashing.
 
-**Beyond the rendered prompts.** Rendering keeps only plain-string `system`/`user` content, so a `messages` list carrying anything else — multi-part (vision) content, assistant/tool turns, `tool_calls`, a `name` field — additionally keys the hash by a digest of the whole list. Without it, every vision call on one model collapses to a single key and the cache returns page 1's answer for pages 2..N. A list of plain `{role, content}` system/user string messages hashes exactly as it did before the digest existed, so those cache entries stay valid; lists of any other shape get new keys and repopulate on next use.
+**Beyond the rendered prompts.** Rendering keeps only plain-string `system`/`user` content, so a `messages` list carrying anything else — multi-part (vision) content, assistant/tool turns, `tool_calls`, a `name` field — additionally keys the hash by a digest of the whole list. Without it, every vision call on one model collapses to a single key and the cache returns page 1's answer for pages 2..N. A list of plain `{role, content}` system/user string messages hashes on the rendered prompts alone, with no digest.
 
 A part that isn't JSON data (an open file handle, a client object) is stringified rather than rejected. Objects without a stable `repr` therefore produce a per-process key that never hits across processes — a lost cache, not a wrong answer.
 
@@ -144,7 +144,7 @@ Returns `None` on miss or when caching is disabled for the agent. On hit, return
 | Field | Type | Description |
 |-------|------|-------------|
 | `entry_id` | `int` | PK of `llm_cache_entries` |
-| `parsed_output` | `Any` | Cached parsed JSON value |
+| `parsed_output` | `Any` | Cached parsed JSON value; NaN and ±Infinity come back as `None` |
 | `raw_response` | `str \| None` | Cached raw LLM response |
 | `source_run_id` | `int` | FK to original `llm_runs` row |
 | `model` | `str` | Model name from the source run |
@@ -172,7 +172,7 @@ cache_store(
 
 No-op when exact caching is disabled for the agent.
 
-**Truncation guard.** A cache hit replays stored text with no finish reason, so a truncated response written to the cache would lose its flag forever and replay incomplete on every hit. `cache_store` therefore refuses a known-truncated store itself — pass the client `usage` dict and it derives truncation from `usage["finish_reason"]` (via [`truncated_from_usage`](llm-parse.md#detecting-truncation-truncated-not-the-text)); an explicit `truncated=` overrides. A refused store logs `cache_store_skipped_truncated` and returns. Unknown truncation (no `usage`, no `truncated`, or an unrecognised finish reason) stores as before. `llm_step` forwards `usage=` for you. A store over an existing `input_hash` — a concurrent identical request, or a re-store after the entry expired — refreshes that row in place through the portable [`upsert`](db-upsert.md) helper: same id, same `created_at`, same `hit_count`/`last_hit_at`, new response and expiry. Since `input_hash` covers model, prompts, sampling, and configs, a conflicting row is the same logical request.
+**Truncation guard.** A cache hit replays stored text with no finish reason, so a truncated response written to the cache would lose its flag forever and replay incomplete on every hit. `cache_store` therefore refuses a known-truncated store itself — pass the client `usage` dict and it derives truncation from `usage["finish_reason"]` (via [`truncated_from_usage`](llm-parse.md#detecting-truncation-truncated-not-the-text)); an explicit `truncated=` overrides. A refused store logs `cache_store_skipped_truncated` and returns. Unknown truncation (no `usage`, no `truncated`, or an unrecognised finish reason) is stored. `llm_step` forwards `usage=` for you. A store over an existing `input_hash` — a concurrent identical request, or a re-store after the entry expired — refreshes that row in place through the portable [`upsert`](db-upsert.md) helper: same id, same `created_at`, same `hit_count`/`last_hit_at`, new response and expiry. Since `input_hash` covers model, prompts, sampling, and configs, a conflicting row is the same logical request.
 
 ## record_cache_hit()
 

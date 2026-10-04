@@ -59,12 +59,12 @@ Decoding runs against `max_bytes`, not just the wire read — a cap that bounded
 
 `timeout_s` is the socket timeout and applies **per read**, not to the request as a whole. A server that dribbles a few bytes at a time resets it on every read, so the call never returns and no amount of lowering `timeout_s` ends it. There is currently **no total-request bound** — a hung fetch hangs until the peer gives up.
 
-This is not theoretical. A crawl has sat blocked for over half an hour in `_ssl__SSLSocket_read` with `timeout_s=30` in force; a stack sample put it in `_buffered_readline` — reading the status line, before any body byte arrived.
+The stall can come before any body byte arrives: a request can block indefinitely in the TLS read of the status line (`_buffered_readline`) with `timeout_s=30` in force.
 
 Two consequences worth designing around:
 
 - **A long crawl needs its own liveness check.** Watch progress externally (pages fetched, bytes written) and abort on a flatline; do not assume a fetch call returns.
-- **A body-read ceiling would not have caught the case above.** The stall was in the header phase, inside `opener.open()`. Any real fix has to cover connect, handshake, headers, and body — which urllib cannot express directly, so it needs the request run under a watchdog that can close the socket out from under it.
+- **A body-read ceiling would not catch that case.** The stall is in the header phase, inside `opener.open()`. Any real fix has to cover connect, handshake, headers, and body — which urllib cannot express directly, so it needs the request run under a watchdog that can close the socket out from under it.
 
 The `[http]` tier (`utils/urls.py`, `article_fetch`, `url_liveness`, the API clients) uses **httpx**, not this `Fetcher`, and has the same gap — httpx's `timeout=` is likewise per-operation with no whole-request bound.
 
@@ -78,7 +78,7 @@ Unlike the `[http]` tier, which re-reads the setting per request, a `Fetcher` re
 
 ## Retry contract
 
-Ported intact from a proven crawl implementation; callers rely on every clause:
+Callers rely on every clause:
 
 - **Permanent client errors (4xx except 408) raise immediately, with zero sleeps.** Callers implement their own 403 cooldowns and 404 fallbacks — an internal retry would double-pace them.
 - **429 honors `Retry-After`**, capped at 30 s so a server can't park a crawl; malformed values fall back to the standard backoff.

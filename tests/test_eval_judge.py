@@ -10,7 +10,7 @@ from __future__ import annotations
 import pytest
 
 from pf_core.eval._judge import run_judge
-from pf_core.exceptions import ConfigurationError
+from pf_core.exceptions import ClientError, ConfigurationError
 from pf_core.llm.router import clear_cache
 
 
@@ -55,6 +55,107 @@ def test_judge_agent_without_resolvable_backend_raises(tmp_path, monkeypatch):
 
     with pytest.raises(ConfigurationError, match="drafter_judge"):
         _call_judge()
+
+
+@pytest.fixture
+def replay_run(pf_engine):
+    """(engine, id) of a recorded replay run for the judge to link its own run to."""
+    from pf_core.llm.tracking import (
+        clear_resolver_caches,
+        llm_agent_types,
+        llm_models,
+        llm_runs,
+        metadata,
+    )
+
+    metadata.create_all(pf_engine)
+    clear_resolver_caches()
+    with pf_engine.begin() as conn:
+        mid = conn.execute(llm_models.insert().values(name="replay-model")).inserted_primary_key[0]
+        aid = conn.execute(llm_agent_types.insert().values(slug="drafter")).inserted_primary_key[0]
+        replay_id = conn.execute(
+            llm_runs.insert().values(agent_type_id=aid, model_id=mid, status="success")
+        ).inserted_primary_key[0]
+    yield pf_engine, replay_id
+    clear_resolver_caches()
+    metadata.drop_all(pf_engine)
+
+
+def _judge_replying(monkeypatch, reply: str | Exception) -> None:
+    class _JudgeClient:
+        def chat(self, *, messages, model="", **kwargs):
+            if isinstance(reply, Exception):
+                raise reply
+            return reply, {"duration_ms": 1}
+
+    monkeypatch.setattr(
+        "pf_core.eval._judge.resolve_agent",
+        lambda slug, **k: (_JudgeClient(), {"model": "judge-m"}, "fake_backend"),
+    )
+
+
+def _judge_replay(replay_id: int) -> float:
+    return run_judge(
+        agent_type="drafter",
+        judge_agent_type="drafter_judge",
+        golden_payload={"rendered_user": "task", "parsed_output": {"x": 1}},
+        replay_content="candidate output",
+        replay_run_id=replay_id,
+    )
+
+
+def test_a_failed_judge_call_raises_instead_of_scoring_zero(monkeypatch):
+    _judge_replying(monkeypatch, TimeoutError("judge rate limited"))
+    with pytest.raises(ClientError, match="judge rate limited"):
+        _call_judge()
+
+
+@pytest.mark.parametrize(
+    "reply",
+    [
+        "I'd rather not say.",
+        '{"rationale": "fine"}',
+        '{"score": "high"}',
+        '{"score": null}',
+        '{"score": true}',
+        '{"score": NaN}',
+        '{"score": Infinity}',
+        "[0.9]",
+    ],
+)
+def test_a_reply_without_a_usable_score_raises_and_keeps_the_judge_run(
+    replay_run, monkeypatch, reply
+):
+    from sqlalchemy import select
+
+    from pf_core.llm.tracking import llm_run_links
+
+    engine, replay_id = replay_run
+    _judge_replying(monkeypatch, reply)
+    with pytest.raises(ClientError, match="no usable score"):
+        _judge_replay(replay_id)
+    with engine.connect() as conn:
+        critics = conn.execute(
+            select(llm_run_links.c.child_run_id).where(
+                (llm_run_links.c.parent_run_id == replay_id)
+                & (llm_run_links.c.relation == "critic")
+            )
+        ).all()
+    assert len(critics) == 1
+
+
+@pytest.mark.parametrize(
+    ("reply", "score"),
+    [
+        ('{"score": 0.8}', 0.8),
+        ('{"score": "0.7"}', 0.7),
+        ('{"score": 1.4}', 1.0),
+        ('{"score": -2}', 0.0),
+    ],
+)
+def test_a_numeric_score_is_read_and_clamped(replay_run, monkeypatch, reply, score):
+    _judge_replying(monkeypatch, reply)
+    assert _judge_replay(replay_run[1]) == score
 
 
 def test_judge_yaml_sampling_wins_over_defaults(pf_engine, monkeypatch):

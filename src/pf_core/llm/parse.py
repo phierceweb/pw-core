@@ -105,8 +105,8 @@ def parse_llm_json(
        mid-stream-truncated response (e.g., model hit ``max_tokens``
        while writing the last element of an array).
     5. ``json_repair.loads`` on the cleaned text — last-resort permissive
-       repair. Handles unescaped inner double quotes (verbatim quoted
-       dialogue inside string values), backslash-escaped single quotes,
+       repair. Handles unescaped inner double quotes (quoted text inside
+       string values), backslash-escaped single quotes,
        trailing commas, unquoted keys, single-quoted strings.
        Intentionally last in the chain: strict parsing on a well-formed
        response is faster and cheaper, and ``json_repair``'s tolerance

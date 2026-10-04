@@ -59,11 +59,21 @@ def record_override(
     reason: str,
     operator: str | None = None,
 ) -> None:
-    """Tag *run_id* as a budget override and write an outcome row."""
+    """Tag *run_id* as a budget override and write an outcome row.
+
+    Repeatable: the tag is written once, and the latest call's notes replace
+    the earlier ``budget_override`` outcome's.
+    """
     from pf_core.db.connection import transaction
+    from pf_core.db.upsert import insert_ignore
 
     with transaction() as conn:
-        conn.execute(llm_run_tags.insert().values(llm_run_id=run_id, tag="budget:override"))
+        insert_ignore(
+            conn,
+            llm_run_tags,
+            {"llm_run_id": run_id, "tag": "budget:override"},
+            conflict=("llm_run_id", "tag"),
+        )
     LlmRunOutcomeRepo().record(
         run_id,
         outcome_kind="budget_override",

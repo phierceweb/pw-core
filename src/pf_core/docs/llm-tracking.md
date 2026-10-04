@@ -99,7 +99,7 @@ run_id = LlmRunRepo().record(
     items_out=7,
     status="success",  # 'success' | 'failed' | 'partial' | 'filtered' | …
     # Sidecars — all optional
-    configs={"prompt_variant": bv_id, "task_config": ec_id},
+    configs={"prompt_variant": variant_id, "task_config": task_config_id},
     validations=[
         ("url_hallucination", True, "info", None),
         ("coverage_ratio", True, "info", {"ratio": 0.85}),
@@ -109,7 +109,7 @@ run_id = LlmRunRepo().record(
     tags=["env:prod", "agent:summarizer"],
     rendered_prompts=(rendered_sys, rendered_user),
     raw_response=response_text,
-    parsed_output=parsed,  # any JSON-serializable value
+    parsed_output=parsed,  # any JSON-serializable value; NaN/±Infinity store as null
     parent_run=(prior_run_id, "retry"),  # writes into llm_run_links
     extra_run_values={"thread_id": 12, "item_id": 87},  # project columns
 )
@@ -270,7 +270,7 @@ Returned rows are plain dicts. `Decimal` values (Postgres `NUMERIC`) are coerced
 
 ## Tags and metrics conventions
 
-**Tags** — colon-namespaced strings, `kind:value`. Conventional prefixes (not enforced): `env:*`, `experiment:*`, `cohort:*`, `eval:*`, `agent:*`. Stick to them so cohort queries stay tractable.
+**Tags** — colon-namespaced strings, `kind:value`. Conventional prefixes (not enforced): `env:*`, `experiment:*`, `cohort:*`, `eval:*`, `agent:*`. Stick to them so cohort queries stay tractable. `record()` drops repeated tags case-insensitively, keeping the first spelling (MySQL's default collation treats `Env:Prod` and `env:prod` as one key); the automatic `truncated` tag always keeps that exact spelling.
 
 **Metrics** — numeric only. Composite PK is `(llm_run_id, metric_name)`; `LlmRunMetricRepo.record()` upserts on that key.
 

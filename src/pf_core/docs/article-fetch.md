@@ -1,6 +1,6 @@
 # `pf_core.utils.article_fetch`
 
-Fetch and extract structured article metadata from a URL — title, body, publish date, and outlet — with automatic Wayback Machine fallback. Built for tools that read what a URL actually says (link verification, content matching, source archiving), not for general-purpose scraping.
+Fetch and extract structured article metadata from a URL — title, body, publish date, and outlet — with automatic Wayback Machine fallback. Built for tools that read what a URL actually says (link checks, citation matching, source archiving), not for general-purpose scraping.
 
 ## Why this exists
 
@@ -11,7 +11,7 @@ Most "fetch a URL" use cases in news/research tooling want the same shape:
 3. Extract title, body, and publish date with reasonable fallbacks.
 4. Return a structured result — never raise.
 
-This module bundles that. It's the deterministic counterpart to LLM content-matching: a real article with real metadata that downstream tools (link matchers, content verifiers) can judge without making calls to the LLM.
+This module bundles that. It's the deterministic counterpart to LLM content-matching: a real article with real metadata that downstream checks can judge without calling the LLM.
 
 ## Installation
 
@@ -187,9 +187,9 @@ Reference cache implementation pattern:
 def cached_fetch(url: str, *, event_date=None, use_cache=True):
     canon = canonical_url(url) or url
     if use_cache:
-        row = my_db.get_cached_article(canon, fetcher_version=FETCHER_VERSION)
+        row = my_db.load_article(canon, fetcher_version=FETCHER_VERSION)
         if row:
-            return rebuild_article(row, url=url)
+            return article_from_row(row, url=url)
 
     art = fetch_article(url, event_date=event_date)
 
@@ -197,7 +197,7 @@ def cached_fetch(url: str, *, event_date=None, use_cache=True):
     # error) — those may recover. For finer policy, is_permanent()
     # separates verdicts a re-fetch can never change from the rest.
     if use_cache and art.fetch_status not in ("timeout", "error"):
-        my_db.upsert_cached_article(art, fetcher_version=FETCHER_VERSION)
+        my_db.save_article(art, fetcher_version=FETCHER_VERSION)
     return art
 ```
 

@@ -23,8 +23,8 @@ Usage::
     for r in results:
         print(r["url"], r["title"])
 
-    # `usage` mirrors openrouter's shape, so it forwards directly into
-    # any agent-run logging that expects (cost_usd, duration_ms, tokens).
+    # `usage` mirrors openrouter's shape, so it can go straight into
+    # LlmRunRepo().record(usage=...).
 
 Every call raises :class:`BraveSearchError` on transport, auth,
 rate-limit, or malformed-response failure. Callers should catch and

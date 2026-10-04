@@ -81,7 +81,7 @@ Replay historical LLM calls against new models, prompts, or comparators. Decide 
 
 | Module | Concern |
 |---|---|
-| [Eval harness](eval-harness.md) | Tag-based golden sets, structured-diff and LLM-judge comparators, per-agent tolerances, parallel replay (Python API; consumers wire a small runner script for CLI/CI use). |
+| [Eval harness](eval-harness.md) | Tag-based golden sets, structured-diff and LLM-judge comparators, per-agent tolerances, parallel replay, and the `pf-eval` CLI whose exit codes gate CI (an errored replay fails the gate). |
 
 ## Database
 
@@ -173,6 +173,7 @@ Small, focused helpers used across the framework.
 | [Periods](periods.md) | Resolve named period presets (`yesterday`, `last_7d`, `day:2026-05-12`) into `(start, end, label)` tuples — one shared label convention so period labels stay consistent cohort keys across reporting CLIs. |
 | [URLs](urls.md) | Domain extraction, canonical URL forms, suspicious-archive-timestamp detection. |
 | [JSON utils](json-utils.md) | Tolerant JSON parsing for database columns that may already be parsed, plus `canonical_json` — sorted-key serialization so equal objects compare and hash identically. |
+| [YAML utils](yaml-utils.md) | `safe_load` / `UniqueKeyLoader` — a drop-in for `yaml.safe_load` that raises on a repeated mapping key instead of silently keeping the last value. Every pf-core config loader reads YAML through it. |
 | [Content hashing](hashing.md) | `content_hash` — stable hex digest of text or a structured object (via `canonical_json`) for change-detection and cache keys. Not a security primitive. |
 | [JSON recovery](json-recovery.md) | Extract/recover JSON from messy text — markdown fences, trailing prose, mid-stream truncation. Generic, stdlib-only. |
 | [Parsers](parsers.md) | HTML parsing primitives shared across content-extraction code. |

@@ -7,7 +7,7 @@ Project-specific bindings (filenames, dir names) are parameterized via [`Baselin
 ## When to use
 
 - You have a Typer CLI in your project (built with [`pf_core.cli.create_cli`](cli.md)) AND you adopted the [`pf_core.pipeline.*`](pipeline.md) machinery for baseline / cache / re-run ergonomics.
-- You'd otherwise write the same `--label`, `--show-section`, `--source-stem` Typer wiring that the first pipeline consumer wrote, that the second would write, and that any future pipeline consumer would write.
+- You'd otherwise hand-write the same `--label`, `--show-section`, `--source-stem` Typer wiring in every pipeline project.
 
 ## When NOT to use
 

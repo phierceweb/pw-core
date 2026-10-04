@@ -164,11 +164,11 @@ Status codes:
 
 The `reason` body field is optional; default is `"canceled via admin"`. Project code that also tracks an in-memory job (e.g. a `JobManager` for live progress) should layer that bookkeeping in its own wrapper around this route — pf-core can't know about project-specific in-memory state.
 
-## What this doesn't do (v1)
+## What it doesn't do
 
-- **No other write actions.** No "retry this run", no "re-validate" buttons. Operators use the `pf-jobs` CLI, the eval Python API, or direct SQL for surgical actions. Cancel is the one exception — interrupting a runaway job is a common admin need.
-- **No SVG charts.** Tables only for v1. Add charts in a follow-up.
-- **No validator heatmaps, router drift, eval pages, cost-over-time time series.** Deferred to follow-ups — the foundation is in place to add them incrementally.
+- **No other write actions.** No "retry this run", no "re-validate" buttons. Operators use the `pf-jobs` and `pf-eval` CLIs, the eval Python API, or direct SQL for surgical actions. Cancel is the one exception — interrupting a runaway job is a common admin need.
+- **No charts.** Tables only.
+- **No validator heatmaps, router drift, eval pages, or cost-over-time series.**
 - **No WebSocket live updates.** Pages refresh on load.
 
 ## Layering note

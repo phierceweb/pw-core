@@ -39,8 +39,8 @@ _ISO_FORMATS = (
 
 # Public registry of rolling presets and their lookback windows. The
 # value is the `timedelta` subtracted from `anchor` (or `now`) to compute
-# the period's `start`. Consumer projects may build their own whitelist
-# subsets (e.g. "only `last_24h` and `last_7d` are allowed for stage 2").
+# the period's `start`. A project may restrict a CLI to a subset
+# (e.g. only `last_24h` and `last_7d`).
 ROLLING_PRESETS: dict[str, timedelta] = {
     "last_24h": timedelta(hours=24),
     "last_3d": timedelta(days=3),

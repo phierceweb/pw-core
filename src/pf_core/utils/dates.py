@@ -1,7 +1,6 @@
 """
 Date and time utilities.
 
-Consolidates date helpers that were duplicated across consumer projects:
 ISO timestamps, date parsing, month labels, date ranges.
 
 Usage::

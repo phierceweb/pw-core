@@ -19,14 +19,21 @@ Usage::
 
 from __future__ import annotations
 
+import math
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Any
+from typing import Any, NamedTuple
 
-from pf_core.exceptions import ConfigurationError, PreconditionError
+from pf_core.exceptions import (
+    ClientError,
+    ConfigurationError,
+    InvalidInputError,
+    PreconditionError,
+)
 from pf_core.jobs import Job, JobRepo
+from pf_core.llm._router_loader import config_path as router_config_path
 from pf_core.llm.parse import parse_llm_json
-from pf_core.llm.router import get_agent_config, resolve_agent
+from pf_core.llm.router import list_agents, resolve_agent
 from pf_core.llm.tracking.repo import LlmRunRepo
 from pf_core.llm.tracking.subrepos import LlmRunMetricRepo, LlmRunOutcomeRepo
 from pf_core.log import get_logger
@@ -46,18 +53,19 @@ def _apply_metric_gates(
     *,
     run_id: int,
 ) -> float:
-    """Return ``score``, or 0.0 if any gate fails or has no metric to read.
+    """Return ``score``, or 0.0 if any gate fails or has no finite metric to read.
 
     Fails closed on an absent metric: a gate nobody can satisfy must not read
-    as a pass.
+    as a pass. NaN would otherwise pass every bound.
     """
     for gate in gates:
         val = metrics.get(gate.name)
-        if val is None:
+        if val is None or not math.isfinite(val):
             logger.warning(
                 "eval_metric_gate_unavailable",
                 run_id=run_id,
                 metric=gate.name,
+                value=val,
                 available=sorted(metrics),
             )
             return 0.0
@@ -74,12 +82,80 @@ def _apply_metric_gates(
     return score
 
 
+def _scoring_failed(event: str, exc: Exception, *, golden_id: int, run_id: int) -> EvalResult:
+    """An errored result for a replay that was recorded but could not be scored."""
+    logger.warning(event, golden_id=golden_id, run_id=run_id, error=str(exc)[:300])
+    return EvalResult(
+        golden_id=golden_id, run_id=run_id, score=0.0, passed=False, error=str(exc)[:500]
+    )
+
+
+def _router_declares(agent_type: str) -> bool:
+    """Whether model_router.yaml declares the agent; a router file that fails to load raises."""
+    if not router_config_path().exists():
+        return False
+    return agent_type in list_agents()
+
+
+class _ReplayCall(NamedTuple):
+    client: Any
+    model: str
+    kwargs: dict[str, Any]
+
+
+def _resolve_replay_call(
+    agent_type: str, agent_cfg: AgentEvalConfig, target: dict[str, Any]
+) -> _ReplayCall:
+    """The client, model and chat kwargs for one replay.
+
+    Routes through the model router (``target`` keys ``backend``/``model`` override). An agent
+    the router doesn't declare degrades, loudly, to the target's backend (OpenRouter when none is
+    named) with the target's model.
+    """
+    target = dict(target)
+    backend_override = target.pop("backend", None)
+    model_override = target.pop("model", None)
+    try:
+        client, base_cfg, _backend = resolve_agent(
+            agent_type, backend=backend_override, model_override=model_override
+        )
+    except ConfigurationError as exc:
+        if _router_declares(agent_type):
+            raise
+        logger.warning("replay_router_unavailable", agent_type=agent_type, error=str(exc)[:200])
+        if backend_override is None:
+            from pf_core.clients.openrouter import get_client
+
+            client = get_client()
+        else:
+            from pf_core.clients.routing import get_client_for_backend
+
+            client = get_client_for_backend(backend_override)
+        base_cfg = {"model": model_override} if model_override else {}
+    merged = {**base_cfg, **agent_cfg.sampling, **target}
+    model = merged.pop("model", "")
+    if not model:
+        raise PreconditionError(
+            f"No model resolved for agent_type={agent_type!r}. "
+            "Set it in model_router.yaml or pass via target={'model': '...'}."
+        )
+    return _ReplayCall(client, model, merged)
+
+
+def _judge_slug(agent_type: str, agent_cfg: AgentEvalConfig) -> str:
+    return agent_cfg.judge_agent_type or f"{agent_type}_judge"
+
+
 class EvalRunner:
     """Orchestrates replay evaluations against a golden set.
 
     Args:
         config_path: Path to ``eval.yaml``. Defaults to ``EVAL_CONFIG`` env
             var, then ``config/eval.yaml``.
+
+    Raises:
+        ConfigurationError: If eval.yaml cannot be loaded, including a named
+            path that does not exist (:func:`load_eval_config`).
     """
 
     def __init__(self, config_path: str | None = None) -> None:
@@ -111,30 +187,52 @@ class EvalRunner:
                 experiment. Typically ``{"model": "claude-opus-4-7"}``.
                 Any key present in the router config can be overridden.
             tag_as: Optional experiment tag applied to all replay runs
-                (e.g. ``"experiment:opus47-v5"``).
+                (e.g. ``"experiment:opus47-v5"``). It may not start with
+                ``eval:`` or equal ``agent:<agent_type>``, in any case.
 
         Raises:
+            InvalidInputError: If ``tag_as`` collides with a tag the runner sets.
             PreconditionError: If no golden runs exist for the requested
-                version + agent_type combination.
+                version + agent_type combination, or no model resolves.
+            ConfigurationError: If eval.yaml's ``agents`` lists other agents
+                but not ``agent_type``, the replay client, or the ``llm_judge``
+                judge's, cannot be resolved, or the comparator is not
+                registered. Any error building either client propagates too;
+                all of these raise before a replay runs.
 
         Returns:
             :class:`EvalReport` with per-run scores and aggregate statistics.
         """
+        from pf_core.eval._judge import resolve_judge
+
+        # NOT f"eval:{version}" — that exact string is the golden-membership
+        # tag; putting it on replays adds them to the golden set.
+        replay_tags = [f"eval:replay:{version}", f"agent:{agent_type}"]
+        if tag_as:
+            # Case-folded: MySQL compares tags case-insensitively.
+            folded = tag_as.casefold()
+            if folded.startswith("eval:") or folded == replay_tags[1].casefold():
+                raise InvalidInputError(
+                    f"tag_as {tag_as!r} collides with a tag the runner sets: it may not start "
+                    f"with 'eval:' or equal {replay_tags[1]!r}"
+                )
+            replay_tags.append(tag_as)
+
         agent_cfg = self._cfg.for_agent(agent_type)
         golden_repo = GoldenSetRepo()
-        goldens = golden_repo.list(version=version, agent_type=agent_type)
+        goldens = golden_repo.list(version=version, agent_type=agent_type, limit=None)
 
         if not goldens:
             raise PreconditionError(
                 f"No golden runs found for version={version!r}, agent_type={agent_type!r}. "
                 "Use GoldenSetRepo.add()/seed_from_outcomes() to add some."
             )
-
-        # NOT f"eval:{version}" — that exact string is the golden-membership
-        # tag; putting it on replays adds them to the golden set.
-        replay_tags = [f"eval:replay:{version}", f"agent:{agent_type}"]
-        if tag_as:
-            replay_tags.append(tag_as)
+        # Resolved again per replay: a registered client factory owns each acquisition.
+        _resolve_replay_call(agent_type, agent_cfg, target)
+        if agent_cfg.compare == "llm_judge":
+            resolve_judge(_judge_slug(agent_type, agent_cfg))
+        else:
+            get_comparator(agent_cfg.compare)
 
         job_id = JobRepo().create(
             kind="eval_replay",
@@ -283,41 +381,11 @@ class EvalRunner:
         if rendered_user:
             messages.append({"role": "user", "content": rendered_user})
 
-        # Resolve the replay client through the router so replays run on the
-        # backend the agent declares (target keys "backend"/"model" override).
-        # Agents absent from the router degrade — loudly — to the OpenRouter
-        # client with the target-supplied model.
-        target = dict(target)
-        backend_override = target.pop("backend", None)
-        model_override = target.pop("model", None)
-        try:
-            client, base_cfg, _replay_backend = resolve_agent(
-                agent_type, backend=backend_override, model_override=model_override
-            )
-        except ConfigurationError as exc:
-            logger.warning(
-                "replay_router_unavailable",
-                agent_type=agent_type,
-                error=str(exc)[:200],
-            )
-            from pf_core.clients.openrouter import get_client
-
-            client = get_client()
-            try:
-                base_cfg = get_agent_config(agent_type, model_override=model_override)
-            except ConfigurationError:
-                base_cfg = {"model": model_override} if model_override else {}
-        merged = {**base_cfg, **agent_cfg.sampling, **target}
-        model = merged.pop("model", "")
-        if not model:
-            raise PreconditionError(
-                f"No model resolved for agent_type={agent_type!r}. "
-                "Set it in model_router.yaml or pass via target={'model': '...'}."
-            )
-
+        call = _resolve_replay_call(agent_type, agent_cfg, target)
+        model, merged = call.model, call.kwargs
         t0 = time.monotonic()
         try:
-            raw_content, usage_raw = client.chat(messages=messages, model=model, **merged)
+            raw_content, usage_raw = call.client.chat(messages=messages, model=model, **merged)
             status = "success"
             error_msg: str | None = None
         except Exception as exc:
@@ -359,26 +427,36 @@ class EvalRunner:
         # Score
         scored_metrics: dict[str, float] = {}
         if agent_cfg.compare == "llm_judge":
-            score = run_judge(
-                agent_type=agent_type,
-                judge_agent_type=agent_cfg.judge_agent_type or f"{agent_type}_judge",
-                golden_payload=payload,
-                replay_content=raw_content,
-                replay_run_id=replay_run_id,
-            )
+            try:
+                score = run_judge(
+                    agent_type=agent_type,
+                    judge_agent_type=_judge_slug(agent_type, agent_cfg),
+                    golden_payload=payload,
+                    replay_content=raw_content,
+                    replay_run_id=replay_run_id,
+                )
+            except ClientError as exc:
+                return _scoring_failed(
+                    "judge_failed", exc, golden_id=golden_id, run_id=replay_run_id
+                )
         else:
             comparator = get_comparator(agent_cfg.compare)
             context = {
                 "diff_fields": agent_cfg.diff_fields,
                 "tolerances": agent_cfg.tolerances,
             }
-            score, scored_metrics = split_comparator_result(
-                comparator(
-                    golden_parsed,
-                    parsed_replay or {},
-                    context=context,
+            try:
+                score, scored_metrics = split_comparator_result(
+                    comparator(
+                        golden_parsed,
+                        parsed_replay or {},
+                        context=context,
+                    )
                 )
-            )
+            except Exception as exc:
+                return _scoring_failed(
+                    "comparator_failed", exc, golden_id=golden_id, run_id=replay_run_id
+                )
 
         metric_repo = LlmRunMetricRepo()
         metric_repo.record(replay_run_id, metrics=scored_metrics)

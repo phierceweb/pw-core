@@ -133,12 +133,13 @@ class GoldenSetRepo(Repository):
         *,
         version: str,
         agent_type: str | None = None,
-        limit: int = 200,
+        limit: int | None = 200,
     ) -> list[dict]:
-        """List all golden run rows for a version, optionally filtered by agent_type.
+        """List golden run rows for a version, optionally filtered by agent_type.
 
         Returns dicts with ``llm_runs`` columns plus ``agent_type_slug`` and
-        ``model_name``, ordered by ``created_at DESC``.
+        ``model_name``, ordered by ``created_at DESC``; ``limit=None`` returns
+        every member.
         """
         tag = f"eval:{version}"
         stmt = (
@@ -154,7 +155,9 @@ class GoldenSetRepo(Repository):
         )
         if agent_type is not None:
             stmt = stmt.where(s.llm_agent_types.c.slug == agent_type)
-        stmt = stmt.order_by(s.llm_runs.c.created_at.desc()).limit(limit)
+        stmt = stmt.order_by(s.llm_runs.c.created_at.desc())
+        if limit is not None:
+            stmt = stmt.limit(limit)
         with self._tx() as conn:
             rows = conn.execute(stmt).mappings().fetchall()
         return [dict(r) for r in rows]
@@ -176,7 +179,7 @@ class GoldenSetRepo(Repository):
 
         Args:
             version: Golden set version (e.g. ``"golden_v1"``).
-            outcome_kind: Outcome to query (e.g. ``"draft_accepted"``).
+            outcome_kind: Outcome to query (e.g. ``"summary_accepted"``).
             agent_type: Optional agent type slug to narrow the candidate pool.
             limit: Maximum number of runs to promote.
             dry_run: If ``True``, return candidate run_ids without promoting.

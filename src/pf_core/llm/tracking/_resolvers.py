@@ -6,8 +6,8 @@ Mirrors ``pf_core.db.models.resolve_model_id`` (which targets the legacy
 caches lookups for the lifetime of the process.
 
 Each resolver runs its own short transaction so the INSERT IGNORE commits
-before the caller opens its longer write transaction — the same lock-cycle
-mitigation pattern consumer apps use.
+before the caller opens its longer write transaction, which avoids lock
+cycles between parallel writers.
 """
 
 from __future__ import annotations

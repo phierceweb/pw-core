@@ -18,6 +18,7 @@ from typing import Any
 from sqlalchemy import select
 
 from pf_core.db.repository import Repository
+from pf_core.llm._json import finite_json
 from pf_core.llm.parse import truncated_from_usage
 from pf_core.llm.tracking import schema as s
 from pf_core.llm.tracking._resolvers import (
@@ -139,7 +140,7 @@ def compute_input_hash(
     extracted from it; anything the extraction drops — multi-part content,
     assistant/tool turns, ``tool_calls`` — additionally folds a digest of the
     whole list into the hash. A list of plain ``{role, content}`` system/user
-    string messages hashes exactly as it did before that digest existed.
+    string messages hashes on the rendered prompts alone, with no digest.
 
     This is the hash written to ``llm_runs.input_hash`` and the primary key for
     the exact cache. ``LlmRunRepo.record()`` autocomputes from the rendered
@@ -172,6 +173,14 @@ def compute_input_hash(
         configs=configs,
         messages_digest=digest,
     )
+
+
+def _dedupe_tags(tags: list[str]) -> list[str]:
+    """Drop repeated tags, first spelling wins; case-insensitive like MySQL's default collation."""
+    first: dict[str, str] = {}
+    for tag in tags:
+        first.setdefault(tag.casefold(), tag)
+    return list(first.values())
 
 
 class LlmRunRepo(Repository):
@@ -263,8 +272,9 @@ class LlmRunRepo(Repository):
 
         # Persist the truncation verdict where it is queryable (indexed tag);
         # usage itself is not stored and a cache replay carries no finish reason.
+        # Prepended so this exact spelling survives the case-insensitive tag dedupe.
         if truncated_from_usage(usage or {}) is True:
-            tags = [*(tags or []), "truncated"]
+            tags = ["truncated", *(tags or [])]
 
         run_values: dict[str, Any] = {
             "agent_type_id": agent_type_id,
@@ -298,7 +308,7 @@ class LlmRunRepo(Repository):
                 "rendered_system": rendered_system,
                 "rendered_user": rendered_user,
                 "raw_response": raw_response,
-                "parsed_output": parsed_output,
+                "parsed_output": finite_json(parsed_output),
             }
             if any(v is not None for v in payload_fields.values()):
                 conn.execute(
@@ -341,7 +351,7 @@ class LlmRunRepo(Repository):
             if tags:
                 conn.execute(
                     s.llm_run_tags.insert(),
-                    [{"llm_run_id": run_id, "tag": t} for t in tags],
+                    [{"llm_run_id": run_id, "tag": t} for t in _dedupe_tags(tags)],
                 )
 
             if parent_run is not None:

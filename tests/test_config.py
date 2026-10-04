@@ -181,10 +181,10 @@ class TestAppConfigYamlResolution:
         assert cfg.DEBUG is True
 
     def test_non_attr_yaml_keys_stay_inert(self, tmp_path):
-        yf = self._write(tmp_path, "section_order:\n  - intro\n")
+        yf = self._write(tmp_path, "widget_order:\n  - header\n")
         cfg = AppConfig(yaml_file=yf)
-        assert not hasattr(cfg, "section_order")
-        assert cfg.yaml["section_order"] == ["intro"]
+        assert not hasattr(cfg, "widget_order")
+        assert cfg.yaml["widget_order"] == ["header"]
 
     def test_lowercase_yaml_key_does_not_map_to_upper_attr(self, tmp_path):
         yf = self._write(tmp_path, "web_port: 9999\n")

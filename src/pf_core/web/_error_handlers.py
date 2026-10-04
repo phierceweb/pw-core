@@ -18,7 +18,7 @@ from pf_core.exceptions import (
 from pf_core.log import get_logger, log_exception
 from pf_core.web._error_page import STATUS_HEADINGS, STATUS_MESSAGES, render_error
 
-logger = get_logger("pf_core.web.app_factory")  # the logger these events have always named
+logger = get_logger("pf_core.web.app_factory")  # events stay under the app factory's logger
 
 
 def register_error_handlers(app: FastAPI) -> None:

@@ -14,11 +14,11 @@ from pf_core.db import transaction
 
 def run_export():
     with transaction() as conn:
-        entries = conn.execute(text("SELECT ..."))
+        records = conn.execute(text("SELECT ..."))
 
 # RIGHT — orchestrator delegates to a service
 def run_export():
-    entries = entry_service.get_entries_for_export()
+    records = record_service.get_records_for_export()
 ```
 
 The one sanctioned `transaction()` use in an orchestrator: opening a shared transaction that services join via `self._service(Svc, conn=conn)` so a multi-step workflow commits atomically — the orchestrator still never executes SQL itself (see `docs/orchestrators.md`).
@@ -83,7 +83,7 @@ stmt = t.update().values(deleted_at=now_iso())
 
 # RIGHT — SQLAlchemy handles dialect translation
 from sqlalchemy import func, table, column
-t = table("entries", column("id"), column("deleted_at"))
+t = table("records", column("id"), column("deleted_at"))
 stmt = t.update().where(t.c.id == id_value).values(deleted_at=func.now())
 ```
 

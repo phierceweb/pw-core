@@ -9,7 +9,7 @@ Usage::
     from pf_core.jobs import register_kind
 
     register_kind(
-        kind="export_pass",
+        kind="summarize_pass",
         description="Process N records with the current config",
         states=["pending", "running", "succeeded", "failed", "partial", "canceled"],
         transitions={
@@ -18,8 +18,8 @@ Usage::
             "failed":    ["pending"],       # manual retry
             "partial":   ["running"],       # resume
         },
-        inputs_schema=ExportPassInputs,    # Pydantic model (optional)
-        outputs_schema=ExportPassOutputs,
+        inputs_schema=SummarizeInputs,     # Pydantic model (optional)
+        outputs_schema=SummarizeOutputs,
         default_priority=60,
     )
 
@@ -227,7 +227,7 @@ def _validate_against_schema(value: Any, schema: Any, *, label: str) -> Any:
 
     Raises ``InvalidInputError`` on failure, preserving the underlying error
     as ``__cause__`` — or, when a validator raised one, that ``InvalidInputError``
-    itself, as before pydantic wrapped it.
+    itself, unwrapped.
     """
     if schema is None:
         return value

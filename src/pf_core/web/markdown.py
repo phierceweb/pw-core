@@ -145,7 +145,7 @@ def safe_markdown(
         extra_transforms: Optional list of callables that receive
             HTML-escaped text and return transformed text. Applied
             before standard inline transforms. Useful for
-            project-specific patterns (e.g. entry ID links).
+            project-specific patterns (e.g. converting record IDs to links).
         heading_offset: Added to heading level (default 2, so
             ``#`` becomes ``<h3>``, ``##`` becomes ``<h4>``).
 

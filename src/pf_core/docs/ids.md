@@ -36,7 +36,7 @@ from pf_core.db import transaction
 from pf_core.utils.ids import allocate_id
 
 with transaction() as conn:
-    entry_id = allocate_id(conn, table="entries")
+    order_id = allocate_id(conn, table="orders")
 ```
 
 ### Parameters
@@ -55,9 +55,9 @@ with transaction() as conn:
 When integrating external data that may suggest an ID:
 
 ```python
-entry_id = allocate_id(
+order_id = allocate_id(
     conn,
-    table="entries",
+    table="orders",
     preferred="user-suggested-id",  # used if not taken
 )
 ```
@@ -70,18 +70,18 @@ If the preferred ID is already in the table, a new nanoid is generated instead.
 
 ## Migrating from consumer projects
 
-**Custom per-table id helper** — replace a hand-rolled `app/utils/ids.py` with `generate_entry_id()` / `allocate_entry_id()`:
+**Custom per-table id helper** — replace a hand-rolled `app/utils/ids.py` helper with `allocate_id()`:
 
 ```python
 # Before
-from app.utils.ids import allocate_entry_id
+from app.utils.ids import allocate_order_id
 
-entry_id = allocate_entry_id(conn, preferred=source_id)
+order_id = allocate_order_id(conn, preferred=source_id)
 
 # After
 from pf_core.utils.ids import allocate_id
 
-entry_id = allocate_id(conn, table="entries", preferred=source_id)
+order_id = allocate_id(conn, table="orders", preferred=source_id)
 ```
 
 **Ad-hoc UUID slicing** — replace `uuid.uuid4().hex[:12]`:

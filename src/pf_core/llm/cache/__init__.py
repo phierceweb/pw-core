@@ -109,20 +109,18 @@ def cache_lookup(
     *,
     agent_type: str,
     input_hash: str,
-    canonical_text: str | None = None,  # reserved for future semantic lookup
+    canonical_text: str | None = None,  # reserved; ignored
 ) -> CacheHit | None:
     """Look up a cached response for *agent_type* + *input_hash*.
 
-    Checks exact cache first (always, when ``exact=true`` in config).
-    Semantic lookup is not yet implemented — pass ``canonical_text`` now to
-    avoid updating call sites when it lands.
+    Exact lookup only, when ``exact=true`` in config; there is no semantic
+    lookup.
 
     Args:
         agent_type: Agent slug used to load policy from ``cache.yaml``.
         input_hash: SHA256 of model + prompts + sampling + configs.
             Computed by :func:`pf_core.llm.tracking.compute_input_hash`.
-        canonical_text: Canonicalized prompt text, reserved for future
-            semantic lookup. Currently ignored.
+        canonical_text: Canonicalized prompt text. Accepted and ignored.
 
     Returns:
         A :class:`CacheHit` on success, ``None`` on miss or disabled cache.
@@ -161,7 +159,7 @@ def cache_store(
     model: str,
     parsed_output: Any = None,
     raw_response: str | None = None,
-    canonical_text: str | None = None,  # reserved for future semantic store
+    canonical_text: str | None = None,  # reserved; ignored
     usage: dict | None = None,
     truncated: bool | None = None,
 ) -> None:
@@ -172,7 +170,7 @@ def cache_store(
     with no finish reason, so the flag would be lost forever. An explicit
     ``truncated=`` wins; otherwise truncation is derived from ``usage`` via
     :func:`~pf_core.llm.parse.truncated_from_usage`. Unknown truncation
-    (neither given) stores as before.
+    (neither given) is stored.
 
     Args:
         agent_type: Agent slug used to load TTL policy.
@@ -181,7 +179,7 @@ def cache_store(
         model: Model name (stored for attribution on cache-hit runs).
         parsed_output: Parsed JSON to cache.
         raw_response: Raw LLM response string to cache.
-        canonical_text: Canonicalized text, reserved for future semantic indexing.
+        canonical_text: Canonicalized text. Accepted and ignored.
         usage: The client ``usage`` dict; its ``finish_reason`` decides
             truncation when ``truncated`` is not given.
         truncated: Explicit truncation flag; ``True`` skips the store
