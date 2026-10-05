@@ -17,7 +17,7 @@ Usage::
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -38,11 +38,7 @@ class AgentCacheConfig:
     """Per-agent cache policy resolved from cache.yaml."""
 
     exact: bool = True
-    semantic: bool = False
     ttl_seconds: int = 86400
-    semantic_threshold: float = 0.93
-    semantic_embedding_model: str = ""
-    canonicalize: dict[str, bool] = field(default_factory=dict)
     on_miss: str = "proceed"  # 'proceed' | 'warn_log'
 
 
@@ -58,9 +54,17 @@ _DEFAULTS = AgentCacheConfig()
 _DISABLED_SENTINELS = frozenset({"off", "disabled", "none", "0"})
 
 # Recognised but inert.
-_IGNORED_KEYS = frozenset({"max_entries_per_agent"})
+_IGNORED_KEYS = frozenset(
+    {
+        "max_entries_per_agent",
+        "semantic",
+        "semantic_threshold",
+        "semantic_embedding_model",
+        "canonicalize",
+    }
+)
 
-_FLAGS = ("exact", "semantic")
+_FLAGS = ("exact",)
 _TRUE_WORDS = frozenset({"true", "yes", "on", "1"})
 _FALSE_WORDS = frozenset({"false", "no", "off", "0"})
 
@@ -121,7 +125,7 @@ def _reload_seconds() -> int:
 
 
 def _caching_off() -> dict[str, Any]:
-    return {"defaults": {"exact": False, "semantic": False}}
+    return {"defaults": {"exact": False}}
 
 
 def _load_config(config_path: str) -> dict[str, Any]:
@@ -162,13 +166,7 @@ def _build_config(raw: dict[str, Any]) -> AgentCacheConfig:
     """Build an AgentCacheConfig from a dict, filling missing keys with defaults."""
     return AgentCacheConfig(
         exact=_flag(raw.get("exact", _DEFAULTS.exact)) is True,
-        semantic=_flag(raw.get("semantic", _DEFAULTS.semantic)) is True,
         ttl_seconds=int(raw.get("ttl_seconds", _DEFAULTS.ttl_seconds)),
-        semantic_threshold=float(raw.get("semantic_threshold", _DEFAULTS.semantic_threshold)),
-        semantic_embedding_model=str(
-            raw.get("semantic_embedding_model", _DEFAULTS.semantic_embedding_model)
-        ),
-        canonicalize=dict(raw.get("canonicalize", {})),
         on_miss=str(raw.get("on_miss", _DEFAULTS.on_miss)),
     )
 
@@ -179,7 +177,7 @@ def get_agent_cache_config(agent_type: str) -> AgentCacheConfig:
     Merges per-agent overrides (from ``agents.<agent_type>`` in cache.yaml)
     on top of global ``defaults``. Falls back to framework defaults when the
     config file is absent or the agent has no entry. A section that is not a
-    mapping, or a flag that is not a boolean, turns that caching off.
+    mapping, or an ``exact`` that is not a boolean, turns that caching off.
 
     Args:
         agent_type: The agent slug (e.g. ``"classifier"``).

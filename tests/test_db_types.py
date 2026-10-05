@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import pytest
 from sqlalchemy import Column, MetaData, Table
 from sqlalchemy.dialects import mysql, postgresql, sqlite
 from sqlalchemy.schema import CreateTable
@@ -75,18 +76,20 @@ class TestJsonNoneAsNull:
 
 class TestSchemaSharesObjects:
     def test_tracking_schema_uses_the_public_objects(self):
-        # The underscored names must stay importable (consumers pin them)
-        # and be the same objects — one definition, public home.
+        # The underscored names that remain are the same objects — one definition, public home.
         from pf_core.db import types as T
         from pf_core.llm.tracking import schema as s
 
-        assert s._PK_INT is T.PK_INT
         assert s._PK_SMALL is T.PK_SMALL
         assert s._PK_BIG is T.PK_BIG
-        assert s._FK_INT is T.FK_INT
         assert s._FK_SMALL is T.FK_SMALL
         assert s._FK_BIG is T.FK_BIG
-        assert s._TIMESTAMP_US is T.TIMESTAMP_US
         assert s._LARGE_TEXT is T.LARGE_TEXT
         assert s._JSON is T.JSON_
         assert s._server_now is T.server_now
+
+    @pytest.mark.parametrize("name", ["_TIMESTAMP_US", "_PK_INT", "_FK_INT"])
+    def test_removed_aliases_are_gone(self, name):
+        from pf_core.llm.tracking import schema as s
+
+        assert not hasattr(s, name)

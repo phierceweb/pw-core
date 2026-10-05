@@ -10,8 +10,7 @@ workflows, and long-running operations across consumer projects:
 
 Shares the ``metadata`` object from ``pf_core.llm.tracking.schema`` so
 ``metadata.create_all()`` creates both LLM tracking tables and jobs
-tables in a single pass. Variant declarations reuse the same helpers
-(``_TIMESTAMP_US``, ``_PK_INT``, ``_server_now``, ...).
+tables in a single pass. Column types come from ``pf_core.db.types``.
 
 See ``docs/jobs.md`` for the implementation reference.
 """
@@ -31,16 +30,10 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects import mysql
 
-# Reuse the existing metadata and helpers so a single create_all()
-# builds both tracking and jobs tables.
-from pf_core.llm.tracking.schema import (
-    _FK_INT,
-    _JSON,
-    _PK_INT,
-    _TIMESTAMP_US,
-    _server_now,
-    metadata,
-)
+from pf_core.db.types import FK_INT, JSON_, PK_INT, TIMESTAMP_US, server_now
+
+# Shared metadata so a single create_all() builds both tracking and jobs tables.
+from pf_core.llm.tracking.schema import metadata
 
 # ---------------------------------------------------------------------------
 # Unsigned byte/int variants specific to jobs columns
@@ -58,11 +51,11 @@ _UINT_PROGRESS = Integer().with_variant(mysql.INTEGER(unsigned=True), "mysql")
 jobs = Table(
     "jobs",
     metadata,
-    Column("id", _PK_INT, primary_key=True, autoincrement=True),
+    Column("id", PK_INT, primary_key=True, autoincrement=True),
     Column("kind", String(64), nullable=False),
     Column(
         "parent_job_id",
-        _FK_INT,
+        FK_INT,
         ForeignKey("jobs.id", ondelete="SET NULL"),
         nullable=True,
     ),
@@ -72,19 +65,19 @@ jobs = Table(
     Column("progress_current", _UINT_PROGRESS, nullable=False, server_default="0"),
     Column("current_step", String(128), nullable=True),
     # Typed JSON payloads — not queried on the hot path
-    Column("inputs", _JSON, nullable=True),
-    Column("outputs", _JSON, nullable=True),
+    Column("inputs", JSON_, nullable=True),
+    Column("outputs", JSON_, nullable=True),
     Column("error", Text, nullable=True),
     Column("error_class", String(64), nullable=True),
     # Worker lease
     Column("priority", _UINT_PRIORITY, nullable=False, server_default="50"),
     Column("claimed_by", String(128), nullable=True),
-    Column("claimed_at", _TIMESTAMP_US, nullable=True),
-    Column("started_at", _TIMESTAMP_US, nullable=True),
-    Column("finished_at", _TIMESTAMP_US, nullable=True),
+    Column("claimed_at", TIMESTAMP_US, nullable=True),
+    Column("started_at", TIMESTAMP_US, nullable=True),
+    Column("finished_at", TIMESTAMP_US, nullable=True),
     Column("created_by", String(128), nullable=True),
-    Column("created_at", _TIMESTAMP_US, nullable=False, server_default=_server_now()),
-    Column("updated_at", _TIMESTAMP_US, nullable=False, server_default=_server_now()),
+    Column("created_at", TIMESTAMP_US, nullable=False, server_default=server_now()),
+    Column("updated_at", TIMESTAMP_US, nullable=False, server_default=server_now()),
     Index("idx_jobs_kind_status", "kind", "status"),
     Index("idx_jobs_status_priority_created", "status", "priority", "created_at"),
     Index("idx_jobs_parent", "parent_job_id"),
@@ -97,21 +90,21 @@ jobs = Table(
 job_steps = Table(
     "job_steps",
     metadata,
-    Column("id", _PK_INT, primary_key=True, autoincrement=True),
+    Column("id", PK_INT, primary_key=True, autoincrement=True),
     Column(
         "job_id",
-        _FK_INT,
+        FK_INT,
         ForeignKey("jobs.id", ondelete="CASCADE"),
         nullable=False,
     ),
     Column("step_index", SmallInteger, nullable=False),
     Column("name", String(128), nullable=False),
     Column("status", String(32), nullable=False, server_default="running"),
-    Column("inputs", _JSON, nullable=True),
-    Column("outputs", _JSON, nullable=True),
+    Column("inputs", JSON_, nullable=True),
+    Column("outputs", JSON_, nullable=True),
     Column("error", Text, nullable=True),
-    Column("started_at", _TIMESTAMP_US, nullable=False, server_default=_server_now()),
-    Column("finished_at", _TIMESTAMP_US, nullable=True),
+    Column("started_at", TIMESTAMP_US, nullable=False, server_default=server_now()),
+    Column("finished_at", TIMESTAMP_US, nullable=True),
     Column("duration_ms", Integer, nullable=True),
     UniqueConstraint("job_id", "step_index", name="uq_job_steps_job_index"),
     Index("idx_job_steps_job_status", "job_id", "status"),
@@ -122,17 +115,17 @@ job_steps = Table(
 job_events = Table(
     "job_events",
     metadata,
-    Column("id", _PK_INT, primary_key=True, autoincrement=True),
+    Column("id", PK_INT, primary_key=True, autoincrement=True),
     Column(
         "job_id",
-        _FK_INT,
+        FK_INT,
         ForeignKey("jobs.id", ondelete="CASCADE"),
         nullable=False,
     ),
     Column("event_type", String(64), nullable=False),
     Column("message", Text, nullable=False),
-    Column("context", _JSON, nullable=True),
-    Column("created_at", _TIMESTAMP_US, nullable=False, server_default=_server_now()),
+    Column("context", JSON_, nullable=True),
+    Column("created_at", TIMESTAMP_US, nullable=False, server_default=server_now()),
     Index("idx_job_events_job_created", "job_id", "created_at"),
     Index("idx_job_events_type_created", "event_type", "created_at"),
 )

@@ -248,6 +248,13 @@ class TestRedirects:
         assert exc_info.value is errors[-1]
         assert len(calls) == 3  # initial request + 2 followed hops
 
+    @pytest.mark.parametrize("code", [300, 304, 305])
+    def test_a_non_redirect_3xx_raises_without_a_retry(self, monkeypatch, sleeps, code):
+        calls = _script_open(monkeypatch, [_http_error(code)] * 3)
+        with pytest.raises(urllib.error.HTTPError):
+            Fetcher(retries=2).get_text(URL)
+        assert (len(calls), sleeps) == (1, [])
+
     def test_redirect_without_location_raises(self, monkeypatch):
         err = _http_error(301)
         _script_open(monkeypatch, [err])
@@ -458,6 +465,125 @@ class TestValidators:
         _script_open(monkeypatch, [_Resp(b"data")])
         _, _, validators = Fetcher().get_bytes_meta(URL)
         assert validators == {"etag": None, "last_modified": None}
+
+
+class TestBody:
+    def test_get_body_keeps_bytes_charset_and_validators(self, monkeypatch):
+        stamp = "Mon, 01 Jan 2024 00:00:00 GMT"
+        raw = "caf\u00e9".encode("latin-1")
+        headers = {
+            "Content-Type": "text/html; charset=ISO-8859-1",
+            "ETag": '"e"',
+            "Last-Modified": stamp,
+        }
+        _script_open(monkeypatch, [_Resp(raw, headers)])
+        body = Fetcher().get_body(URL)
+        assert (body.final_url, body.data, body.charset) == (URL, raw, "iso-8859-1")
+        assert body.validators == {"etag": '"e"', "last_modified": stamp}
+        assert body.text() == "caf\u00e9"
+        assert body.text("utf-8") == "caf\ufffd"
+
+    def test_body_text_decodes_as_get_text_does(self, monkeypatch):
+        raw = b"\xe2\x9c\x93 ok \xff"
+        _script_open(monkeypatch, [_Resp(raw), _Resp(raw)])
+        assert Fetcher().get_body(URL).text() == Fetcher().get_text(URL)[1]
+
+
+_FORM_TYPE = "application/x-www-form-urlencoded; charset=UTF-8"
+
+
+class TestPostForm:
+    def test_posts_the_fields_urlencoded_and_returns_a_body(self, monkeypatch):
+        resp = _Resp(b"ok", {"Content-Type": "text/html; charset=utf-8", "ETag": '"e"'})
+        calls = _script_open(monkeypatch, [resp])
+        body = Fetcher().post_form(URL, {"q": "café pumps", "page": "2"})
+        request, timeout_s = calls[0]
+        assert request.get_method() == "POST"
+        assert request.data == b"q=caf%C3%A9+pumps&page=2"
+        assert _sent_headers(request)["content-type"] == _FORM_TYPE
+        assert timeout_s == 30.0
+        assert (body.final_url, body.data, body.charset) == (URL, b"ok", "utf-8")
+        assert body.validators == {"etag": '"e"', "last_modified": None}
+        assert resp.closed
+
+    def test_sends_the_fetchers_user_agent_and_headers(self, monkeypatch):
+        calls = _script_open(monkeypatch, [_Resp(b"ok")])
+        Fetcher(user_agent="kwarg-agent/1.0", headers={"X-Custom": "1"}).post_form(URL, {"a": "1"})
+        sent = _sent_headers(calls[0][0])
+        assert (sent["user-agent"], sent["x-custom"]) == ("kwarg-agent/1.0", "1")
+
+    @pytest.mark.parametrize("code", [301, 302, 303, 307, 308])
+    def test_never_follows_a_redirect(self, monkeypatch, code):
+        err = _http_error(code, {"Location": "https://example.com/next"})
+        calls = _script_open(monkeypatch, [err])
+        with pytest.raises(urllib.error.HTTPError) as exc_info:
+            Fetcher().post_form(URL, {"a": "1"})
+        assert exc_info.value is err
+        assert len(calls) == 1
+
+    def test_a_retry_resends_the_form(self, monkeypatch, sleeps):
+        calls = _script_open(monkeypatch, [_http_error(503), _Resp(b"ok")])
+        Fetcher().post_form(URL, {"a": "1"})
+        assert [(c[0].get_method(), c[0].data) for c in calls] == [("POST", b"a=1")] * 2
+        assert sleeps == [0.5]
+
+    @pytest.mark.parametrize("code", [300, 304, 305])
+    def test_a_non_redirect_3xx_raises_without_resending(self, monkeypatch, sleeps, code):
+        calls = _script_open(monkeypatch, [_http_error(code)] * 3)
+        with pytest.raises(urllib.error.HTTPError):
+            Fetcher(retries=2).post_form(URL, {"a": "1"})
+        assert (len(calls), sleeps) == (1, [])
+
+    def test_permanent_4xx_fails_fast(self, monkeypatch, sleeps):
+        calls = _script_open(monkeypatch, [_http_error(422)])
+        with pytest.raises(urllib.error.HTTPError):
+            Fetcher().post_form(URL, {"a": "1"})
+        assert (len(calls), sleeps) == (1, [])
+
+    def test_max_bytes_caps_the_response(self, monkeypatch):
+        _script_open(monkeypatch, [_Resp(b"x" * 11)])
+        with pytest.raises(ClientError) as exc_info:
+            Fetcher(max_bytes=10).post_form(URL, {"a": "1"})
+        assert exc_info.value.context == {"url": URL, "max_bytes": 10}
+
+    def test_ssrf_guard_blocks_a_private_url_before_any_request(self, monkeypatch):
+        calls = _script_open(monkeypatch, [])
+        with pytest.raises(InvalidInputError):
+            Fetcher().post_form("https://internal.example/search", {"a": "1"})
+        assert calls == []
+
+    def test_throttle_acquired_before_every_attempt(self, monkeypatch, sleeps):
+        throttle = _CountingThrottle()
+        _script_open(monkeypatch, [_http_error(500), _Resp(b"ok")])
+        Fetcher(throttle=throttle).post_form(URL, {"a": "1"})
+        assert throttle.acquired == 2
+
+    def test_a_later_get_on_the_same_fetcher_is_a_plain_get(self, monkeypatch):
+        calls = _script_open(monkeypatch, [_Resp(b"ok"), _Resp(b"ok")])
+        fetcher = Fetcher()
+        fetcher.post_form(URL, {"a": "1"})
+        fetcher.get_bytes(URL)
+        assert (calls[1][0].get_method(), calls[1][0].data) == ("GET", None)
+        assert "content-type" not in _sent_headers(calls[1][0])
+
+    def test_module_post_form_passes_timeout_and_retries(self, monkeypatch, sleeps):
+        from pf_core.fetch import post_form
+
+        calls = _script_open(monkeypatch, [_http_error(503)])
+        with pytest.raises(urllib.error.HTTPError):
+            post_form(URL, {"a": "1"}, timeout_s=5.0, retries=0)
+        assert (len(calls), calls[0][1], sleeps) == (1, 5.0, [])
+
+    def test_an_open_override_still_sees_every_request(self, monkeypatch):
+        calls = _script_open(monkeypatch, [_Resp(b"ok")])
+
+        class _Poster(Fetcher):
+            def _open(self, request, timeout_s):
+                request.data = b"a=1"
+                return super()._open(request, timeout_s)
+
+        assert _Poster(max_redirects=0).get_text(URL) == (URL, "ok")
+        assert (calls[0][0].get_method(), calls[0][0].data) == ("POST", b"a=1")
 
 
 class TestNotModified:

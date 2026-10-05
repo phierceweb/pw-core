@@ -26,6 +26,7 @@ from pf_core.fetch.images import (
     localize_file,
     localize_images,
     sniff_image_ext,
+    with_query_digest,
 )
 
 PNG = b"\x89PNG\r\n\x1a\n" + b"png-payload"
@@ -96,6 +97,55 @@ class TestDefaultNamer:
     def test_percent_encoding_preserved(self):
         url = "https://example.com/images/user%20guide/setup%20figure.png"
         assert default_namer(url) == "user%20guide-setup%20figure.png"
+
+
+IMG = "https://cdn.example.com/media/image"
+
+
+class TestQueryDigest:
+    def test_query_only_urls_get_distinct_stable_names(self):
+        a, b = f"{IMG}?id=101", f"{IMG}?id=102"
+        assert default_namer(a) == "media-image-03e79b3674"
+        assert default_namer(b) == "media-image-43775bfa3e"
+        assert default_namer(a) == default_namer(a)
+
+    def test_digest_goes_before_an_image_extension(self):
+        url = "https://example.com/images/setup/diagram.png?v=3"
+        assert default_namer(url) == "setup-diagram-951eba4f02.png"
+
+    def test_queryless_names_are_unchanged(self):
+        assert default_namer("https://example.com/images/setup/diagram.png") == "setup-diagram.png"
+        assert default_namer("https://example.com/images/setup/diagram.png?") == "setup-diagram.png"
+        assert default_namer(f"{IMG}#frag") == "media-image"
+
+    def test_fragment_does_not_change_the_name(self):
+        assert default_namer(f"{IMG}?v=3#a") == default_namer(f"{IMG}?v=3#b")
+
+    def test_helper_for_custom_namers(self):
+        assert with_query_digest("photo.jpg", f"{IMG}?v=3") == "photo-951eba4f02.jpg"
+        assert with_query_digest("photo", f"{IMG}?v=3") == "photo-951eba4f02"
+        assert with_query_digest("photo.jpg", IMG) == "photo.jpg"
+
+    def test_reuse_existing_keeps_query_only_urls_apart(self, tmp_path):
+        a, b = f"{IMG}?id=101", f"{IMG}?id=102"
+        fetcher = FakeFetcher({a: PNG, b: JPG})
+        md = f"![one]({a})\n![two]({b})\n"
+        result = localize_images(md, tmp_path / "images", fetcher=fetcher, reuse_existing=True)
+        assert fetcher.calls == [a, b]
+        assert result.markdown == (
+            "![one](images/media-image-03e79b3674.png)\n![two](images/media-image-43775bfa3e.jpg)\n"
+        )
+        assert (tmp_path / "images" / "media-image-03e79b3674.png").read_bytes() == PNG
+        assert (tmp_path / "images" / "media-image-43775bfa3e.jpg").read_bytes() == JPG
+
+    def test_localize_file_names_do_not_depend_on_order(self, tmp_path):
+        a, b = f"{IMG}?id=101", f"{IMG}?id=102"
+        doc = tmp_path / "doc.md"
+        doc.write_text(f"![two]({b})\n![one]({a})\n", encoding="utf-8")
+        assert localize_file(doc, tmp_path / "images", fetcher=FakeFetcher()) == 2
+        assert doc.read_text(encoding="utf-8") == (
+            "![two](images/media-image-43775bfa3e.png)\n![one](images/media-image-03e79b3674.png)\n"
+        )
 
 
 class TestSniffImageExt:

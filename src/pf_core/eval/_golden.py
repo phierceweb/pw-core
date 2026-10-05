@@ -27,6 +27,8 @@ import builtins
 from sqlalchemy import select
 
 from pf_core.db.repository import Repository
+from pf_core.exceptions import InvalidInputError
+from pf_core.llm._json import split_finite
 from pf_core.llm.tracking import schema as s
 from pf_core.llm.tracking.subrepos import LlmRunOutcomeRepo
 from pf_core.log import get_logger
@@ -68,7 +70,17 @@ class GoldenSetRepo(Repository):
             ground_truth: Optional dict of ``metric_name → value`` stored as
                 ``llm_run_metrics`` rows. Used by metric gates.
             notes: Free-text note written to the ``golden_approved`` outcome.
+
+        Raises:
+            InvalidInputError: A ``ground_truth`` value is NaN or ±Infinity
+                (nothing is written).
         """
+        if ground_truth:
+            _, non_finite = split_finite(ground_truth)
+            if non_finite:
+                raise InvalidInputError(
+                    f"ground_truth values must be finite numbers: {', '.join(non_finite)}"
+                )
         payload = self.get_payload(run_id)
         if payload is None:
             logger.warning("golden_missing_payload", run_id=run_id, version=version)

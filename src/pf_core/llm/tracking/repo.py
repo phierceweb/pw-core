@@ -18,7 +18,7 @@ from typing import Any
 from sqlalchemy import select
 
 from pf_core.db.repository import Repository
-from pf_core.llm._json import finite_json
+from pf_core.llm._json import finite_json, is_non_finite, split_finite
 from pf_core.llm.parse import truncated_from_usage
 from pf_core.llm.tracking import schema as s
 from pf_core.llm.tracking._resolvers import (
@@ -296,9 +296,17 @@ class LlmRunRepo(Repository):
             run_values[col] = (sampling or {}).get(col)
         for col in _USAGE_COLS:
             run_values[col] = (usage or {}).get(col)
+        nulled = [col for col in (*_SAMPLING_COLS, *_USAGE_COLS) if is_non_finite(run_values[col])]
+        if nulled:
+            logger.warning("llm_run_value_non_finite", agent_type=agent_type, names=nulled)
+            run_values.update(dict.fromkeys(nulled))
 
         if extra_run_values:
             run_values.update(extra_run_values)
+
+        finite_metrics, non_finite = split_finite(metrics or {})
+        if non_finite:
+            logger.warning("llm_run_metric_non_finite", agent_type=agent_type, names=non_finite)
 
         with self._tx() as conn:
             insert_result = conn.execute(s.llm_runs.insert().values(**run_values))
@@ -333,18 +341,18 @@ class LlmRunRepo(Repository):
                             "validator": validator,
                             "passed": passed,
                             "severity": severity,
-                            "details": details,
+                            "details": finite_json(details),
                         }
                         for (validator, passed, severity, details) in validations
                     ],
                 )
 
-            if metrics:
+            if finite_metrics:
                 conn.execute(
                     s.llm_run_metrics.insert(),
                     [
-                        {"llm_run_id": run_id, "metric_name": k, "metric_value": float(v)}
-                        for k, v in metrics.items()
+                        {"llm_run_id": run_id, "metric_name": k, "metric_value": v}
+                        for k, v in finite_metrics.items()
                     ],
                 )
 

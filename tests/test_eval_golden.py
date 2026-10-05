@@ -8,6 +8,7 @@ import logging
 import pytest
 
 from pf_core.eval._golden import GoldenSetRepo
+from pf_core.exceptions import InvalidInputError
 from pf_core.llm.tracking import (
     llm_agent_types,
     llm_models,
@@ -210,6 +211,15 @@ def test_ground_truth_idempotent(tracking_db, seed_run):
 
     gt = repo.get_ground_truth(seed_run)
     assert gt["score"] == 2.0
+
+
+@pytest.mark.parametrize("bad", [float("nan"), float("inf"), float("-inf")])
+def test_ground_truth_rejects_non_finite_before_writing(tracking_db, seed_run, bad):
+    repo = GoldenSetRepo()
+    with pytest.raises(InvalidInputError, match="score"):
+        repo.add(seed_run, version="golden_v1", ground_truth={"ok": 1.0, "score": bad})
+    assert repo.get_ground_truth(seed_run) == {}
+    assert [r["id"] for r in repo.list(version="golden_v1")] == []
 
 
 def test_ground_truth_empty(tracking_db, seed_run):

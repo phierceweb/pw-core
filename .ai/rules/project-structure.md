@@ -112,7 +112,7 @@ In `pyproject.toml`:
 ```toml
 [project]
 dependencies = [
-    "pf-core~=0.25.0",  # pin the current release (see CHANGELOG)
+    "pf-core~=0.26.0",  # pin the current release (see CHANGELOG)
     # local co-development instead: "pf-core @ file:///${PROJECT_ROOT}/../pf-core",
 ]
 ```

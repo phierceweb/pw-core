@@ -5,7 +5,7 @@ pf-core is infrastructure: the mechanisms every consumer would otherwise hand-ro
 ## What belongs here
 
 - Reusable mechanisms — logging, config/env resolution, exceptions, DB access, LLM clients and run tracking, jobs, caching, guards.
-- **Generic, mountable entry points** — routers a consumer mounts (`pf_core.web.llm_admin`, `pf_core.web.jobs_admin`, `pf_core.web.health`) and framework CLIs it runs (`pf-guards`, `pf-doctor`, `pf-jobs`, `pf-eval`, `pf-setup`). These operate on framework-owned tables and framework-owned rules only; they are wiring, not application surface.
+- **Generic, mountable entry points** — routers a consumer mounts (`pf_core.web.llm_admin`, `pf_core.web.jobs_admin`, `pf_core.web.health`) and framework CLIs it runs (`pf-guards`, `pf-doctor`, `pf-jobs`, `pf-eval`, `pf-export`, `pf-setup`). These operate on framework-owned tables and framework-owned rules only; they are wiring, not application surface.
 - Scaffolding and templates for consumer projects.
 
 ## What must NEVER be here

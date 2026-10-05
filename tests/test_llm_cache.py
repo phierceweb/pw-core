@@ -5,6 +5,7 @@ All tests use in-memory SQLite via the ``pf_engine`` fixture.
 
 from __future__ import annotations
 
+import dataclasses
 import datetime as dt
 import logging
 
@@ -12,6 +13,7 @@ import pytest
 from sqlalchemy import select
 
 from pf_core.llm.cache import (
+    AgentCacheConfig,
     CacheHit,
     ExactCacheRepo,
     cache_lookup,
@@ -109,7 +111,6 @@ def test_compute_input_hash_accepts_rendered_prompts():
 def test_agent_cache_config_defaults_when_no_file():
     cfg = get_agent_cache_config("classifier")
     assert cfg.exact is True
-    assert cfg.semantic is False
     assert cfg.ttl_seconds == 86400
 
 
@@ -122,8 +123,7 @@ defaults:
 agents:
   searcher:
     ttl_seconds: 1800
-    semantic: true
-    semantic_threshold: 0.95
+    on_miss: warn_log
 """
     cfg_file = tmp_path / "cache.yaml"
     cfg_file.write_text(yaml_content)
@@ -131,18 +131,104 @@ agents:
     clear_config_cache()
 
     default_cfg = get_agent_cache_config("drafter")
-    assert default_cfg.ttl_seconds == 3600
-    assert default_cfg.semantic is False
+    assert (default_cfg.ttl_seconds, default_cfg.on_miss) == (3600, "proceed")
 
     searcher_cfg = get_agent_cache_config("searcher")
-    assert searcher_cfg.ttl_seconds == 1800
-    assert searcher_cfg.semantic is True
-    assert searcher_cfg.semantic_threshold == 0.95
+    assert (searcher_cfg.ttl_seconds, searcher_cfg.on_miss) == (1800, "warn_log")
 
 
 def test_agent_cache_config_has_no_max_entries_field():
     cfg = get_agent_cache_config("classifier")
     assert not hasattr(cfg, "max_entries_per_agent")
+
+
+def test_agent_cache_config_has_only_exact_cache_fields():
+    assert {f.name for f in dataclasses.fields(AgentCacheConfig)} == {
+        "exact",
+        "ttl_seconds",
+        "on_miss",
+    }
+
+
+_REMOVED_SEMANTIC_KEYS = {
+    "semantic": "false",
+    "semantic_threshold": "0.93",
+    "semantic_embedding_model": "text-embedding-3-small",
+    "canonicalize": "{whitespace: true}",
+}
+
+
+@pytest.mark.parametrize("key", sorted(_REMOVED_SEMANTIC_KEYS))
+def test_removed_semantic_key_is_ignored_with_one_warning(tmp_path, monkeypatch, caplog, key):
+    cfg_file = tmp_path / "cache.yaml"
+    cfg_file.write_text(
+        f"defaults:\n  exact: true\n  {key}: {_REMOVED_SEMANTIC_KEYS[key]}\n"
+        f"agents:\n  searcher:\n    ttl_seconds: 60\n    {key}: {_REMOVED_SEMANTIC_KEYS[key]}\n"
+    )
+    monkeypatch.setenv("CACHE_CONFIG", str(cfg_file))
+    clear_config_cache()
+
+    with caplog.at_level(logging.WARNING, logger="pf_core.llm.cache.config"):
+        cfg = get_agent_cache_config("searcher")
+
+    assert (cfg.exact, cfg.ttl_seconds) == (True, 60)
+    ignored = [m for r in caplog.records if "cache_config_ignored_key" in (m := r.getMessage())]
+    assert len(ignored) == 1 and f"'key': '{key}'" in ignored[0]
+    assert _count_events(caplog, "cache_config_invalid_flag") == 0
+
+
+# A cache.yaml written for the semantic layer, which never shipped.
+_SEMANTIC_FALSE_CONFIG = """
+defaults:
+  exact: true
+  semantic: false
+  ttl_seconds: 86400
+  on_miss: proceed
+
+agents:
+  classifier:
+    exact: true
+    semantic: false
+    ttl_seconds: 604800
+"""
+
+
+def test_cache_yaml_with_semantic_false_keeps_exact_caching(
+    cache_db, tmp_path, monkeypatch, caplog
+):
+    cfg_file = tmp_path / "cache.yaml"
+    cfg_file.write_text(_SEMANTIC_FALSE_CONFIG)
+    monkeypatch.setenv("CACHE_CONFIG", str(cfg_file))
+    clear_config_cache()
+
+    with caplog.at_level(logging.WARNING, logger="pf_core.llm.cache.config"):
+        cfg = get_agent_cache_config("classifier")
+    assert (cfg.exact, cfg.ttl_seconds, cfg.on_miss) == (True, 604800, "proceed")
+    assert _count_events(caplog, "cache_config_ignored_key") == 1
+
+    run_id = _make_run(agent_type="classifier")
+    cache_store(
+        agent_type="classifier",
+        input_hash="e" * 64,
+        source_run_id=run_id,
+        model="openai/gpt-4o",
+        parsed_output={"label": "policy"},
+    )
+    hit = cache_lookup(agent_type="classifier", input_hash="e" * 64)
+    assert hit is not None and hit.parsed_output == {"label": "policy"}
+
+
+def test_semantic_false_test_config_still_turns_exact_off(tmp_path, monkeypatch, caplog):
+    cfg_file = tmp_path / "cache.yaml"
+    cfg_file.write_text("defaults:\n  exact: false\n  semantic: false\n")
+    monkeypatch.setenv("CACHE_CONFIG", str(cfg_file))
+    clear_config_cache()
+
+    with caplog.at_level(logging.WARNING, logger="pf_core.llm.cache.config"):
+        assert get_agent_cache_config("summarizer").exact is False
+
+    assert _count_events(caplog, "cache_config_ignored_key") == 1
+    assert _count_events(caplog, "cache_config_invalid_flag") == 0
 
 
 @pytest.mark.parametrize(
@@ -163,7 +249,7 @@ def test_a_section_of_the_wrong_type_turns_caching_off(tmp_path, monkeypatch, ca
     clear_config_cache()
     with caplog.at_level(logging.WARNING, logger="pf_core.llm.cache.config"):
         cfg = get_agent_cache_config("searcher")
-    assert (cfg.exact, cfg.semantic) == (False, False)
+    assert cfg.exact is False
     assert _count_events(caplog, "cache_config_section_not_a_mapping") == 1
 
 
@@ -199,13 +285,13 @@ def test_exact_reads_quoted_booleans(tmp_path, monkeypatch, value, exact):
 
 def test_an_unrecognised_flag_turns_the_feature_off(tmp_path, monkeypatch, caplog):
     cfg_file = tmp_path / "cache.yaml"
-    cfg_file.write_text('defaults:\n  exact: "maybe"\n  semantic: "sure"\n')
+    cfg_file.write_text('defaults:\n  exact: "maybe"\n')
     monkeypatch.setenv("CACHE_CONFIG", str(cfg_file))
     clear_config_cache()
     with caplog.at_level(logging.WARNING, logger="pf_core.llm.cache.config"):
         cfg = get_agent_cache_config("searcher")
-    assert (cfg.exact, cfg.semantic) == (False, False)
-    assert _count_events(caplog, "cache_config_invalid_flag") == 2
+    assert cfg.exact is False
+    assert _count_events(caplog, "cache_config_invalid_flag") == 1
 
 
 def _count_events(caplog, event: str) -> int:
@@ -276,7 +362,7 @@ def test_non_mapping_config_turns_caching_off(tmp_path, monkeypatch, caplog):
     with caplog.at_level(logging.WARNING, logger="pf_core.llm.cache.config"):
         cfg = get_agent_cache_config("searcher")
 
-    assert (cfg.exact, cfg.semantic) == (False, False)
+    assert cfg.exact is False
     assert _count_events(caplog, "cache_config_not_a_mapping") == 1
 
 
@@ -289,7 +375,7 @@ def test_unparseable_config_turns_caching_off(tmp_path, monkeypatch, caplog):
     with caplog.at_level(logging.WARNING, logger="pf_core.llm.cache.config"):
         cfg = get_agent_cache_config("searcher")
 
-    assert (cfg.exact, cfg.semantic) == (False, False)
+    assert cfg.exact is False
     assert _count_events(caplog, "cache_config_load_failed") == 1
 
 
@@ -568,6 +654,30 @@ def test_store_compiles_to_a_portable_upsert(dialect_name, expected):
 # ---------------------------------------------------------------------------
 # cache_lookup / cache_store helpers
 # ---------------------------------------------------------------------------
+
+
+def test_cache_lookup_and_store_take_no_canonical_text(monkeypatch):
+    monkeypatch.setenv("CACHE_CONFIG", "off")
+    clear_config_cache()
+    with pytest.raises(TypeError, match="canonical_text"):
+        cache_lookup(agent_type="classifier", input_hash="0" * 64, canonical_text="x")
+    with pytest.raises(TypeError, match="canonical_text"):
+        cache_store(
+            agent_type="classifier",
+            input_hash="0" * 64,
+            source_run_id=1,
+            model="openai/gpt-4o",
+            canonical_text="x",
+        )
+
+
+def test_cache_schema_is_the_exact_cache_table_only():
+    import pf_core.llm.cache as cache
+    from pf_core.llm.cache._schema import ALL_CACHE_TABLES, llm_cache_entries
+
+    assert ALL_CACHE_TABLES == (llm_cache_entries,)
+    assert "llm_embeddings" not in metadata.tables
+    assert not hasattr(cache, "llm_embeddings")
 
 
 def test_cache_lookup_miss_when_not_stored(cache_db):

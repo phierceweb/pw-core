@@ -50,24 +50,16 @@ from pf_core.db.types import (
     JSON_,
     LARGE_TEXT,
     PK_BIG,
-    PK_INT,
     PK_SMALL,
     TIMESTAMP_US,
     server_now,
 )
 
-# ---------------------------------------------------------------------------
-# Type variants — the public home is pf_core.db.types. The underscored
-# aliases stay: framework siblings and consumer schema extensions import them.
-# ---------------------------------------------------------------------------
-
-_TIMESTAMP_US = TIMESTAMP_US
+# Underscored aliases of pf_core.db.types, kept importable.
 _LARGE_TEXT = LARGE_TEXT
 _JSON = JSON_
-_PK_INT = PK_INT
 _PK_SMALL = PK_SMALL
 _PK_BIG = PK_BIG
-_FK_INT = FK_INT
 _FK_SMALL = FK_SMALL
 _FK_BIG = FK_BIG
 _server_now = server_now
@@ -137,9 +129,9 @@ metadata = MetaData()
 llm_models = Table(
     "llm_models",
     metadata,
-    Column("id", _PK_SMALL, primary_key=True, autoincrement=True),
+    Column("id", PK_SMALL, primary_key=True, autoincrement=True),
     Column("name", String(255), nullable=False, unique=True),
-    Column("created_at", _TIMESTAMP_US, nullable=False, server_default=_server_now()),
+    Column("created_at", TIMESTAMP_US, nullable=False, server_default=server_now()),
 )
 """Canonical model slug as sent to the provider (e.g. ``claude-opus-4-7``)."""
 
@@ -147,10 +139,10 @@ llm_models = Table(
 llm_agent_types = Table(
     "llm_agent_types",
     metadata,
-    Column("id", _PK_SMALL, primary_key=True, autoincrement=True),
+    Column("id", PK_SMALL, primary_key=True, autoincrement=True),
     Column("slug", String(64), nullable=False, unique=True),
     Column("description", Text, nullable=True),
-    Column("created_at", _TIMESTAMP_US, nullable=False, server_default=_server_now()),
+    Column("created_at", TIMESTAMP_US, nullable=False, server_default=server_now()),
 )
 """Pipeline-role classification for runs (``drafter``, ``reviewer``, ...)."""
 
@@ -158,18 +150,18 @@ llm_agent_types = Table(
 llm_prompts = Table(
     "llm_prompts",
     metadata,
-    Column("id", _PK_SMALL, primary_key=True, autoincrement=True),
+    Column("id", PK_SMALL, primary_key=True, autoincrement=True),
     Column(
         "agent_type_id",
-        _FK_SMALL,
+        FK_SMALL,
         ForeignKey("llm_agent_types.id"),
         nullable=False,
     ),
     Column("part", String(16), nullable=False),
     Column("version", SmallInteger, nullable=False, server_default="1"),
-    Column("content", _LARGE_TEXT, nullable=False),
+    Column("content", LARGE_TEXT, nullable=False),
     Column("effective_date", Date, nullable=False),
-    Column("created_at", _TIMESTAMP_US, nullable=False, server_default=_server_now()),
+    Column("created_at", TIMESTAMP_US, nullable=False, server_default=server_now()),
     UniqueConstraint("agent_type_id", "part", "version", name="uq_llm_prompts_agent_part_version"),
     Index("idx_llm_prompts_agent_part", "agent_type_id", "part"),
     CheckConstraint("part IN ('system', 'user', 'full')", name="ck_llm_prompts_part"),
@@ -184,23 +176,23 @@ llm_prompts = Table(
 llm_runs = Table(
     "llm_runs",
     metadata,
-    Column("id", _PK_BIG, primary_key=True, autoincrement=True),
+    Column("id", PK_BIG, primary_key=True, autoincrement=True),
     Column(
         "agent_type_id",
-        _FK_SMALL,
+        FK_SMALL,
         ForeignKey("llm_agent_types.id"),
         nullable=False,
     ),
-    Column("model_id", _FK_SMALL, ForeignKey("llm_models.id"), nullable=False),
+    Column("model_id", FK_SMALL, ForeignKey("llm_models.id"), nullable=False),
     Column(
         "system_prompt_id",
-        _FK_SMALL,
+        FK_SMALL,
         ForeignKey("llm_prompts.id"),
         nullable=True,
     ),
     Column(
         "user_prompt_id",
-        _FK_SMALL,
+        FK_SMALL,
         ForeignKey("llm_prompts.id"),
         nullable=True,
     ),
@@ -209,7 +201,7 @@ llm_runs = Table(
     Column("top_p", Float, nullable=True),
     Column("max_tokens", Integer, nullable=True),
     Column("seed", Integer, nullable=True),
-    Column("stop_sequences", _JSON, nullable=True),
+    Column("stop_sequences", JSON_, nullable=True),
     # Provider attribution
     Column("provider", String(32), nullable=True),
     Column("model_fingerprint", String(128), nullable=True),
@@ -235,11 +227,11 @@ llm_runs = Table(
     # pf_core.jobs). SET NULL so deleting a job preserves cost history.
     Column(
         "job_id",
-        _FK_INT,
+        FK_INT,
         ForeignKey("jobs.id", ondelete="SET NULL"),
         nullable=True,
     ),
-    Column("created_at", _TIMESTAMP_US, nullable=False, server_default=_server_now()),
+    Column("created_at", TIMESTAMP_US, nullable=False, server_default=server_now()),
     Index("idx_llm_runs_created_at", "created_at"),
     Index("idx_llm_runs_agent_type_created", "agent_type_id", "created_at"),
     Index("idx_llm_runs_model_created", "model_id", "created_at"),
@@ -260,15 +252,15 @@ llm_run_payloads = Table(
     metadata,
     Column(
         "llm_run_id",
-        _FK_BIG,
+        FK_BIG,
         ForeignKey("llm_runs.id", ondelete="CASCADE"),
         primary_key=True,
     ),
-    Column("rendered_system", _LARGE_TEXT, nullable=True),
-    Column("rendered_user", _LARGE_TEXT, nullable=True),
-    Column("raw_response", _LARGE_TEXT, nullable=True),
-    Column("parsed_output", _JSON, nullable=True),
-    Column("created_at", _TIMESTAMP_US, nullable=False, server_default=_server_now()),
+    Column("rendered_system", LARGE_TEXT, nullable=True),
+    Column("rendered_user", LARGE_TEXT, nullable=True),
+    Column("raw_response", LARGE_TEXT, nullable=True),
+    Column("parsed_output", JSON_, nullable=True),
+    Column("created_at", TIMESTAMP_US, nullable=False, server_default=server_now()),
 )
 """Cold-tier 1:1 sidecar for rendered prompts and raw response text."""
 
@@ -282,7 +274,7 @@ llm_run_configs = Table(
     metadata,
     Column(
         "llm_run_id",
-        _FK_BIG,
+        FK_BIG,
         ForeignKey("llm_runs.id", ondelete="CASCADE"),
         nullable=False,
     ),
@@ -299,15 +291,15 @@ llm_run_validations = Table(
     metadata,
     Column(
         "llm_run_id",
-        _FK_BIG,
+        FK_BIG,
         ForeignKey("llm_runs.id", ondelete="CASCADE"),
         nullable=False,
     ),
     Column("validator", String(64), nullable=False),
     Column("severity", String(16), nullable=False),
     Column("passed", Boolean, nullable=False),
-    Column("details", _JSON, nullable=True),
-    Column("created_at", _TIMESTAMP_US, nullable=False, server_default=_server_now()),
+    Column("details", JSON_, nullable=True),
+    Column("created_at", TIMESTAMP_US, nullable=False, server_default=server_now()),
     PrimaryKeyConstraint("llm_run_id", "validator", name="pk_llm_run_validations"),
     Index("idx_llm_run_validations_validator_passed", "validator", "passed"),
 )
@@ -319,14 +311,14 @@ llm_run_outcomes = Table(
     metadata,
     Column(
         "llm_run_id",
-        _FK_BIG,
+        FK_BIG,
         ForeignKey("llm_runs.id", ondelete="CASCADE"),
         nullable=False,
     ),
     Column("outcome_kind", String(64), nullable=False),
     Column("score", Float, nullable=True),
     Column("notes", Text, nullable=True),
-    Column("recorded_at", _TIMESTAMP_US, nullable=False, server_default=_server_now()),
+    Column("recorded_at", TIMESTAMP_US, nullable=False, server_default=server_now()),
     PrimaryKeyConstraint("llm_run_id", "outcome_kind", name="pk_llm_run_outcomes"),
     Index("idx_llm_run_outcomes_kind_recorded", "outcome_kind", "recorded_at"),
 )
@@ -338,18 +330,18 @@ llm_run_links = Table(
     metadata,
     Column(
         "parent_run_id",
-        _FK_BIG,
+        FK_BIG,
         ForeignKey("llm_runs.id", ondelete="CASCADE"),
         nullable=False,
     ),
     Column(
         "child_run_id",
-        _FK_BIG,
+        FK_BIG,
         ForeignKey("llm_runs.id", ondelete="CASCADE"),
         nullable=False,
     ),
     Column("relation", String(32), nullable=False),
-    Column("created_at", _TIMESTAMP_US, nullable=False, server_default=_server_now()),
+    Column("created_at", TIMESTAMP_US, nullable=False, server_default=server_now()),
     PrimaryKeyConstraint("parent_run_id", "child_run_id", "relation", name="pk_llm_run_links"),
     Index("idx_llm_run_links_child_relation", "child_run_id", "relation"),
 )
@@ -361,7 +353,7 @@ llm_run_tags = Table(
     metadata,
     Column(
         "llm_run_id",
-        _FK_BIG,
+        FK_BIG,
         ForeignKey("llm_runs.id", ondelete="CASCADE"),
         nullable=False,
     ),
@@ -377,7 +369,7 @@ llm_run_metrics = Table(
     metadata,
     Column(
         "llm_run_id",
-        _FK_BIG,
+        FK_BIG,
         ForeignKey("llm_runs.id", ondelete="CASCADE"),
         nullable=False,
     ),

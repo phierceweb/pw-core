@@ -1,11 +1,8 @@
 # LLM Cache
 
-`pf_core.llm.cache` — response cache for LLM calls. Answers "did we already ask the LLM something equivalent to this?" before making an expensive call.
+`pf_core.llm.cache` — response cache for LLM calls. Answers "did we already ask the LLM exactly this?" before making an expensive call.
 
-Two layers (exact cache is shipped; semantic is planned):
-
-1. **Exact cache** — keyed by `input_hash` (SHA256 of model + prompts + sampling + configs). Reuses identical calls without a round-trip.
-2. **Semantic cache** — keyed by embedding similarity. For queries that differ only in whitespace, phrasing, or order-irrelevant details. Opt-in per agent type. *(planned — not yet shipped; the schema ships today, the lookup doesn't)*
+It is an **exact cache**, keyed by `input_hash` (SHA256 of model + prompts + sampling + configs) and agent type. An identical call reuses the stored response without a round-trip; a call that differs in any byte of the prompt misses.
 
 **Not** to be confused with `pf_core.cache.redis` (Redis KV cache for API response memoization). This module caches LLM call responses in the database.
 
@@ -57,23 +54,21 @@ def classify(*, text: str) -> dict:
 
 Per-agent policy. Place in `config/cache.yaml` (or set `CACHE_CONFIG` env var).
 
-To disable caching entirely with no config file, set `CACHE_CONFIG` to `off` (also accepted: `disabled`, `none`, `0`) — exact and semantic caching turn off for every agent. This is what test suites should use (`hermetic_test_env()` sets it — see [testing.md](testing.md)); a missing file, by contrast, means framework defaults, which have `exact: true`.
+To disable caching entirely with no config file, set `CACHE_CONFIG` to `off` (also accepted: `disabled`, `none`, `0`) — exact caching turns off for every agent. This is what test suites should use (`hermetic_test_env()` sets it — see [testing.md](testing.md)); a missing file, by contrast, means framework defaults, which have `exact: true`.
 
-The loader never raises on a bad config. A missing file means framework defaults. A file that exists but fails to parse (a repeated key included — see [yaml-utils](yaml-utils.md)), or whose top level is not a mapping, logs a warning (`cache_config_load_failed` / `cache_config_not_a_mapping`) and turns caching off — exact and semantic — since the unreadable file may be what disabled it. A `defaults` or `agents` section that is not a mapping turns caching off for every agent, and an `agents.<slug>` entry that is not a mapping turns it off for that agent (`cache_config_section_not_a_mapping`). `exact` and `semantic` accept YAML booleans and their quoted forms (`"false"`, `"no"`, `"off"`, `"0"` and the true counterparts); any other value turns that feature off (`cache_config_invalid_flag`).
+The loader never raises on a bad config. A missing file means framework defaults. A file that exists but fails to parse (a repeated key included — see [yaml-utils](yaml-utils.md)), or whose top level is not a mapping, logs a warning (`cache_config_load_failed` / `cache_config_not_a_mapping`) and turns caching off, since the unreadable file may be what disabled it. A `defaults` or `agents` section that is not a mapping turns caching off for every agent, and an `agents.<slug>` entry that is not a mapping turns it off for that agent (`cache_config_section_not_a_mapping`). `exact` accepts YAML booleans and their quoted forms (`"false"`, `"no"`, `"off"`, `"0"` and the true counterparts); any other value turns caching off (`cache_config_invalid_flag`).
 
 ```yaml
 # config/cache.yaml
 
 defaults:
   exact: true
-  semantic: false
   ttl_seconds: 86400        # 24 hours; 0 = never expire
   on_miss: proceed           # 'proceed' | 'warn_log'
 
 agents:
   classifier:
     exact: true
-    semantic: false           # semantic layer not yet shipped
     ttl_seconds: 604800       # 7 days — classifications are stable
 
   extractor:
@@ -94,14 +89,12 @@ agents:
 | Key | Default | Description |
 |-----|---------|-------------|
 | `exact` | `true` | Check exact-hash cache |
-| `semantic` | `false` | Check semantic-similarity cache (planned) |
 | `ttl_seconds` | `86400` | Entry expiration; `0` = never |
-| `semantic_threshold` | `0.93` | Cosine similarity threshold for a semantic hit |
-| `semantic_embedding_model` | `""` | Model used for embeddings (planned) |
-| `canonicalize.*` | all `false` | Pre-embedding normalizations (planned) |
 | `on_miss` | `proceed` | `warn_log` emits a WARNING on miss (useful during rollout) |
 
-There is no size-based eviction: the cache is bounded by `ttl_seconds` plus the explicit invalidation helpers below. Older releases accepted a `max_entries_per_agent` key; it is now ignored (a config still carrying it loads, and logs `cache_config_ignored_key` once).
+There is no size-based eviction: the cache is bounded by `ttl_seconds` plus the explicit invalidation helpers below.
+
+**Ignored keys.** A config written for an older release still loads; these keys do nothing and each logs `cache_config_ignored_key` once per process: `max_entries_per_agent`, and the semantic-cache keys `semantic`, `semantic_threshold`, `semantic_embedding_model` and `canonicalize`. Delete them from `cache.yaml` to silence the warning.
 
 ## compute_input_hash()
 
@@ -132,11 +125,7 @@ A part that isn't JSON data (an open file handle, a client object) is stringifie
 ```python
 from pf_core.llm.cache import cache_lookup, CacheHit
 
-hit: CacheHit | None = cache_lookup(
-    agent_type="classifier",
-    input_hash=h,
-    canonical_text="...",  # pass now to avoid call-site changes when semantic lands
-)
+hit: CacheHit | None = cache_lookup(agent_type="classifier", input_hash=h)
 ```
 
 Returns `None` on miss or when caching is disabled for the agent. On hit, returns a `CacheHit`:
@@ -150,8 +139,8 @@ Returns `None` on miss or when caching is disabled for the agent. On hit, return
 | `model` | `str` | Model name from the source run |
 | `agent_type` | `str` | Agent slug |
 | `input_hash` | `str` | The SHA256 key |
-| `hit_type` | `str` | `"exact"` or `"semantic"` |
-| `similarity` | `float` | `1.0` for exact hits |
+| `hit_type` | `str` | Always `"exact"` |
+| `similarity` | `float` | Always `1.0` |
 | `created_at` | `datetime` | When the cache entry was created |
 
 ## cache_store()
@@ -215,7 +204,7 @@ All functions return the count of deleted rows.
 
 ### `llm_cache_entries`
 
-Registered on the shared `pf_core.llm.tracking.schema.metadata`. Created by the consumer's Alembic migration.
+Registered on the shared `pf_core.llm.tracking.schema.metadata`, and the only table in `ALL_CACHE_TABLES`. Created by the consumer's Alembic migration.
 
 | Column | Type | Notes |
 |--------|------|-------|
@@ -240,9 +229,15 @@ keying on it alone let one agent be served another's stored response.
 unique key never conflicts with existing rows; the first call from each other
 agent misses once and stores its own entry.
 
-### `llm_embeddings` (semantic layer — schema only today)
-
-Vector index for semantic cache. Not yet populated.
+**Consumer migration (0.26.0) — `llm_embeddings`:** pf-core no longer defines this table.
+`framework_ddl()` and `metadata.create_all()` don't create it, and a migration that
+creates the cache tables from `ALL_CACHE_TABLES` creates only `llm_cache_entries` on
+a fresh database. An existing `llm_embeddings` stays until the consumer drops it in
+its own migration; it references `llm_cache_entries`, so drop it first. A consumer
+migration, downgrade or maintenance helper that names `llm_embeddings` must tolerate
+its absence on a database built fresh from migrations, and a downgrade that loops
+over `ALL_CACHE_TABLES` on an existing database must drop `llm_embeddings` first
+when it exists.
 
 ## Analytics queries
 
@@ -300,7 +295,7 @@ GROUP BY at.slug;
 
 Enabling the exact cache for a consumer project requires:
 
-1. **Create the Alembic migration** — importing `pf_core.llm.tracking.metadata` in `env.py` is sufficient; `llm_cache_entries` and `llm_embeddings` will be detected by autogenerate.
+1. **Create the Alembic migration** — importing `pf_core.llm.tracking.metadata` in `env.py` is sufficient; `llm_cache_entries` will be detected by autogenerate.
 
 2. **Add env vars** to `.env.example`:
    ```

@@ -8,6 +8,7 @@ test engine.
 from __future__ import annotations
 
 import datetime as dt
+import logging
 
 import pytest
 
@@ -530,6 +531,82 @@ def test_record_stores_non_finite_parsed_floats_as_null(tracking_db):
     full = LlmRunRepo().get_with_payload(run_id)
     assert full["payload"]["parsed_output"] == {"score": None, "xs": [None, 1.5, {"y": None}]}
     assert full["payload"]["raw_response"] == raw
+
+
+def _count_events(caplog, event: str) -> int:
+    return sum(1 for r in caplog.records if event in r.getMessage())
+
+
+def test_record_stores_non_finite_validation_details_as_null(tracking_db):
+    run_id = LlmRunRepo().record(
+        agent_type="drafter",
+        model="claude-opus-4-7",
+        raw_response="r",
+        validations=[("v", True, "info", {"x": float("nan"), "ys": [float("inf"), 1.0]})],
+    )
+    assert LlmRunValidationRepo().list_for_run(run_id)[0]["details"] == {
+        "x": None,
+        "ys": [None, 1.0],
+    }
+    assert LlmRunRepo().get_with_payload(run_id)["payload"]["raw_response"] == "r"
+
+
+def test_validation_repo_stores_non_finite_details_as_null(tracking_db):
+    run_id = LlmRunRepo().record(agent_type="drafter", model="claude-opus-4-7")
+    LlmRunValidationRepo().record(run_id, validator="v", passed=False, details={"x": float("-inf")})
+    assert LlmRunValidationRepo().list_for_run(run_id)[0]["details"] == {"x": None}
+
+
+def test_record_skips_non_finite_metrics_and_keeps_the_run(tracking_db, caplog):
+    with caplog.at_level(logging.WARNING, logger="pf_core.llm.tracking.repo"):
+        run_id = LlmRunRepo().record(
+            agent_type="drafter",
+            model="claude-opus-4-7",
+            raw_response="r",
+            metrics={"good": 0.5, "bad": float("nan"), "worse": float("inf")},
+        )
+    assert LlmRunMetricRepo().list_for_run(run_id) == {"good": 0.5}
+    assert LlmRunRepo().get_with_payload(run_id)["payload"]["raw_response"] == "r"
+    assert _count_events(caplog, "llm_run_metric_non_finite") == 1
+    assert "bad" in caplog.text and "worse" in caplog.text
+
+
+def test_record_with_only_non_finite_metrics_writes_no_metric_rows(tracking_db):
+    run_id = LlmRunRepo().record(
+        agent_type="drafter", model="claude-opus-4-7", metrics={"bad": float("nan")}
+    )
+    assert LlmRunMetricRepo().list_for_run(run_id) == {}
+
+
+def test_metric_repo_skips_non_finite_values(tracking_db, caplog):
+    run_id = LlmRunRepo().record(agent_type="drafter", model="claude-opus-4-7")
+    with caplog.at_level(logging.WARNING, logger="pf_core.llm.tracking.subrepos"):
+        LlmRunMetricRepo().record(run_id, metrics={"m": float("inf"), "ok": 1.0})
+    assert LlmRunMetricRepo().list_for_run(run_id) == {"ok": 1.0}
+    assert _count_events(caplog, "llm_run_metric_non_finite") == 1
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "column"),
+    [
+        ({"sampling": {"temperature": float("nan")}}, "temperature"),
+        ({"sampling": {"top_p": float("inf")}}, "top_p"),
+        ({"usage": {"cost_usd": float("nan")}}, "cost_usd"),
+    ],
+)
+def test_record_stores_non_finite_run_columns_as_null(tracking_db, kwargs, column):
+    run_id = LlmRunRepo().record(
+        agent_type="drafter", model="claude-opus-4-7", raw_response="r", **kwargs
+    )
+    full = LlmRunRepo().get_with_payload(run_id)
+    assert full[column] is None
+    assert full["payload"]["raw_response"] == "r"
+
+
+def test_outcome_repo_stores_a_non_finite_score_as_null(tracking_db):
+    run_id = LlmRunRepo().record(agent_type="drafter", model="claude-opus-4-7")
+    LlmRunOutcomeRepo().record(run_id, outcome_kind="k", score=float("nan"))
+    assert LlmRunOutcomeRepo().list_for_run(run_id)[0]["score"] is None
 
 
 def test_record_skips_payload_when_all_fields_none(tracking_db):

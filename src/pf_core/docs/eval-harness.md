@@ -77,7 +77,7 @@ repo = GoldenSetRepo()
 # Add (idempotent)
 repo.add(run_id=1042, version="golden_v2", notes="canonical summary")
 
-# Add with ground-truth annotations (stored as llm_run_metrics)
+# Add with ground-truth annotations (stored as llm_run_metrics; NaN/±Infinity raise InvalidInputError)
 repo.add(
     run_id=8891,
     version="golden_v2",

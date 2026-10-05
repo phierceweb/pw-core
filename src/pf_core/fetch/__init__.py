@@ -1,7 +1,7 @@
 """Polite HTTP fetch core over stdlib urllib.
 
-GET-only fetching with status-aware retries, manual redirect walking that
-re-runs the SSRF guard on every hop, optional client-side throttling, a
+GET fetching, plus form POST, with status-aware retries, manual redirect walking
+that re-runs the SSRF guard on every hop, optional client-side throttling, a
 response-size cap, and cache-validator (ETag/Last-Modified) support. Zero
 third-party deps, so it ships in the base install; raw urllib exceptions
 propagate so callers can branch on ``HTTPError.code``.
@@ -14,11 +14,13 @@ import ssl
 import time
 import urllib.error
 import urllib.request
+from collections.abc import Mapping
 from email.message import Message
-from typing import Any, TypedDict
-from urllib.parse import urljoin
+from typing import Any, NamedTuple, TypedDict
+from urllib.parse import urlencode, urljoin
 
 from pf_core.exceptions import ClientError, InvalidInputError
+from pf_core.fetch._connect import RacingHTTPHandler, RacingHTTPSHandler
 from pf_core.fetch._decode import decode_body
 from pf_core.utils.env import resolve_str
 from pf_core.utils.http_tls import verify_tls as _resolve_verify_tls
@@ -31,16 +33,21 @@ except ImportError:  # pragma: no cover
     _PF_VERSION = "0.0.0+unknown"
 
 __all__ = [
+    "Body",
     "Fetcher",
     "Validators",
     "browser_headers",
+    "fetch_body",
     "fetch_bytes",
     "fetch_bytes_meta",
     "fetch_text",
     "not_modified",
+    "post_form",
 ]
 
 _RETRY_AFTER_CAP = 30.0  # seconds — don't let a server's Retry-After park a crawl for minutes
+
+_FORM_CONTENT_TYPE = "application/x-www-form-urlencoded; charset=UTF-8"
 
 _UA_ENV_VAR = "PF_FETCH_UA"
 _UA_DEFAULT = f"pf-core-fetch/{_PF_VERSION} (+https://github.com/phierceweb/pf-core)"
@@ -59,6 +66,28 @@ class Validators(TypedDict):
     last_modified: str | None
 
 
+class Body(NamedTuple):
+    """One response kept whole: its bytes, plus what decodes them and what revalidates them.
+
+    For a caller that decides from the bytes whether it wants text (a document served
+    where a page was expected) without fetching twice.
+    """
+
+    final_url: str
+    data: bytes
+    charset: str | None
+    validators: Validators
+
+    def text(self, encoding: str | None = None) -> str:
+        """Decoded as ``get_text`` decodes: ``encoding`` > charset > utf-8, with replacement."""
+        if encoding:
+            return self.data.decode(encoding, "replace")
+        try:
+            return self.data.decode(self.charset or "utf-8", "replace")
+        except LookupError:
+            return self.data.decode("utf-8", "replace")
+
+
 class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
     """Refuse to follow redirects so every 3xx surfaces as an HTTPError."""
 
@@ -71,7 +100,9 @@ def _build_opener(verify: bool | None = None) -> urllib.request.OpenerDirector:
     if not _resolve_verify_tls(verify):
         ctx.check_hostname = False
         ctx.verify_mode = ssl.CERT_NONE
-    return urllib.request.build_opener(_NoRedirectHandler, urllib.request.HTTPSHandler(context=ctx))
+    return urllib.request.build_opener(
+        _NoRedirectHandler, RacingHTTPHandler, RacingHTTPSHandler(context=ctx)
+    )
 
 
 def _retry_after(exc: urllib.error.HTTPError, attempt: int) -> float:
@@ -83,7 +114,7 @@ def _retry_after(exc: urllib.error.HTTPError, attempt: int) -> float:
 
 
 class Fetcher:
-    """Configured GET client; build one per source/policy and reuse it.
+    """Configured GET (and form POST) client; build one per source/policy and reuse it.
 
     Args:
         user_agent: UA override; else ``PF_FETCH_UA`` env, else the pf-core default.
@@ -134,13 +165,22 @@ class Fetcher:
         """Return ``(final_url, text)``; decode ``encoding`` > Content-Type charset > utf-8,
         always with replacement. A charset with no text codec decodes as utf-8; an
         unknown ``encoding`` raises ``LookupError``."""
-        final_url, raw, headers = self._fetch(url, timeout_s=timeout_s)
-        if encoding:
-            return final_url, raw.decode(encoding, "replace")
-        try:
-            return final_url, raw.decode(headers.get_content_charset() or "utf-8", "replace")
-        except LookupError:
-            return final_url, raw.decode("utf-8", "replace")
+        body = self.get_body(url, timeout_s=timeout_s)
+        return body.final_url, body.text(encoding)
+
+    def get_body(self, url: str, *, timeout_s: float = 30.0) -> Body:
+        """The response as a :class:`Body` — bytes, Content-Type charset and validators."""
+        return _as_body(*self._fetch(url, timeout_s=timeout_s))
+
+    def post_form(self, url: str, fields: Mapping[str, str], *, timeout_s: float = 30.0) -> Body:
+        """POST ``fields`` urlencoded (UTF-8) and return the response as a :class:`Body`.
+
+        Never follows a redirect: a 3xx raises its ``HTTPError``, since following would
+        re-send the form or turn it into a GET. Retries follow the GET policy, so post to
+        an endpoint that is not idempotent from a ``Fetcher(retries=0)``.
+        """
+        form = urlencode(fields).encode()
+        return _as_body(*self._fetch(url, timeout_s=timeout_s, form=form))
 
     def get_bytes(self, url: str, *, timeout_s: float = 180.0) -> tuple[str, bytes]:
         """Return ``(final_url, raw_bytes)`` — longer default timeout for binary downloads."""
@@ -204,23 +244,26 @@ class Fetcher:
 
     def _open(self, request: urllib.request.Request, timeout_s: float) -> Any:
         """The single request seam — every request (initial, hops, retries,
-        conditional GETs) goes through here."""
+        conditional GETs, form POSTs) goes through here."""
         return self._opener.open(request, timeout=timeout_s)
 
-    def _request(self, url: str, extra: dict[str, str] | None = None) -> urllib.request.Request:
+    def _request(
+        self, url: str, extra: dict[str, str] | None = None, *, form: bytes | None = None
+    ) -> urllib.request.Request:
+        """A GET, or with ``form`` a POST of that urlencoded body."""
         ua = resolve_str(self._user_agent, _UA_ENV_VAR, default=_UA_DEFAULT) or _UA_DEFAULT
-        return urllib.request.Request(
-            url,
-            headers={
-                "User-Agent": ua,
-                "Accept": "*/*",
-                "Accept-Language": "en-US,en;q=0.9",
-                **self._headers,
-                **(extra or {}),
-            },
-        )
+        headers = {
+            "User-Agent": ua,
+            "Accept": "*/*",
+            "Accept-Language": "en-US,en;q=0.9",
+            **self._headers,
+            **(extra or {}),
+        }
+        if form is not None:
+            headers["Content-Type"] = _FORM_CONTENT_TYPE
+        return urllib.request.Request(url, data=form, headers=headers)
 
-    def _attempt(self, url: str, timeout_s: float) -> Any:
+    def _attempt(self, url: str, timeout_s: float, *, form: bytes | None = None) -> Any:
         """Retry loop for one hop URL. Permanent 4xx (except 408) fail fast with
         zero sleeps; 429 honors Retry-After (capped); 5xx/408/network errors back
         off 0.5*(attempt+1); exhausted retries re-raise the last exception raw."""
@@ -229,10 +272,10 @@ class Fetcher:
             if self._throttle is not None:
                 self._throttle.acquire()
             try:
-                return self._open(self._request(url), timeout_s)
+                return self._open(self._request(url, form=form), timeout_s)
             except urllib.error.HTTPError as exc:
-                if exc.code in _REDIRECT_CODES:
-                    raise  # a hop for _fetch to walk, not a failure
+                if 300 <= exc.code < 400:
+                    raise  # a hop for _fetch to walk, or a 3xx no retry can change
                 last = exc
                 if exc.code == 429:
                     if attempt < self._retries:
@@ -247,24 +290,29 @@ class Fetcher:
                     time.sleep(0.5 * (attempt + 1))
         raise last  # type: ignore[misc]
 
-    def _fetch(self, url: str, *, timeout_s: float) -> tuple[str, bytes, Message]:
-        """GET with manual redirect walking; returns ``(final_url, body, headers)``
-        where final_url is the URL of the last hop actually fetched."""
+    def _fetch(
+        self, url: str, *, timeout_s: float, form: bytes | None = None
+    ) -> tuple[str, bytes, Message]:
+        """GET with manual redirect walking, or POST ``form`` with none; returns
+        ``(final_url, body, headers)`` where final_url is the URL of the last hop
+        actually fetched."""
         if self._require_public:
             assert_public_url(url)
         cur = url
         hops = 0
         while True:
             try:
-                resp = self._attempt(cur, timeout_s)
+                resp = self._attempt(cur, timeout_s, form=form)
             except urllib.error.HTTPError as exc:
                 if exc.code not in _REDIRECT_CODES or hops >= self._max_redirects:
+                    raise
+                if form is not None:
                     raise
                 location = exc.headers.get("Location")
                 if not location:
                     raise
                 hops += 1
-                cur = urljoin(cur, location)  # 303 included — we only ever GET
+                cur = urljoin(cur, location)  # 303 included — only a GET walks hops
                 if self._require_public:
                     assert_public_url(cur)
                 continue
@@ -294,6 +342,14 @@ class Fetcher:
         return decode_body(data, resp.headers, self._max_bytes, url)
 
 
+def _as_body(final_url: str, raw: bytes, headers: Message) -> Body:
+    validators: Validators = {
+        "etag": headers.get("ETag"),
+        "last_modified": headers.get("Last-Modified"),
+    }
+    return Body(final_url, raw, headers.get_content_charset(), validators)
+
+
 def _strong_match(sent: str | None, served: str | None) -> bool:
     """Strong ETag comparison: a non-empty, non-weak tag was sent and served unchanged."""
     if not sent or sent.startswith("W/"):
@@ -306,6 +362,11 @@ def fetch_text(
 ) -> tuple[str, str]:
     """:meth:`Fetcher.get_text` via a default per-call Fetcher."""
     return Fetcher(retries=retries).get_text(url, timeout_s=timeout_s, encoding=encoding)
+
+
+def fetch_body(url: str, *, timeout_s: float = 30.0, retries: int = 2) -> Body:
+    """:meth:`Fetcher.get_body` via a default per-call Fetcher."""
+    return Fetcher(retries=retries).get_body(url, timeout_s=timeout_s)
 
 
 def fetch_bytes(url: str, *, timeout_s: float = 180.0, retries: int = 2) -> tuple[str, bytes]:
@@ -327,6 +388,14 @@ def not_modified(
     return Fetcher().not_modified(
         url, etag=etag, last_modified=last_modified, require_304=require_304
     )
+
+
+def post_form(
+    url: str, fields: Mapping[str, str], *, timeout_s: float = 30.0, retries: int = 2
+) -> Body:
+    """:meth:`Fetcher.post_form` via a default per-call Fetcher; pass ``retries=0`` for an
+    endpoint that is not idempotent."""
+    return Fetcher(retries=retries).post_form(url, fields, timeout_s=timeout_s)
 
 
 def browser_headers() -> dict[str, str]:

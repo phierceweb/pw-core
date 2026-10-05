@@ -44,6 +44,8 @@ Rewrites are anchor-safe — `]({url})` and `src="{url}"` forms only — so a ba
 
 `default_namer` derives a deterministic, collision-resistant local name by dash-joining the URL path segments after the first `images` component (`…/images/getting-started/interface.png` → `getting-started-interface.png`), falling back to the last two segments. Deterministic names are what make `reuse_existing=True` (the default) safe: a re-run probes `images_dir` for the name and reuses the file without refetching.
 
+A URL with a query gets a 10-hex-digit digest of the query before its image extension (`…/media/image?id=101` → `media-image-03e79b3674`, then the sniffed extension), so images served from one path and told apart only by the query get one file each instead of all reusing the first. The fragment is ignored. A query-less URL's name is unchanged. `with_query_digest(name, url)` applies the same rule inside a custom `namer`.
+
 **Names are persisted artifacts** — they land in committed documents and on-disk trees. Treat `default_namer`'s output like [`slugify`](slugify.md)'s: changing the scheme breaks reuse against every existing output directory. A project migrating from its own namer passes it in:
 
 ```python
@@ -63,7 +65,7 @@ A per-URL failure — HTTP error, network error, SSRF block, size-cap `ClientErr
 ## Injection seams
 
 - `fetcher=` — any object with `get_bytes(url, *, timeout_s=…)`. The default is a `Fetcher()` with the module's size cap; pass a configured [`Fetcher`](fetch.md) for pacing/UA/limits, or a fake in tests.
-- `namer=` — the naming function, as above.
+- `namer=` — the naming function, as above; wrap its result in `with_query_digest(name, url)` when the source tells images apart by the query.
 - `link_prefix=` — the retarget prefix (default `images/`).
 
 Wrap this module rather than forking it: keep project-specific env toggles and defaults in your wrapper and pass them here as explicit arguments.

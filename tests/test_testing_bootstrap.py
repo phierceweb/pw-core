@@ -86,6 +86,12 @@ class TestFrameworkDdl:
             "llm_cost_rates",
         }
         assert expected <= names, f"missing: {expected - names}"
+        assert "llm_embeddings" not in names
+
+    def test_emits_no_embeddings_table(self):
+        from pf_core.testing.db_fixtures import framework_ddl
+
+        assert not any("llm_embeddings" in s for s in framework_ddl())
 
     @_skip_on_mysql
     def test_idempotent(self, pf_engine):
@@ -246,7 +252,6 @@ class TestCacheConfigSentinel:
         try:
             cfg = cache_config.get_agent_cache_config("any_agent")
             assert cfg.exact is False
-            assert cfg.semantic is False
         finally:
             cache_config.clear_config_cache()
 

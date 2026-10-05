@@ -361,7 +361,7 @@ Now `myapp jobs list`, `myapp jobs retry 42`, `myapp jobs purge --older-than 90d
 
 Tested on SQLite, MySQL, and Postgres. Portability constraints:
 
-- All timestamp columns use the `_TIMESTAMP_US` variant helper (microsecond precision on MySQL, fractional seconds on SQLite/PG).
+- All timestamp columns use `pf_core.db.types.TIMESTAMP_US` (microsecond precision on MySQL, fractional seconds on SQLite/PG).
 - `priority` and `progress_*` columns use dialect-variant unsigned-integer helpers.
 - No raw SQL dialect detection in `JobRepo` — every write uses SQLAlchemy expression constructs.
 - Worker claim uses portable SELECT-then-UPDATE with rowcount check; no `FOR UPDATE SKIP LOCKED` dependency.

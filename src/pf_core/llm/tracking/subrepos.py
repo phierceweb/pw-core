@@ -35,6 +35,7 @@ except ImportError as e:  # pragma: no cover - exercised by bare-install CI
 
 from pf_core.db.repository import Repository
 from pf_core.db.upsert import insert_ignore, upsert
+from pf_core.llm._json import finite_json, is_non_finite, split_finite
 from pf_core.llm.tracking import schema as s
 from pf_core.log import get_logger
 
@@ -68,7 +69,11 @@ class LlmRunOutcomeRepo(Repository):
         score: float | None = None,
         notes: str | None = None,
     ) -> None:
-        """Insert or overwrite the outcome row for ``(run_id, outcome_kind)``."""
+        """Insert or overwrite the outcome row for ``(run_id, outcome_kind)``; a NaN or
+        ±Infinity ``score`` is stored as null and logged as ``llm_run_value_non_finite``."""
+        if is_non_finite(score):
+            logger.warning("llm_run_value_non_finite", run_id=run_id, names=["score"])
+            score = None
         with self._tx() as conn:
             upsert(
                 conn,
@@ -143,7 +148,7 @@ class LlmRunValidationRepo(Repository):
             validator=validator,
             passed=passed,
             severity=severity,
-            details=details,
+            details=finite_json(details),
         )
 
     def _record_once(
@@ -190,18 +195,22 @@ class LlmRunMetricRepo(Repository):
     """Records numeric per-run metrics (one row per metric_name per run)."""
 
     def record(self, run_id: int, *, metrics: dict[str, float]) -> None:
-        """Insert or overwrite the metric rows for ``run_id``."""
-        if not metrics:
+        """Insert or overwrite the metric rows for ``run_id``; NaN and ±Infinity are
+        skipped (``metric_value`` is NOT NULL) and logged as ``llm_run_metric_non_finite``."""
+        finite, non_finite = split_finite(metrics or {})
+        if non_finite:
+            logger.warning("llm_run_metric_non_finite", run_id=run_id, names=non_finite)
+        if not finite:
             return
         with self._tx() as conn:
-            for name, value in metrics.items():
+            for name, value in finite.items():
                 upsert(
                     conn,
                     s.llm_run_metrics,
                     {
                         "llm_run_id": run_id,
                         "metric_name": name,
-                        "metric_value": float(value),
+                        "metric_value": value,
                     },
                     conflict=("llm_run_id", "metric_name"),
                     update=("metric_value",),

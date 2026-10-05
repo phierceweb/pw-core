@@ -20,6 +20,21 @@ _NON_IMPORT_PATHS = frozenset(
     {
         "pf_core.X",  # placeholder in a template snippet
         "pf_core.jobs.jobs.id",  # database column, not an attribute
+        # OpenTelemetry span attributes named in otel.md
+        *(
+            f"pf_core.{name}"
+            for name in (
+                "agent_type",
+                "cache_hit",
+                "cost_usd",
+                "error_code",
+                "job_id",
+                "prompt.system_id",
+                "prompt.user_id",
+                "run_id",
+                "status",
+            )
+        ),
     }
 )
 

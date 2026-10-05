@@ -33,6 +33,7 @@ _INSTALL: dict[str, str] = {
     "jobs": "pf-core[jobs]",
     "tracking": "pf-core[tracking]",
     "eval": "pf-core[eval]",
+    "otel": "pf-core[otel]",
     "admin": "pf-core[admin]",
     "articles": "pf-core[articles]",
     "jsonschema": "pf-core[jsonschema]",
@@ -53,6 +54,7 @@ _MODULE_EXTRA: dict[str, str] = {
     "pf_core.budget.scheduler": "tracking",
     "pf_core.budget.snapshot_job": "tracking",
     "pf_core.cli": "cli",
+    "pf_core.cli.export": "otel",
     "pf_core.cli.jobs": "jobs",
     "pf_core.clients.anthropic": "anthropic",
     "pf_core.clients.brave": "llm",
@@ -67,6 +69,7 @@ _MODULE_EXTRA: dict[str, str] = {
     "pf_core.llm.step": "tracking",
     "pf_core.llm.tracked": "tracking",
     "pf_core.llm.tracking": "tracking",
+    "pf_core.llm.tracking.otel": "otel",
     "pf_core.llm.validate": "validate",
     # [crawl] = [http,articles]: article_fetch imports utils.urls, which needs httpx.
     "pf_core.utils.article_fetch": "crawl",

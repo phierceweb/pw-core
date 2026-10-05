@@ -87,5 +87,5 @@ def test_cache_config_logs_and_turns_caching_off(tmp_path, monkeypatch, caplog):
             cfg = get_agent_cache_config("classifier")
     finally:
         clear_config_cache()
-    assert (cfg.exact, cfg.semantic) == (False, False)
+    assert cfg.exact is False
     assert any("cache_config_load_failed" in r.getMessage() for r in caplog.records)

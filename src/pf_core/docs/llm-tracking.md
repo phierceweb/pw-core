@@ -4,7 +4,7 @@ Records every LLM invocation a project makes — one row per call, plus optional
 
 This module replaces the ad-hoc per-project run-tracking tables a project tends to grow. The replacement is the `llm_runs` table plus seven sidecar tables, all prefixed `llm_` to signal framework ownership.
 
-This doc is the implementation reference. The column-by-column schema definitions live in [`pf_core.llm.tracking.schema`](../llm/tracking/schema.py).
+This doc is the implementation reference. The column-by-column schema definitions live in [`pf_core.llm.tracking.schema`](../llm/tracking/schema.py). To send the runs to an OpenTelemetry backend as GenAI spans, see [otel.md](otel.md).
 
 ---
 
@@ -84,6 +84,7 @@ run_id = LlmRunRepo().record(
     model="claude-opus-4-7",
     system_prompt_id=ps_id,  # FK into llm_prompts
     user_prompt_id=pu_id,
+    # NaN/±Infinity in sampling or usage store as null
     sampling={"temperature": 0.2, "top_p": 1.0, "max_tokens": 4096, "seed": 7},
     provider="openrouter",
     model_fingerprint=usage["system_fingerprint"],
@@ -104,8 +105,8 @@ run_id = LlmRunRepo().record(
         ("url_hallucination", True, "info", None),
         ("coverage_ratio", True, "info", {"ratio": 0.85}),
         ("json_schema", False, "error", {"missing": ["fields"]}),
-    ],
-    metrics={"coverage_ratio": 0.85, "n_items": 12},
+    ],  # NaN/±Infinity in details store as null
+    metrics={"coverage_ratio": 0.85, "n_items": 12},  # a NaN/±Infinity metric is skipped and logged
     tags=["env:prod", "agent:summarizer"],
     rendered_prompts=(rendered_sys, rendered_user),
     raw_response=response_text,
@@ -229,6 +230,7 @@ LlmRunValidationRepo().record(
     run_id, validator="post_hoc_check", passed=False, severity="warn", details={"flagged_items": 2}
 )
 
+# Skips NaN/±Infinity values, as record() does
 LlmRunMetricRepo().record(run_id, metrics={"field_ratio": 0.82})
 
 LlmRunLinkRepo().link(parent_id=run_a, child_id=run_b, relation="critic")
@@ -388,7 +390,7 @@ The schema and query layer target MySQL 8+, PostgreSQL 14+, and SQLite 3.38+; th
 
 **Gotcha — SQLite autoincrement requires literal `INTEGER`.** SQLAlchemy's `BigInteger` base compiles to `BIGINT` on SQLite, which silently breaks the rowid alias — first INSERT raises `NOT NULL constraint failed: <table>.id`. Every PK/FK in `pf_core.llm.tracking.schema` uses `Integer()` as the base and declares `BIGINT`/`SMALLINT` only via `with_variant("mysql")` / `with_variant("postgresql")`. Follow the same pattern when adding project-side tables that join against `llm_runs`.
 
-**Gotcha — MySQL `STRICT_TRANS_TABLES` rejects plain `CURRENT_TIMESTAMP` on `TIMESTAMP(6)`.** Use `pf_core.llm.tracking.schema._server_now()` (or the same compile-dispatched pattern) as the server default for µs-precision timestamp columns. Plain `func.now()` will fail at table-create time on strict MySQL.
+**Gotcha — MySQL `STRICT_TRANS_TABLES` rejects plain `CURRENT_TIMESTAMP` on `TIMESTAMP(6)`.** Use `pf_core.db.types.server_now()` (or the same compile-dispatched pattern) as the server default for µs-precision timestamp columns. Plain `func.now()` will fail at table-create time on strict MySQL.
 
 See [database.md](database.md) for the broader dialect/transaction conventions.
 

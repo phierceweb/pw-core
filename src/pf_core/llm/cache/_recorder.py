@@ -42,7 +42,7 @@ def record_cache_hit(
     Creates:
     - ``llm_runs`` row: ``status='cache_hit'``, zero tokens / cost
     - ``llm_run_links``: ``parent_run_id=source_run_id``, ``relation='cache'``
-    - ``llm_run_tags``: ``cache:exact`` or ``cache:semantic``, ``cache_age:<bucket>``
+    - ``llm_run_tags``: ``cache:exact``, ``cache_age:<bucket>``
 
     Args:
         hit: The :class:`CacheHit` returned by :func:`cache_lookup`.

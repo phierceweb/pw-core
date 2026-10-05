@@ -38,6 +38,7 @@ Persist and inspect every LLM call so cost, prompts, validations, and outcomes a
 | [Prompts](prompts.md) | Load prompts from YAML, version them, and register them in the database so every tracked run links back to the prompt that produced it. |
 | [Model router](model-router.md) | Per-agent model, sampling, and backend configuration loaded from YAML with live reload. Swap an agent's model — or which client serves it (`resolve_agent`, nested per-backend blocks, opt-in availability fallback, custom backends via the client registry) — without code changes or restarts. |
 | [LLM admin dashboard](llm-admin.md) | Mountable FastAPI sub-app showing runs, costs, jobs, cache stats, and budgets. |
+| [OpenTelemetry export](otel.md) | `pf-export otel` — backfill `llm_runs` to any OTLP/HTTP backend (Phoenix, Langfuse, a Collector) as GenAI spans: one trace per job, deterministic ids so a re-export repeats rather than duplicates, bodies opt-in per agent (`[otel]`). |
 
 ## AI-quality guards
 
@@ -72,7 +73,7 @@ Wrappers for the external services that LLM agents talk to. All clients integrat
 | [Anthropic client](anthropic.md) | Direct wrapper around the official `anthropic` SDK. Multimodal-capable; reports cache + input/output tokens directly. |
 | [Brave search client](brave.md) | Web search for grounding LLM calls in real results. |
 | [Article fetch](article-fetch.md) | Title, body, and publish-date extraction with Wayback Machine fallback for paywalled or blocked URLs. |
-| [Fetch](fetch.md) | Polite stdlib HTTP fetching — SSRF-guarded redirects, status-aware retries, throttling, size caps, conditional GETs. Base install, no extra. |
+| [Fetch](fetch.md) | Polite stdlib HTTP fetching — SSRF-guarded redirects, status-aware retries, throttling, size caps, conditional GETs, form POST. Base install, no extra. |
 | [Fetch: image localizer](fetch-images.md) | Download a document's remote image refs into a local `images/` dir and retarget the refs; deterministic naming, reuse-not-refetch, resumable file mode. |
 
 ## Evaluation

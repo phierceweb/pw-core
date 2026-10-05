@@ -25,7 +25,7 @@ git clone https://github.com/phierceweb/pf-core
 cd pf-core
 python -m venv .venv && source .venv/bin/activate
 # Everything, so the full test suite runs:
-pip install -e ".[full,articles,anthropic,image-phash,dev]"
+pip install -e ".[full,otel,articles,anthropic,image-phash,dev]"
 pre-commit install
 ```
 

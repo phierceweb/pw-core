@@ -180,14 +180,15 @@ def _trafi_extract(html: str, url: str, *, favor_recall: bool) -> dict | None:
             include_tables=False,
             favor_precision=not favor_recall,
             favor_recall=favor_recall,
-            as_dict=True,
         )
+        as_dict = getattr(doc, "as_dict", None)
+        data = as_dict() if callable(as_dict) else None
     except Exception as e:
         logger.debug(
             "trafilatura_extract_failed", url=url, favor_recall=favor_recall, error=str(e)[:200]
         )
         return None
-    return doc if isinstance(doc, dict) else None
+    return data if isinstance(data, dict) else None
 
 
 def _extract_from_html(

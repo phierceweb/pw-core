@@ -142,6 +142,8 @@ def test_every_mapped_module_exists() -> None:
         ("pf_core.llm.tracking.repo", "tracking"),  # longest prefix beats pf_core.llm
         ("pf_core.web.llm_admin.api", "admin"),  # subpackage outranks pf_core.web
         ("pf_core.db.connection", "db"),
+        ("pf_core.llm.tracking.otel", "otel"),  # outranks pf_core.llm.tracking
+        ("pf_core.cli.export", "otel"),  # outranks pf_core.cli
     ],
 )
 def test_required_extra_resolution(module: str, expected: str | None) -> None:

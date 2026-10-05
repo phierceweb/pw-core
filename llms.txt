@@ -62,6 +62,7 @@ Published to PyPI as `pf-core` (Python 3.12+); pin a compatible release (`pf-cor
 - [modules](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/modules.md)
 - [openrouter](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/openrouter.md)
 - [orchestrators](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/orchestrators.md)
+- [otel](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/otel.md)
 - [output](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/output.md)
 - [pagination](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/pagination.md)
 - [parallel](https://raw.githubusercontent.com/phierceweb/pf-core/main/src/pf_core/docs/parallel.md)

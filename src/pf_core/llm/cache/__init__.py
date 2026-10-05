@@ -1,9 +1,8 @@
 """
-LLM response cache — exact and semantic (opt-in) caching for LLM calls.
+LLM response cache — exact caching for LLM calls.
 
-Two-layer cache keyed first by ``input_hash`` (exact) then by embedding
-similarity (semantic, opt-in per agent type). Each layer reads per-agent
-policy from ``config/cache.yaml``.
+Keyed by ``input_hash`` and agent type, with per-agent policy read from
+``config/cache.yaml``.
 
 Cache lookup + store happen in the consumer service, not inside the transport
 client. ``OpenRouterClient.chat()`` stays transport-only.
@@ -47,7 +46,6 @@ from pf_core.llm.cache import _schema as _cache_schema  # noqa: F401 — registe
 from pf_core.llm.cache._schema import (  # noqa: F401
     ALL_CACHE_TABLES,
     llm_cache_entries,
-    llm_embeddings,
 )
 from pf_core.llm.cache.config import (  # noqa: F401
     AgentCacheConfig,
@@ -83,8 +81,8 @@ class CacheHit:
         model: Model name used by the source run.
         agent_type: Agent slug.
         input_hash: SHA256 key that produced this hit.
-        hit_type: ``"exact"`` (currently the only type) or ``"semantic"`` (reserved).
-        similarity: Cosine similarity score; ``1.0`` for exact hits.
+        hit_type: Always ``"exact"``.
+        similarity: Always ``1.0``.
         created_at: When the cache entry was created (for age tagging).
     """
 
@@ -95,7 +93,7 @@ class CacheHit:
     model: str
     agent_type: str
     input_hash: str
-    hit_type: str  # 'exact' | 'semantic'
+    hit_type: str
     similarity: float
     created_at: dt.datetime | None
 
@@ -109,18 +107,15 @@ def cache_lookup(
     *,
     agent_type: str,
     input_hash: str,
-    canonical_text: str | None = None,  # reserved; ignored
 ) -> CacheHit | None:
     """Look up a cached response for *agent_type* + *input_hash*.
 
-    Exact lookup only, when ``exact=true`` in config; there is no semantic
-    lookup.
+    Runs only when ``exact=true`` in config.
 
     Args:
         agent_type: Agent slug used to load policy from ``cache.yaml``.
         input_hash: SHA256 of model + prompts + sampling + configs.
             Computed by :func:`pf_core.llm.tracking.compute_input_hash`.
-        canonical_text: Canonicalized prompt text. Accepted and ignored.
 
     Returns:
         A :class:`CacheHit` on success, ``None`` on miss or disabled cache.
@@ -159,7 +154,6 @@ def cache_store(
     model: str,
     parsed_output: Any = None,
     raw_response: str | None = None,
-    canonical_text: str | None = None,  # reserved; ignored
     usage: dict | None = None,
     truncated: bool | None = None,
 ) -> None:
@@ -179,7 +173,6 @@ def cache_store(
         model: Model name (stored for attribution on cache-hit runs).
         parsed_output: Parsed JSON to cache.
         raw_response: Raw LLM response string to cache.
-        canonical_text: Canonicalized text. Accepted and ignored.
         usage: The client ``usage`` dict; its ``finish_reason`` decides
             truncation when ``truncated`` is not given.
         truncated: Explicit truncation flag; ``True`` skips the store
@@ -232,7 +225,6 @@ __all__ = [
     # Schema
     "ALL_CACHE_TABLES",
     "llm_cache_entries",
-    "llm_embeddings",
     # Config
     "AgentCacheConfig",
     "clear_config_cache",

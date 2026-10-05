@@ -8,6 +8,7 @@ doc still renders; naming is injectable, with a deterministic default.
 
 from __future__ import annotations
 
+import hashlib
 import http.client
 import re
 import zlib
@@ -31,6 +32,7 @@ __all__ = [
     "localize_file",
     "localize_images",
     "sniff_image_ext",
+    "with_query_digest",
 ]
 
 _IMAGE_EXTENSIONS = (
@@ -52,6 +54,7 @@ _EXTENSION_RE = re.compile(r"\.[A-Za-z0-9]{1,5}$")
 
 _DEFAULT_MAX_BYTES = 25 * 1024 * 1024
 _DEFAULT_TIMEOUT_S = 30.0
+_QUERY_DIGEST_LEN = 10
 
 # How far into an XML body to look for the <svg> root. Generous enough to clear
 # a DOCTYPE plus an embedded license header.
@@ -95,7 +98,8 @@ class LocalizeResult:
 def default_namer(url: str) -> str:
     """Deterministic local name: dash-join of the path segments after the first
     ``images`` component (else the last two), so figures sharing a basename in
-    different sub-paths don't collide."""
+    different sub-paths don't collide. A URL with a query gets its digest
+    (:func:`with_query_digest`); a query-less URL's name never changes."""
     path = urlparse(url).path
     parts = Path(path).parts
     try:
@@ -104,7 +108,21 @@ def default_namer(url: str) -> str:
     except StopIteration:
         sub = parts[-2:] if len(parts) >= 2 else parts
     name = "-".join(sub) if sub else Path(path).name
-    return name.replace("/", "-")
+    return with_query_digest(name.replace("/", "-"), url)
+
+
+def with_query_digest(name: str, url: str) -> str:
+    """``name`` with a short digest of ``url``'s query before its image extension,
+    so URLs differing only in the query get distinct, stable names; unchanged
+    when the URL has no query. Apply it in a custom ``namer``."""
+    query = urlparse(url).query
+    if not query:
+        return name
+    digest = hashlib.sha256(query.encode()).hexdigest()[:_QUERY_DIGEST_LEN]
+    suffix = Path(name).suffix
+    if suffix.lower() in _IMAGE_EXTENSIONS:
+        return f"{name[: -len(suffix)]}-{digest}{suffix}"
+    return f"{name}-{digest}"
 
 
 def sniff_image_ext(data: bytes) -> str | None:

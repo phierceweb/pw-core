@@ -32,14 +32,8 @@ from sqlalchemy import (
     UniqueConstraint,
 )
 
-from pf_core.llm.tracking.schema import (
-    _JSON,
-    _PK_SMALL,
-    _FK_SMALL,
-    _TIMESTAMP_US,
-    _server_now,
-    metadata,
-)
+from pf_core.db.types import FK_SMALL, JSON_, PK_SMALL, TIMESTAMP_US, server_now
+from pf_core.llm.tracking.schema import metadata
 
 # ---------------------------------------------------------------------------
 # Tables
@@ -48,19 +42,19 @@ from pf_core.llm.tracking.schema import (
 llm_budgets = Table(
     "llm_budgets",
     metadata,
-    Column("id", _PK_SMALL, primary_key=True, autoincrement=True),
+    Column("id", PK_SMALL, primary_key=True, autoincrement=True),
     Column("scope_kind", String(32), nullable=False),
     Column("scope_value", String(128), nullable=True),
     Column("period", String(16), nullable=False),
     Column("limit_usd", Numeric(12, 4), nullable=True),
     Column("limit_tokens", BigInteger, nullable=True),
     Column("limit_calls", Integer, nullable=True),
-    Column("soft_thresholds", _JSON, nullable=True),
+    Column("soft_thresholds", JSON_, nullable=True),
     Column("hard_cap", Boolean, nullable=False, server_default="1"),
     Column("action", String(32), nullable=False, server_default="block"),
     Column("enabled", Boolean, nullable=False, server_default="1"),
-    Column("created_at", _TIMESTAMP_US, nullable=False, server_default=_server_now()),
-    Column("updated_at", _TIMESTAMP_US, nullable=False, server_default=_server_now()),
+    Column("created_at", TIMESTAMP_US, nullable=False, server_default=server_now()),
+    Column("updated_at", TIMESTAMP_US, nullable=False, server_default=server_now()),
     UniqueConstraint("scope_kind", "scope_value", "period", name="uq_llm_budgets_scope_period"),
     Index("idx_llm_budgets_enabled", "enabled"),
 )
@@ -72,7 +66,7 @@ llm_budget_snapshots = Table(
     metadata,
     Column(
         "budget_id",
-        _FK_SMALL,
+        FK_SMALL,
         ForeignKey("llm_budgets.id", ondelete="CASCADE"),
         nullable=False,
     ),
@@ -80,7 +74,7 @@ llm_budget_snapshots = Table(
     Column("spent_usd", Numeric(12, 4), nullable=False, server_default="0"),
     Column("spent_tokens", BigInteger, nullable=False, server_default="0"),
     Column("run_count", Integer, nullable=False, server_default="0"),
-    Column("last_updated", _TIMESTAMP_US, nullable=False, server_default=_server_now()),
+    Column("last_updated", TIMESTAMP_US, nullable=False, server_default=server_now()),
     PrimaryKeyConstraint("budget_id", "period_start", name="pk_llm_budget_snapshots"),
     Index("idx_llm_budget_snapshots_period", "period_start"),
 )
@@ -92,7 +86,7 @@ llm_cost_rates = Table(
     metadata,
     Column(
         "model_id",
-        _FK_SMALL,
+        FK_SMALL,
         ForeignKey("llm_models.id", ondelete="CASCADE"),
         nullable=False,
     ),

@@ -53,7 +53,7 @@ pip install pf-core[llm]             # + LLM clients (includes [validate])
 pip install pf-core[full,postgres]   # the whole app framework
 ```
 
-Pin a **compatible release** for stability — e.g. `pip install "pf-core[llm]~=0.25.0"` (picks up `0.25.x` fixes, holds below the next minor; substitute the current release from the [changelog](https://github.com/phierceweb/pf-core/blob/main/CHANGELOG.md)). To track unreleased work, install from git instead — `main` is the development line and may contain work between releases:
+Pin a **compatible release** for stability — e.g. `pip install "pf-core[llm]~=0.26.0"` (picks up `0.26.x` fixes, holds below the next minor; substitute the current release from the [changelog](https://github.com/phierceweb/pf-core/blob/main/CHANGELOG.md)). To track unreleased work, install from git instead — `main` is the development line and may contain work between releases:
 
 ```bash
 pip install "pf-core[llm] @ git+https://github.com/phierceweb/pf-core.git@main"
@@ -126,6 +126,7 @@ python -c "import pf_core, pathlib; print(pathlib.Path(pf_core.__file__).parent 
 - [modules](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/modules.md)
 - [openrouter](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/openrouter.md)
 - [orchestrators](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/orchestrators.md)
+- [otel](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/otel.md)
 - [output](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/output.md)
 - [pagination](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/pagination.md)
 - [parallel](https://github.com/phierceweb/pf-core/blob/main/src/pf_core/docs/parallel.md)
@@ -159,7 +160,7 @@ python -c "import pf_core, pathlib; print(pathlib.Path(pf_core.__file__).parent 
 
 ```bash
 python -m venv .venv && source .venv/bin/activate
-pip install -e ".[full,articles,anthropic,image-phash,dev]"   # everything, so the full suite runs
+pip install -e ".[full,otel,articles,anthropic,image-phash,dev]"   # everything, so the full suite runs
 pre-commit install
 pytest
 python bin/verify-bare-install                                # confirm the base install stays dependency-light

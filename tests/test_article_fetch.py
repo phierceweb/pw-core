@@ -711,3 +711,24 @@ def test_wayback_fallback_kwarg_overrides_env(monkeypatch):
 
     monkeypatch.setenv("PF_ARTICLE_WAYBACK_FALLBACK", "0")
     assert resolve_bool(True, "PF_ARTICLE_WAYBACK_FALLBACK", default=True) is True
+
+
+@pytest.mark.skipif(not HAS_DEPS, reason="requires the 'articles' extra")
+class TestTrafilaturaExtract:
+    def test_extracts_a_dict_without_deprecation_warnings(self):
+        import warnings
+
+        from pf_core.utils import _article_extract
+
+        html = (
+            "<html><head><title>Headline</title></head><body><article><p>"
+            + ("Substantive reporting text. " * 20)
+            + "</p></article></body></html>"
+        )
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            doc = _article_extract._trafi_extract(html, "https://example.com/x", favor_recall=False)
+        assert [w for w in caught if issubclass(w.category, DeprecationWarning)] == []
+        assert isinstance(doc, dict)
+        assert "Substantive reporting text." in doc["text"]
+        assert doc["title"] == "Headline"

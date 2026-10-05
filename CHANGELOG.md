@@ -2,6 +2,60 @@
 
 Notable changes to pf-core, newest first. The project is pre-1.0 — pin to a tagged release; `main` is the development line.
 
+## v0.26.0 — 2026-10-04
+
+### Removed
+- The semantic-cache surface, which never had a lookup: `AgentCacheConfig` drops `semantic`,
+  `semantic_threshold`, `semantic_embedding_model` and `canonicalize`, and `cache_lookup` /
+  `cache_store` drop `canonical_text`. A `cache.yaml` that still sets those keys (`semantic: false`
+  included) loads with exact caching unchanged and logs `cache_config_ignored_key` once per key;
+  delete them to silence it.
+- The `llm_embeddings` table: `framework_ddl()`, `metadata.create_all()` and `ALL_CACHE_TABLES` no
+  longer include it, and `pf_core.llm.cache.llm_embeddings` is gone. No pf-core migration: an
+  existing table stays; drop it with a consumer migration if wanted, before `llm_cache_entries`,
+  which it references. A migration that creates the cache tables from `ALL_CACHE_TABLES` creates
+  only `llm_cache_entries` on a fresh database, so a consumer migration, downgrade or maintenance
+  helper that names `llm_embeddings` must tolerate its absence, and a downgrade that loops over
+  `ALL_CACHE_TABLES` on an existing database must drop `llm_embeddings` first.
+- `pf_core.llm.tracking.schema`'s `_TIMESTAMP_US`, `_PK_INT` and `_FK_INT` aliases; import
+  `TIMESTAMP_US`, `PK_INT` and `FK_INT` from `pf_core.db.types`.
+
+### Added
+- `[otel]` extra and `pf-export otel` (`pf_core.llm.tracking.otel.export_runs`; mountable as
+  `pf_core.cli.export.app`): backfill `llm_runs` to any OTLP/HTTP backend as GenAI client spans —
+  one trace per job, ids derived from `service.name` and the job/run id so a re-export repeats the
+  same spans, `--since`/`--until`/`--agent-type`/`--job-id`/`--dry-run`, prompt and response text
+  only for agents named in `--include-bodies`. Configured by the standard `OTEL_*` variables;
+  attribute mapping and the pinned semconv version (v1.41.0) in `docs/otel.md`. Not part of `[full]`.
+- `Fetcher.post_form` / `post_form` POST a urlencoded form (UTF-8) and return a `Body`, under the
+  GET policy's UA, headers, throttle, `max_bytes`, SSRF guard and retries. A 3xx raises its
+  `HTTPError` instead of being followed.
+- `Fetcher.get_body` / `fetch_body` return a `Body` (final URL, raw bytes, Content-Type charset,
+  validators) whose `text()` decodes exactly as `get_text` does, so a caller that decides from the
+  bytes whether it wants text fetches once. `get_text` now decodes through it.
+
+### Fixed
+- A NaN or ±Infinity no longer loses a tracked run. `LlmRunRepo.record` stores one as null in
+  validation `details` (as it already did in `parsed_output`) and in the sampling and usage
+  columns, logging `llm_run_value_non_finite`, and skips a non-finite metric, logging
+  `llm_run_metric_non_finite`. `LlmRunValidationRepo.record` and `LlmRunOutcomeRepo.record` store
+  one as null; `LlmRunMetricRepo.record` skips it. MySQL rejected all of these and Postgres
+  rejected them in JSON, so the run and its payload were lost; a non-finite metric, which Postgres
+  stored, is now skipped there too.
+- `GoldenSetRepo.add` raises `InvalidInputError` for a NaN or ±Infinity `ground_truth` value, before
+  writing anything.
+- `fetch.images.default_namer` adds a short digest of the URL's query to the name, so images that
+  share a path and differ only in the query (`…/image?id=…`) get a file each; with
+  `reuse_existing=True` every one after the first reused the first file and was never downloaded.
+  Query-less names are unchanged; an image whose URL carries a query is fetched once more under its
+  new name. `with_query_digest(name, url)` applies the rule in a custom `namer`.
+- `Fetcher` connections race the host's resolved addresses (RFC 8305 Happy Eyeballs) within the
+  request timeout, so an unreachable IPv6 address no longer costs the full timeout before IPv4 is
+  tried. The losing attempts are closed as soon as one connects.
+- `Fetcher` raises a 300, 304 or 305 response at once instead of retrying it.
+- `[articles]` extraction no longer passes trafilatura's deprecated `as_dict`, so a trafilatura
+  release that drops it doesn't break `fetch_article`.
+
 ## v0.25.0 — 2026-10-04
 
 ### Breaking

@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -395,6 +397,24 @@ def test_step_index_auto_increments(jobs_db, simple_kind):
     with_steps = repo.get_with_steps(job_id)
     indices = [s["step_index"] for s in with_steps["steps"]]
     assert indices == [0, 1, 2]
+
+
+def test_concurrent_start_step_assigns_distinct_gap_free_indices(jobs_db, simple_kind):
+    repo = JobRepo()
+    job_id = repo.create(kind="simple_pass")
+    n_workers = 8
+    gate = threading.Barrier(n_workers)
+
+    def start(i: int) -> int:
+        gate.wait(timeout=30)
+        return repo.start_step(job_id, name=f"step_{i}")
+
+    with ThreadPoolExecutor(max_workers=n_workers) as pool:
+        step_ids = list(pool.map(start, range(n_workers)))
+
+    indices = sorted(s["step_index"] for s in repo.get_with_steps(job_id)["steps"])
+    assert len(set(step_ids)) == n_workers
+    assert indices == list(range(n_workers))
 
 
 def test_finish_step_rejects_invalid_status(jobs_db, simple_kind):

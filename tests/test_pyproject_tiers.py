@@ -95,6 +95,8 @@ def test_llm_extra_composes_validate_http_and_retry() -> None:
         # [jobs] must pull [tracking]: jobs._schema imports llm.tracking.schema at
         # module scope, so without it `import pf_core.jobs` raises ImportError.
         ("jobs", "pf-core[db,cli,tracking]"),
+        # pf-export imports pf_core.cli (typer) and reads llm_runs.
+        ("otel", "pf-core[tracking,cli]"),
     ],
 )
 def test_extra_references_required_subextra(extra: str, must_reference: str) -> None:
@@ -106,3 +108,17 @@ def test_full_includes_llm_and_cli() -> None:
     refs = {d.replace(" ", "") for d in _extra("full")}
     assert "pf-core[llm]" in refs
     assert "pf-core[cli]" in refs
+
+
+def test_otel_extra_carries_the_sdk_and_otlp_http_exporter() -> None:
+    names = {_dist_name(d) for d in _extra("otel")}
+    assert {
+        "opentelemetry-api",
+        "opentelemetry-sdk",
+        "opentelemetry-exporter-otlp-proto-http",
+    } <= names
+
+
+def test_full_leaves_otel_export_opt_in() -> None:
+    refs = {d.replace(" ", "") for d in _extra("full")}
+    assert not any("otel" in ref for ref in refs)
