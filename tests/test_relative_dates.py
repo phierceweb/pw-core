@@ -1,4 +1,4 @@
-"""Tests for pf_core.utils.relative_dates — deterministic date resolution."""
+"""Tests for pw_core.utils.relative_dates — deterministic date resolution."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from datetime import date
 
 import pytest
 
-from pf_core.utils.relative_dates import resolve_relative_date
+from pw_core.utils.relative_dates import resolve_relative_date
 
 
 # A Wednesday for reference-date tests.

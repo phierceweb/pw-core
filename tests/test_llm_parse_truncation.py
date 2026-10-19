@@ -12,8 +12,8 @@ import logging
 
 import pytest
 
-from pf_core.exceptions import InvalidInputError
-from pf_core.llm.parse import parse_llm_json, truncated_from_usage
+from pw_foundation.exceptions import InvalidInputError
+from pw_core.llm.parse import parse_llm_json, truncated_from_usage
 
 # Complete payloads whose text *looks* truncated: odd quote parity from an
 # unescaped inner quote, or trailing commentary containing a stray brace.
@@ -113,14 +113,14 @@ class TestAuthoritativeTruncation:
 
     @pytest.mark.parametrize(("raw", "kwargs"), NOTHING_CLOSED_YET)
     def test_warn_returns_the_value_and_logs(self, raw, kwargs, caplog):
-        with caplog.at_level(logging.WARNING, logger="pf_core.llm.parse"):
+        with caplog.at_level(logging.WARNING, logger="pw_core.llm.parse"):
             result = parse_llm_json(raw, on_truncation="warn", truncated=True, **kwargs)
         assert result is not None
         assert sum("parse_llm_json_recovered_truncated" in r.getMessage() for r in caplog.records)
 
     def test_warn_logs_once_when_step_4_also_recovered(self, caplog):
         raw = '[{"id":1,"name":"A"}, {"id":2,"body":"cut o'
-        with caplog.at_level(logging.WARNING, logger="pf_core.llm.parse"):
+        with caplog.at_level(logging.WARNING, logger="pw_core.llm.parse"):
             result = parse_llm_json(raw, on_truncation="warn", truncated=True)
         assert result == [{"id": 1, "name": "A"}]
         hits = [r for r in caplog.records if "parse_llm_json_recovered_truncated" in r.getMessage()]

@@ -1,8 +1,8 @@
-"""Tests for pf_core.llm.url_check — pluggable dispatcher."""
+"""Tests for pw_core.llm.url_check — pluggable dispatcher."""
 
 from __future__ import annotations
 
-from pf_core.llm.url_check import (
+from pw_core.llm.url_check import (
     UrlHallucinationRule,
     url_looks_hallucinated,
     validate_urls,

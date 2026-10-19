@@ -1,15 +1,15 @@
 """__NAME__ configuration.
 
-Subclass ``pf_core.config.AppConfig``; add settings as typed class attributes
+Subclass ``pw_core.config.AppConfig``; add settings as typed class attributes
 (env var name == attribute name). Built-ins include DATABASE_URL, WEB_HOST,
-WEB_PORT, LOG_LEVEL, etc. — see pf-core ``docs/config.md``.
+WEB_PORT, LOG_LEVEL, etc. — see ``docs/pw-core/config.md``.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
 
-from pf_core.config import AppConfig
+from pw_core.config import AppConfig
 
 
 class Config(AppConfig):

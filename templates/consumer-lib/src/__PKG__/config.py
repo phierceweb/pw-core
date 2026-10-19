@@ -1,14 +1,14 @@
 """__NAME__ configuration.
 
-Subclass ``pf_core.config.AppConfig`` and add project settings as class
-attributes (env var name == attribute name). See pf-core ``docs/config.md``.
+Subclass ``pw_core.config.AppConfig`` and add project settings as class
+attributes (env var name == attribute name). See ``docs/pw-core/config.md``.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
 
-from pf_core.config import AppConfig
+from pw_core.config import AppConfig
 
 
 class Config(AppConfig):

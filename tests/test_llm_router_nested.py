@@ -1,4 +1,4 @@
-"""Tests for pf_core.llm.router — nested per-backend agent blocks.
+"""Tests for pw_core.llm.router — nested per-backend agent blocks.
 
 The nested schema lets one agent declare a model per backend::
 
@@ -18,8 +18,8 @@ from __future__ import annotations
 
 import pytest
 
-from pf_core.exceptions import ConfigurationError
-from pf_core.llm.router import (
+from pw_foundation.exceptions import ConfigurationError
+from pw_core.llm.router import (
     clear_cache,
     get_agent_block,
     get_agent_config,

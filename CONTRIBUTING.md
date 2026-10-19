@@ -1,18 +1,18 @@
-# Contributing to pf-core
+# Contributing to pw-core
 
-Thanks for your interest. pf-core is a dependency-light Python foundation with
+Thanks for your interest. pw-core is a dependency-light Python foundation with
 opt-in extras; contributions that keep it lean, well-tested, and documented are
 welcome.
 
 ## Scope — read this first
 
-pf-core is **infrastructure only**. It must never contain business logic, domain
+pw-core is **infrastructure only**. It must never contain business logic, domain
 models, or project-specific configuration — anything that only makes sense
 inside one application belongs in that application, not here. It does ship
-generic entry points (the mountable admin routers, the `pf-*` console scripts);
+generic entry points (the mountable admin routers, the `pw-*` console scripts);
 those are fine because everything they touch is framework-owned.
 
-A feature earns its place in pf-core when **two or more independent projects**
+A feature earns its place in pw-core when **two or more independent projects**
 need it. A pattern that lives in a single project should stay there until a
 second consumer wants it. See [`.ai/rules/scope.md`](.ai/rules/scope.md).
 
@@ -21,8 +21,8 @@ second consumer wants it. See [`.ai/rules/scope.md`](.ai/rules/scope.md).
 Python 3.12+ is required.
 
 ```bash
-git clone https://github.com/phierceweb/pf-core
-cd pf-core
+git clone https://github.com/phierceweb/pw-core
+cd pw-core
 python -m venv .venv && source .venv/bin/activate
 # Everything, so the full test suite runs:
 pip install -e ".[full,otel,articles,anthropic,image-phash,dev]"
@@ -31,7 +31,7 @@ pre-commit install
 
 For lighter work, install only the extras you're touching — the base
 `pip install -e ".[dev]"` is enough for foundation-only changes. See
-[`docs/INSTALLATION.md`](src/pf_core/docs/INSTALLATION.md) for the extras matrix.
+[`docs/INSTALLATION.md`](src/pw_core/docs/INSTALLATION.md) for the extras matrix.
 
 ## Before you open a pull request
 
@@ -42,7 +42,7 @@ bin/test                                # full suite, must be green
 bin/run ruff check src tests            # lint
 bin/run ruff format --check src tests   # formatting (apply with `ruff format src tests`)
 bin/run python -m mypy                  # type check (config in [tool.mypy])
-bin/run python -m pf_core.guards        # structural gate (reads .pf-guards.toml)
+bin/run python -m pw_foundation.guards        # structural gate (reads .pw-guards.toml)
 ```
 
 `bin/test` and `bin/run` dispatch through `.venv/` — the same wrappers
@@ -57,7 +57,7 @@ And hold the change to these standards:
   without the matching `docs/*.md` update — see
   [`.ai/rules/docs-sync.md`](.ai/rules/docs-sync.md).
 - **File-size gate.** Python files over the hard limit fail the build; over the
-  soft target they warn (canonical values in `pf_core/guards/config.py`).
+  soft target they warn (canonical values in `pw_foundation/guards/config.py`).
   Split by concern instead of growing a monolith — see
   [`.ai/rules/code-style.md`](.ai/rules/code-style.md).
 - **Layering.** Respect the layered architecture (repository → service →
@@ -70,9 +70,9 @@ The full set lives in [`.ai/rules/`](.ai/rules/). The essentials:
 
 - Modern Python 3.12+ syntax — `X | None`, lowercase `dict`/`list`/`tuple`.
 - Type hints on every public signature; Google-style docstrings on public APIs.
-- Structured logging via `pf_core.log.get_logger(__name__)` — never bare `print`
+- Structured logging via `pw_foundation.log.get_logger(__name__)` — never bare `print`
   outside CLI entry points.
-- Raise from the `pf_core.exceptions` hierarchy — never a bare `Exception`.
+- Raise from the `pw_foundation.exceptions` hierarchy — never a bare `Exception`.
 
 ## Versioning & deprecations
 
@@ -83,8 +83,8 @@ Stability lives in **tags**. `main` may contain unreleased work between version 
 
 A deprecated API keeps working and emits a `DeprecationWarning` naming its replacement, for at least one minor release (pre-1.0) or until the next major (post-1.0) before removal. Current deprecations:
 
-- `pf_core.clients.routing.get_routed_client(use_claude_code)` → use `pf_core.llm.router.resolve_agent` or `get_client_for_backend`.
-- `pf_core.llm.tracking.track_run()` without an explicit `provider=` → pass the backend (e.g. `resolve_agent(...).backend`) or `provider=None`.
+- `pw_core.clients.routing.get_routed_client(use_claude_code)` → use `pw_core.llm.router.resolve_agent` or `get_client_for_backend`.
+- `pw_core.llm.tracking.track_run()` without an explicit `provider=` → pass the backend (e.g. `resolve_agent(...).backend`) or `provider=None`.
 
 ## License
 

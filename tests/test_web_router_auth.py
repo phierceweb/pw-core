@@ -2,7 +2,7 @@
 
 `make_jobs_router` shipped open-by-default for eight minor releases while its
 sibling `make_admin_router` raised, because nothing checked the class. This
-walks `pf_core.web` and asserts the invariant for any factory added later.
+walks `pw_core.web` and asserts the invariant for any factory added later.
 """
 
 from __future__ import annotations
@@ -17,18 +17,18 @@ pytest.importorskip("fastapi")
 
 from fastapi import APIRouter  # noqa: E402
 
-import pf_core.web  # noqa: E402
-from pf_core.exceptions import ConfigurationError  # noqa: E402
+import pw_core.web  # noqa: E402
+from pw_foundation.exceptions import ConfigurationError  # noqa: E402
 
 # Routers that are public on purpose. `health_router` is a read-only
 # `GET /health` returning ok/error/skipped with no detail, and takes no auth
 # parameter at all.
-PUBLIC_BY_DESIGN = {"pf_core.web.health.health_router"}
+PUBLIC_BY_DESIGN = {"pw_core.web.health.health_router"}
 
 
 def _router_factories() -> list[tuple[str, object]]:
     found = []
-    for info in pkgutil.walk_packages(pf_core.web.__path__, "pf_core.web."):
+    for info in pkgutil.walk_packages(pw_core.web.__path__, "pw_core.web."):
         try:
             module = importlib.import_module(info.name)
         except ImportError:  # optional extra not installed
@@ -46,8 +46,8 @@ def _router_factories() -> list[tuple[str, object]]:
 def test_finds_the_known_factories():
     names = {name for name, _ in _router_factories()}
     assert {
-        "pf_core.web.jobs_admin.make_jobs_router",
-        "pf_core.web.llm_admin.make_admin_router",
+        "pw_core.web.jobs_admin.make_jobs_router",
+        "pw_core.web.llm_admin.make_admin_router",
     } <= names, f"router discovery broke — found only {names}"
 
 

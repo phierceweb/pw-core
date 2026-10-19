@@ -5,9 +5,9 @@ from __future__ import annotations
 import json
 import logging
 
-from pf_core.llm.tracking import LlmRunRepo
-from pf_core.llm.tracking import schema as ts
-from pf_core.llm.validate import parse_and_validate, register
+from pw_core.llm.tracking import LlmRunRepo
+from pw_core.llm.tracking import schema as ts
+from pw_core.llm.validate import parse_and_validate, register
 
 from .conftest import PydOk
 
@@ -116,7 +116,7 @@ def _events(caplog) -> list[str]:
     ]
 
 
-def test_db_write_failure_is_logged_and_swallowed(pf_engine, caplog):
+def test_db_write_failure_is_logged_and_swallowed(pw_engine, caplog):
     """No llm_* tables exist, so every DB write fails. The docs promise the
     pipeline never raises on DB issues — the validation result still returns."""
     register(agent_type="dbfail", shape=PydOk, schema_version=5)
@@ -135,7 +135,7 @@ def test_db_write_failure_is_logged_and_swallowed(pf_engine, caplog):
 
 def test_tag_write_failure_does_not_lose_validation_rows(tracking_db, monkeypatch, caplog):
     """The tag write and the signal writes fail independently."""
-    import pf_core.db as db_mod
+    import pw_core.db as db_mod
 
     register(agent_type="tagfail", shape=PydOk)
     run_id = LlmRunRepo().record(agent_type="tagfail", model="claude-opus-4-7")
@@ -144,7 +144,7 @@ def test_tag_write_failure_does_not_lose_validation_rows(tracking_db, monkeypatc
         raise RuntimeError("tag write down")
 
     # _write_signals_to_db imports transaction inside the function, so the
-    # patch has to land on pf_core.db, not on the pipeline module.
+    # patch has to land on pw_core.db, not on the pipeline module.
     monkeypatch.setattr(db_mod, "transaction", _boom)
 
     with caplog.at_level(logging.DEBUG):

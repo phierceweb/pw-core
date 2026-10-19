@@ -1,4 +1,4 @@
-"""Tests for the pf_core.testing plugin itself.
+"""Tests for the pw_core.testing plugin itself.
 
 Verifies that the fixtures work correctly: engine creation, connection
 isolation, table creation, and transaction rollback between tests.
@@ -7,52 +7,52 @@ isolation, table creation, and transaction rollback between tests.
 import pytest
 from sqlalchemy import text
 
-from pf_core.testing._ddl import created_objects, dropped_objects
-from pf_core.testing._server_db import active_dialect
+from pw_core.testing._ddl import created_objects, dropped_objects
+from pw_core.testing._server_db import active_dialect
 
 
 class TestEngineFixture:
-    """pf_engine provides a working engine on the configured backend."""
+    """pw_engine provides a working engine on the configured backend."""
 
-    def test_engine_matches_configured_backend(self, pf_engine):
-        assert pf_engine.dialect.name == active_dialect()
+    def test_engine_matches_configured_backend(self, pw_engine):
+        assert pw_engine.dialect.name == active_dialect()
 
-    def test_engine_can_execute(self, pf_engine):
-        with pf_engine.connect() as conn:
+    def test_engine_can_execute(self, pw_engine):
+        with pw_engine.connect() as conn:
             result = conn.execute(text("SELECT 1 AS ok"))
             assert result.scalar() == 1
 
 
 class TestConnectionFixture:
-    """pf_connection provides an isolated, rolled-back connection."""
+    """pw_connection provides an isolated, rolled-back connection."""
 
-    def test_insert_and_query(self, pf_tables, pf_connection):
-        pf_connection.execute(
+    def test_insert_and_query(self, pw_tables, pw_connection):
+        pw_connection.execute(
             text("INSERT INTO items (name) VALUES (:name)"),
             {"name": "test_item"},
         )
-        row = pf_connection.execute(
+        row = pw_connection.execute(
             text("SELECT name FROM items WHERE name = :name"),
             {"name": "test_item"},
         ).fetchone()
         assert row[0] == "test_item"
 
-    def test_previous_insert_not_visible(self, pf_tables, pf_connection):
+    def test_previous_insert_not_visible(self, pw_tables, pw_connection):
         """Data from test_insert_and_query should not leak here."""
-        row = pf_connection.execute(
+        row = pw_connection.execute(
             text("SELECT COUNT(*) FROM items"),
         ).fetchone()
         assert row[0] == 0
 
 
 class TestConcurrentAccess:
-    """pf_engine must be safe under multi-threaded repo access: each worker thread
+    """pw_engine must be safe under multi-threaded repo access: each worker thread
     gets its own connection."""
 
-    @pytest.mark.pf_tables("CREATE TABLE concurrent_items (val INTEGER NOT NULL)")
-    def test_parallel_writes_through_transaction(self, pf_tables):
-        from pf_core.db import transaction
-        from pf_core.parallel import run_parallel
+    @pytest.mark.pw_tables("CREATE TABLE concurrent_items (val INTEGER NOT NULL)")
+    def test_parallel_writes_through_transaction(self, pw_tables):
+        from pw_core.db import transaction
+        from pw_foundation.parallel import run_parallel
 
         def _insert(n: int) -> None:
             with transaction() as conn:
@@ -67,13 +67,13 @@ class TestConcurrentAccess:
             count = conn.execute(text("SELECT COUNT(*) FROM concurrent_items")).scalar()
         assert count == 50
 
-    @pytest.mark.pf_tables("CREATE TABLE repo_concurrent (val INTEGER NOT NULL)")
-    def test_parallel_writes_through_repository(self, pf_tables):
+    @pytest.mark.pw_tables("CREATE TABLE repo_concurrent (val INTEGER NOT NULL)")
+    def test_parallel_writes_through_repository(self, pw_tables):
         """The layering-mandated path: services reach the DB via a
         ``Repository``, not raw ``transaction()``. A repo opening its own
         transaction per call from many threads must be just as safe."""
-        from pf_core.db import Repository, transaction
-        from pf_core.parallel import run_parallel
+        from pw_core.db import Repository, transaction
+        from pw_foundation.parallel import run_parallel
 
         class _CounterRepo(Repository):
             def add(self, n: int) -> None:
@@ -94,11 +94,11 @@ class TestConcurrentAccess:
             count = conn.execute(text("SELECT COUNT(*) FROM repo_concurrent")).scalar()
         assert count == 50
 
-    @pytest.mark.pf_tables("CREATE TABLE mixed_rw (val INTEGER NOT NULL)")
-    def test_concurrent_reads_during_writes(self, pf_tables):
+    @pytest.mark.pw_tables("CREATE TABLE mixed_rw (val INTEGER NOT NULL)")
+    def test_concurrent_reads_during_writes(self, pw_tables):
         """Readers must not error while writers are committing."""
-        from pf_core.db import transaction
-        from pf_core.parallel import run_parallel
+        from pw_core.db import transaction
+        from pw_foundation.parallel import run_parallel
 
         def _write_then_read(n: int) -> None:
             with transaction() as conn:
@@ -115,90 +115,90 @@ class TestConcurrentAccess:
 
 
 class TestFixtureThreadSafetyInvariant:
-    """pf_engine must stay NullPool and file-backed: a shared in-memory ``StaticPool``
+    """pw_engine must stay NullPool and file-backed: a shared in-memory ``StaticPool``
     connection raises SQLITE_MISUSE before any concurrency test can run."""
 
-    def test_pf_engine_uses_nullpool(self, pf_engine):
+    def test_pf_engine_uses_nullpool(self, pw_engine):
         from sqlalchemy.pool import NullPool
 
-        assert isinstance(pf_engine.pool, NullPool), (
-            f"pf_engine must use NullPool for thread-safe concurrent access; "
-            f"got {type(pf_engine.pool).__name__}"
+        assert isinstance(pw_engine.pool, NullPool), (
+            f"pw_engine must use NullPool for thread-safe concurrent access; "
+            f"got {type(pw_engine.pool).__name__}"
         )
 
-    def test_pf_engine_is_file_backed_not_in_memory(self, pf_engine):
-        db = pf_engine.url.database
+    def test_pf_engine_is_file_backed_not_in_memory(self, pw_engine):
+        db = pw_engine.url.database
         assert db not in (None, "", ":memory:"), (
-            f"pf_engine must be file-backed (per-worker connections); "
-            f"got in-memory url {pf_engine.url!r}"
+            f"pw_engine must be file-backed (per-worker connections); "
+            f"got in-memory url {pw_engine.url!r}"
         )
 
 
 class TestTablesMarker:
-    """@pytest.mark.pf_tables creates tables from inline DDL."""
+    """@pytest.mark.pw_tables creates tables from inline DDL."""
 
-    @pytest.mark.pf_tables("CREATE TABLE custom_table (val TEXT)")
-    def test_marker_creates_table(self, pf_tables, pf_connection):
-        pf_connection.execute(
+    @pytest.mark.pw_tables("CREATE TABLE custom_table (val TEXT)")
+    def test_marker_creates_table(self, pw_tables, pw_connection):
+        pw_connection.execute(
             text("INSERT INTO custom_table (val) VALUES (:v)"),
             {"v": "hello"},
         )
-        row = pf_connection.execute(text("SELECT val FROM custom_table")).fetchone()
+        row = pw_connection.execute(text("SELECT val FROM custom_table")).fetchone()
         assert row[0] == "hello"
 
 
 class TestSchemaFixture:
-    """pf_schema fixture (from conftest.py) creates project tables."""
+    """pw_schema fixture (from conftest.py) creates project tables."""
 
-    def test_items_table_exists(self, pf_tables, pf_connection):
-        pf_connection.execute(
+    def test_items_table_exists(self, pw_tables, pw_connection):
+        pw_connection.execute(
             text("INSERT INTO items (name) VALUES (:name)"),
             {"name": "from_schema"},
         )
-        row = pf_connection.execute(
+        row = pw_connection.execute(
             text("SELECT name FROM items WHERE name = :name"),
             {"name": "from_schema"},
         ).fetchone()
         assert row[0] == "from_schema"
 
-    def test_usage_events_table_exists(self, pf_tables, pf_connection):
-        pf_connection.execute(
+    def test_usage_events_table_exists(self, pw_tables, pw_connection):
+        pw_connection.execute(
             text(
                 "INSERT INTO usage_events (prompt_tokens, completion_tokens, cost_usd) "
                 "VALUES (:pt, :ct, :cost)"
             ),
             {"pt": 100, "ct": 50, "cost": 0.002},
         )
-        row = pf_connection.execute(text("SELECT cost_usd FROM usage_events")).fetchone()
+        row = pw_connection.execute(text("SELECT cost_usd FROM usage_events")).fetchone()
         assert row[0] == pytest.approx(0.002)
 
 
 _SCHEMA_CONFTEST = """
     import pytest
 
-    pytest_plugins = ["pf_core.testing.db_fixtures"]
+    pytest_plugins = ["pw_core.testing.db_fixtures"]
 
     @pytest.fixture
-    def pf_schema():
+    def pw_schema():
         return ["CREATE TABLE items (id INTEGER PRIMARY KEY, name TEXT)"]
 """
 
 _BARE_CONFTEST = """
-    pytest_plugins = ["pf_core.testing.db_fixtures"]
+    pytest_plugins = ["pw_core.testing.db_fixtures"]
 """
 
 
 class TestSchemaFixtureWithoutAutouse:
-    """A plain (non-autouse) ``pf_schema`` applies whether or not a test names it.
+    """A plain (non-autouse) ``pw_schema`` applies whether or not a test names it.
 
-    pf-core's own conftest marks ``pf_schema`` autouse, which hides this path —
+    pw-core's own conftest marks ``pw_schema`` autouse, which hides this path —
     an inner pytest session is the only way to observe it.
     """
 
     @pytest.fixture(autouse=True)
     def _sqlite_inner_session(self, monkeypatch):
         # The inner DDL is SQLite; these tests cover DDL merging, not dialects.
-        monkeypatch.delenv("PF_TEST_DATABASE_URL", raising=False)
+        monkeypatch.delenv("PW_TEST_DATABASE_URL", raising=False)
 
     def test_schema_alone_creates_tables(self, pytester):
         pytester.makeconftest(_SCHEMA_CONFTEST)
@@ -206,9 +206,9 @@ class TestSchemaFixtureWithoutAutouse:
             """
             from sqlalchemy import text
 
-            def test_items_exists(pf_tables, pf_connection):
-                pf_connection.execute(text("INSERT INTO items (name) VALUES ('x')"))
-                assert pf_connection.execute(text("SELECT COUNT(*) FROM items")).scalar() == 1
+            def test_items_exists(pw_tables, pw_connection):
+                pw_connection.execute(text("INSERT INTO items (name) VALUES ('x')"))
+                assert pw_connection.execute(text("SELECT COUNT(*) FROM items")).scalar() == 1
             """
         )
         pytester.runpytest_subprocess().assert_outcomes(passed=1)
@@ -220,10 +220,10 @@ class TestSchemaFixtureWithoutAutouse:
             import pytest
             from sqlalchemy import text
 
-            @pytest.mark.pf_tables("CREATE TABLE widgets (id INTEGER PRIMARY KEY)")
-            def test_widgets_exists(pf_tables, pf_connection):
-                pf_connection.execute(text("INSERT INTO widgets (id) VALUES (1)"))
-                assert pf_connection.execute(text("SELECT COUNT(*) FROM widgets")).scalar() == 1
+            @pytest.mark.pw_tables("CREATE TABLE widgets (id INTEGER PRIMARY KEY)")
+            def test_widgets_exists(pw_tables, pw_connection):
+                pw_connection.execute(text("INSERT INTO widgets (id) VALUES (1)"))
+                assert pw_connection.execute(text("SELECT COUNT(*) FROM widgets")).scalar() == 1
             """
         )
         pytester.runpytest_subprocess().assert_outcomes(passed=1)
@@ -235,12 +235,12 @@ class TestSchemaFixtureWithoutAutouse:
             import pytest
             from sqlalchemy import text
 
-            @pytest.mark.pf_tables("CREATE TABLE widgets (id INTEGER PRIMARY KEY)")
-            def test_both_tables_exist(pf_tables, pf_connection):
-                pf_connection.execute(text("INSERT INTO items (name) VALUES ('x')"))
-                pf_connection.execute(text("INSERT INTO widgets (id) VALUES (1)"))
-                assert pf_connection.execute(text("SELECT COUNT(*) FROM items")).scalar() == 1
-                assert pf_connection.execute(text("SELECT COUNT(*) FROM widgets")).scalar() == 1
+            @pytest.mark.pw_tables("CREATE TABLE widgets (id INTEGER PRIMARY KEY)")
+            def test_both_tables_exist(pw_tables, pw_connection):
+                pw_connection.execute(text("INSERT INTO items (name) VALUES ('x')"))
+                pw_connection.execute(text("INSERT INTO widgets (id) VALUES (1)"))
+                assert pw_connection.execute(text("SELECT COUNT(*) FROM items")).scalar() == 1
+                assert pw_connection.execute(text("SELECT COUNT(*) FROM widgets")).scalar() == 1
             """
         )
         pytester.runpytest_subprocess().assert_outcomes(passed=1)
@@ -252,9 +252,9 @@ class TestSchemaFixtureWithoutAutouse:
             import pytest
             from sqlalchemy import text
 
-            @pytest.mark.pf_tables("CREATE INDEX items_name_idx ON items (name)")
-            def test_index_on_schema_table(pf_tables, pf_connection):
-                row = pf_connection.execute(
+            @pytest.mark.pw_tables("CREATE INDEX items_name_idx ON items (name)")
+            def test_index_on_schema_table(pw_tables, pw_connection):
+                row = pw_connection.execute(
                     text("SELECT name FROM sqlite_master WHERE name = 'items_name_idx'")
                 ).fetchone()
                 assert row is not None
@@ -268,14 +268,14 @@ class TestSchemaFixtureWithoutAutouse:
             """
             import pytest
 
-            @pytest.mark.pf_tables("CREATE TABLE items (id INTEGER PRIMARY KEY, other TEXT)")
-            def test_collision(pf_tables):
+            @pytest.mark.pw_tables("CREATE TABLE items (id INTEGER PRIMARY KEY, other TEXT)")
+            def test_collision(pw_tables):
                 pass
             """
         )
         result = pytester.runpytest_subprocess()
         result.assert_outcomes(errors=1)
-        result.stdout.fnmatch_lines(["*redefines table items*pf_schema*"])
+        result.stdout.fnmatch_lines(["*redefines table items*pw_schema*"])
 
     def test_marker_if_not_exists_collision_is_not_silently_dropped(self, pytester):
         pytester.makeconftest(_SCHEMA_CONFTEST)
@@ -283,10 +283,10 @@ class TestSchemaFixtureWithoutAutouse:
             """
             import pytest
 
-            @pytest.mark.pf_tables(
+            @pytest.mark.pw_tables(
                 "CREATE TABLE IF NOT EXISTS items (id INTEGER PRIMARY KEY, other TEXT)"
             )
-            def test_collision(pf_tables):
+            def test_collision(pw_tables):
                 pass
             """
         )
@@ -302,12 +302,12 @@ class TestSchemaFixtureWithoutAutouse:
             import pytest
             from sqlalchemy import text
 
-            @pytest.mark.pf_tables(
+            @pytest.mark.pw_tables(
                 "DROP TABLE items",
                 "CREATE TABLE items (id INTEGER PRIMARY KEY, other TEXT)",
             )
-            def test_replaced(pf_tables):
-                with pf_tables.connect() as conn:
+            def test_replaced(pw_tables):
+                with pw_tables.connect() as conn:
                     cols = {r[1] for r in conn.execute(text("PRAGMA table_info(items)"))}
                 assert cols == {"id", "other"}
             """
@@ -317,7 +317,7 @@ class TestSchemaFixtureWithoutAutouse:
 
 
 class TestCreatedObjects:
-    """The collision detector recognises the DDL forms pf_schema DDL takes."""
+    """The collision detector recognises the DDL forms pw_schema DDL takes."""
 
     @pytest.mark.parametrize(
         "stmt,expected",

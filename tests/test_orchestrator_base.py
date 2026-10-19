@@ -1,11 +1,11 @@
-"""Tests for pf_core.orchestrators.Orchestrator base class."""
+"""Tests for pw_core.orchestrators.Orchestrator base class."""
 
 from sqlalchemy import Column, Integer, MetaData, String, Table, insert, text
 
-from pf_core.config import AppConfig
-from pf_core.db.repository import Repository
-from pf_core.orchestrators import Orchestrator
-from pf_core.services import Service
+from pw_core.config import AppConfig
+from pw_core.db.repository import Repository
+from pw_core.orchestrators import Orchestrator
+from pw_foundation.services import Service
 
 
 # --- Test doubles ---
@@ -77,12 +77,12 @@ class TestOrchestratorService:
         svc = orch._service(ItemService)
         assert isinstance(svc, ItemService)
 
-    def test_service_forwards_kwargs(self, pf_tables, pf_connection):
+    def test_service_forwards_kwargs(self, pw_tables, pw_connection):
         orch = BatchOrchestrator()
-        svc = orch._service(ItemService, conn=pf_connection)
-        assert svc._conn is pf_connection
+        svc = orch._service(ItemService, conn=pw_connection)
+        assert svc._conn is pw_connection
 
-    def test_end_to_end(self, pf_tables):
+    def test_end_to_end(self, pw_tables):
         orch = BatchOrchestrator()
         count = orch.run(["a", "b", "c"])
         assert count == 3
@@ -101,7 +101,7 @@ class TestOrchestratorProgress:
         orch._report(2, 3, "second")
         assert calls == [(1, 3, "first"), (2, 3, "second")]
 
-    def test_end_to_end_with_progress(self, pf_tables):
+    def test_end_to_end_with_progress(self, pw_tables):
         calls = []
         orch = BatchOrchestrator(
             progress=lambda s, t, m: calls.append((s, t, m)),

@@ -1,4 +1,4 @@
-"""Smoke tests for Alembic autogenerate against ``pf_core.llm.tracking.metadata``.
+"""Smoke tests for Alembic autogenerate against ``pw_core.llm.tracking.metadata``.
 
 Consumer projects write their own Alembic migrations that target our
 metadata. These tests catch two failure modes before those migrations
@@ -25,7 +25,7 @@ from sqlalchemy import create_engine, event
 from sqlalchemy.engine import Engine
 from sqlalchemy.pool import StaticPool
 
-from pf_core.llm.tracking import ALL_TABLES, metadata
+from pw_core.llm.tracking import ALL_TABLES, metadata
 
 
 @pytest.fixture()
@@ -46,7 +46,7 @@ def engine() -> Engine:
 
 
 def _diff_ops(engine: Engine) -> list:
-    """Return the autogenerate diff between live DB and pf-core metadata."""
+    """Return the autogenerate diff between live DB and pw-core metadata."""
     with engine.connect() as conn:
         mc = MigrationContext.configure(conn)
         return compare_metadata(mc, metadata)
@@ -79,7 +79,7 @@ def test_autogenerate_against_fully_migrated_db_is_empty(engine):
     # clean engine so this is really just defense-in-depth.
     our_names = {t.name for t in ALL_TABLES}
     relevant = [op for op in diff if _op_touches_any(op, our_names)]
-    assert relevant == [], f"unexpected drift in pf-core metadata: {relevant}"
+    assert relevant == [], f"unexpected drift in pw-core metadata: {relevant}"
 
 
 def _op_touches_any(op, names: set[str]) -> bool:

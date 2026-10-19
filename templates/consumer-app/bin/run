@@ -2,7 +2,7 @@
 # Run a sibling bin/ command, or start the web server (the default).
 #
 #   bin/run          # start the server (same as bin/web)
-#   bin/run pf-doctor  # pf-core console script, from the venv
+#   bin/run pw-doctor  # a framework console script (pw-*), from the venv
 #   bin/run test     # delegates to bin/test
 #   bin/run lint     # delegates to bin/lint
 set -euo pipefail
@@ -14,8 +14,8 @@ if [[ "$#" -gt 0 && "$1" != "run" && -x "$ROOT/bin/$1" ]]; then
   exec "$ROOT/bin/$CMD" "$@"
 fi
 
-# pf-core's console scripts live in the venv; the pf- prefix can't collide with an app command.
-if [[ "$#" -gt 0 && "$1" == pf-* && -x "$ROOT/.venv/bin/$1" ]]; then
+# The framework's console scripts (pw-*) live in the venv; the prefix can't collide with an app command.
+if [[ "$#" -gt 0 && "$1" == pw-* && -x "$ROOT/.venv/bin/$1" ]]; then
   CMD="$1"; shift
   exec "$ROOT/.venv/bin/$CMD" "$@"
 fi

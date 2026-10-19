@@ -1,4 +1,4 @@
-"""Tests for pf_core.clients.routing.get_routed_client."""
+"""Tests for pw_core.clients.routing.get_routed_client."""
 
 from __future__ import annotations
 
@@ -6,8 +6,8 @@ from unittest.mock import patch
 
 import pytest
 
-from pf_core.clients import claude_code, openrouter
-from pf_core.clients.routing import get_routed_client
+from pw_core.clients import claude_code, openrouter
+from pw_core.clients.routing import get_routed_client
 
 
 @pytest.fixture(autouse=True)
@@ -59,7 +59,7 @@ class TestLazyImport:
 
     def test_false_path_does_not_import_claude_code(self, monkeypatch):
         """If use_claude_code=False is passed, the function must not
-        touch pf_core.clients.claude_code.
+        touch pw_core.clients.claude_code.
 
         We detect this by patching ``claude_code.get_client`` to fail
         loudly if called.

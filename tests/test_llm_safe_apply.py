@@ -1,4 +1,4 @@
-"""Tests for pf_core.llm.safe_apply — gather/apply with drift detection."""
+"""Tests for pw_core.llm.safe_apply — gather/apply with drift detection."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ import logging
 
 import pytest
 
-from pf_core.llm.safe_apply import (
+from pw_core.llm.safe_apply import (
     DriftReport,
     GatherResult,
     detect_drift,
@@ -158,7 +158,7 @@ class TestSafeApply:
         def transform(data: str) -> str:
             return data.upper()
 
-        with caplog.at_level(logging.WARNING, logger="pf_core.llm.safe_apply"):
+        with caplog.at_level(logging.WARNING, logger="pw_core.llm.safe_apply"):
             result = safe_apply(g, ["a", "b", "c"], transform)
         assert result is None
         assert any("safe_apply_drift" in r.getMessage() for r in caplog.records)
@@ -169,7 +169,7 @@ class TestSafeApply:
         def transform(data: str) -> str:
             return data.upper()
 
-        with caplog.at_level(logging.WARNING, logger="pf_core.llm.safe_apply"):
+        with caplog.at_level(logging.WARNING, logger="pw_core.llm.safe_apply"):
             result = safe_apply(g, ["a", "BBB"], transform)
         assert result is None
         assert any("safe_apply_drift" in r.getMessage() for r in caplog.records)
@@ -195,7 +195,7 @@ class TestSafeApply:
         def transform(data: object) -> None:
             return None
 
-        with caplog.at_level(logging.WARNING, logger="pf_core.llm.safe_apply"):
+        with caplog.at_level(logging.WARNING, logger="pw_core.llm.safe_apply"):
             safe_apply(g, ["b"], transform, label="normalize")
         assert any("normalize" in r.getMessage() for r in caplog.records)
 
@@ -205,7 +205,7 @@ class TestSafeApply:
         def transform(data: object) -> None:
             return None
 
-        with caplog.at_level(logging.WARNING, logger="pf_core.llm.safe_apply"):
+        with caplog.at_level(logging.WARNING, logger="pw_core.llm.safe_apply"):
             safe_apply(g, ["b"], transform)  # no label kwarg
         assert any("transform" in r.getMessage() for r in caplog.records)
 
@@ -216,6 +216,6 @@ class TestSafeApply:
         def transform(data: str) -> str:
             return data
 
-        with caplog.at_level(logging.WARNING, logger="pf_core.llm.safe_apply"):
+        with caplog.at_level(logging.WARNING, logger="pw_core.llm.safe_apply"):
             safe_apply(g, ["a", "b"], transform)
         assert not any("safe_apply_drift" in r.getMessage() for r in caplog.records)

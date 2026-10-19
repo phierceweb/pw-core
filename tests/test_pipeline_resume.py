@@ -1,11 +1,11 @@
-"""Tests for pf_core.pipeline.resume."""
+"""Tests for pw_core.pipeline.resume."""
 
 from __future__ import annotations
 
 import os
 from pathlib import Path
 
-from pf_core.pipeline.resume import (
+from pw_core.pipeline.resume import (
     SnapshotValidator,
     is_snapshot_valid,
     try_resume_from_snapshot,
@@ -212,7 +212,7 @@ def test_try_resume_from_snapshot_returns_none_when_file_vanishes_mid_call(
     def fake_is_valid(*args, **kwargs) -> bool:
         return True
 
-    from pf_core.pipeline import resume as resume_mod
+    from pw_core.pipeline import resume as resume_mod
 
     monkeypatch.setattr(resume_mod, "is_snapshot_valid", fake_is_valid)
     snap.unlink()  # vanish before read

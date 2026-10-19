@@ -1,4 +1,4 @@
-"""Tests for pf_core.web.health."""
+"""Tests for pw_core.web.health."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ import pytest
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
-from pf_core.web.health import health_router, require_db, require_db_sync
+from pw_core.web.health import health_router, require_db, require_db_sync
 
 
 @pytest.fixture()
@@ -41,7 +41,7 @@ class TestHealthEndpoint:
 
     def test_healthy_db_ok(self, app_with_health):
         client = TestClient(app_with_health)
-        with patch("pf_core.web.health._check_db", return_value="ok"):
+        with patch("pw_core.web.health._check_db", return_value="ok"):
             resp = client.get("/health")
         assert resp.status_code == 200
         data = resp.json()
@@ -50,7 +50,7 @@ class TestHealthEndpoint:
 
     def test_unhealthy_db_down(self, app_with_health):
         client = TestClient(app_with_health)
-        with patch("pf_core.web.health._check_db", return_value="error: connection refused"):
+        with patch("pw_core.web.health._check_db", return_value="error: connection refused"):
             resp = client.get("/health")
         assert resp.status_code == 503
         data = resp.json()
@@ -58,10 +58,10 @@ class TestHealthEndpoint:
         assert "error" in data["checks"]["db"]
 
     def test_check_db_does_not_leak_exception_detail(self):
-        from pf_core.web import health
+        from pw_core.web import health
 
         secret_url = "postgresql://user:s3cr3t@db.internal/app"
-        with patch("pf_core.db.ping", side_effect=Exception(f"cannot connect: {secret_url}")):
+        with patch("pw_core.db.ping", side_effect=Exception(f"cannot connect: {secret_url}")):
             result = health._check_db()
         assert result == "error"
         assert "s3cr3t" not in result
@@ -71,7 +71,7 @@ class TestHealthEndpoint:
         app = FastAPI()
         app.include_router(health_router(check_db=False, check_redis=True))
         client = TestClient(app)
-        with patch("pf_core.web.health._check_redis", return_value="ok"):
+        with patch("pw_core.web.health._check_redis", return_value="ok"):
             resp = client.get("/health")
         assert resp.status_code == 200
         assert resp.json()["checks"]["redis"] == "ok"
@@ -81,8 +81,8 @@ class TestHealthEndpoint:
         app.include_router(health_router(check_db=True, check_redis=True))
         client = TestClient(app)
         with (
-            patch("pf_core.web.health._check_db", return_value="ok"),
-            patch("pf_core.web.health._check_redis", return_value="error: timeout"),
+            patch("pw_core.web.health._check_db", return_value="ok"),
+            patch("pw_core.web.health._check_redis", return_value="error: timeout"),
         ):
             resp = client.get("/health")
         assert resp.status_code == 503
@@ -108,7 +108,7 @@ class TestRequireDb:
             return {"ok": True}
 
         client = TestClient(app)
-        with patch("pf_core.web.health._check_db", return_value="ok"):
+        with patch("pw_core.web.health._check_db", return_value="ok"):
             resp = client.get("/data")
         assert resp.status_code == 200
 
@@ -120,7 +120,7 @@ class TestRequireDb:
             return {"ok": True}
 
         client = TestClient(app)
-        with patch("pf_core.web.health._check_db", return_value="error: refused"):
+        with patch("pw_core.web.health._check_db", return_value="error: refused"):
             resp = client.get("/data")
         assert resp.status_code == 503
         assert "unavailable" in resp.json()["detail"].lower()
@@ -128,11 +128,11 @@ class TestRequireDb:
 
 class TestRequireDbSync:
     def test_db_available_returns_none(self):
-        with patch("pf_core.web.health._check_db", return_value="ok"):
+        with patch("pw_core.web.health._check_db", return_value="ok"):
             assert require_db_sync() is None
 
     def test_db_unavailable_raises(self):
-        with patch("pf_core.web.health._check_db", return_value="error: refused"):
+        with patch("pw_core.web.health._check_db", return_value="error: refused"):
             with pytest.raises(HTTPException) as exc_info:
                 require_db_sync()
         assert exc_info.value.status_code == 503
@@ -146,10 +146,10 @@ class TestRequireDbSync:
             return {"ok": True}
 
         client = TestClient(app)
-        with patch("pf_core.web.health._check_db", return_value="ok"):
+        with patch("pw_core.web.health._check_db", return_value="ok"):
             resp = client.get("/data")
         assert resp.status_code == 200
-        with patch("pf_core.web.health._check_db", return_value="error: refused"):
+        with patch("pw_core.web.health._check_db", return_value="error: refused"):
             resp = client.get("/data")
         assert resp.status_code == 503
         assert "unavailable" in resp.json()["detail"].lower()
@@ -201,6 +201,6 @@ class TestEventLoopSafety:
             assert resp.status_code == 200
             return max(gaps)
 
-        with patch("pf_core.web.health._check_db", slow_check):
+        with patch("pw_core.web.health._check_db", slow_check):
             max_gap = asyncio.run(scenario())
         assert max_gap < 0.2, f"event loop blocked for {max_gap:.2f}s by the blocking db check"

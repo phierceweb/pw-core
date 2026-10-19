@@ -1,11 +1,11 @@
-"""Tests for pf_core.db.soft_delete."""
+"""Tests for pw_core.db.soft_delete."""
 
 from __future__ import annotations
 
 import pytest
 from sqlalchemy import text
 
-from pf_core.db.soft_delete import not_deleted, restore, soft_delete
+from pw_core.db.soft_delete import not_deleted, restore, soft_delete
 
 
 _PRODUCTS_TABLE = """
@@ -27,16 +27,16 @@ CREATE TABLE notes (
 
 
 class TestSoftDelete:
-    @pytest.mark.pf_tables(_PRODUCTS_TABLE)
-    def test_soft_delete_active_row(self, pf_tables, pf_connection):
-        pf_connection.execute(
+    @pytest.mark.pw_tables(_PRODUCTS_TABLE)
+    def test_soft_delete_active_row(self, pw_tables, pw_connection):
+        pw_connection.execute(
             text("INSERT INTO products (id, name) VALUES (:id, :name)"),
             {"id": "abc", "name": "thing"},
         )
-        result = soft_delete(pf_connection, "products", "id", "abc", reason="bad data")
+        result = soft_delete(pw_connection, "products", "id", "abc", reason="bad data")
         assert result is True
         row = (
-            pf_connection.execute(
+            pw_connection.execute(
                 text("SELECT deleted_at, deleted_reason FROM products WHERE id = :id"),
                 {"id": "abc"},
             )
@@ -46,30 +46,30 @@ class TestSoftDelete:
         assert row["deleted_at"] is not None
         assert row["deleted_reason"] == "bad data"
 
-    @pytest.mark.pf_tables(_PRODUCTS_TABLE)
-    def test_soft_delete_already_deleted(self, pf_tables, pf_connection):
-        pf_connection.execute(
+    @pytest.mark.pw_tables(_PRODUCTS_TABLE)
+    def test_soft_delete_already_deleted(self, pw_tables, pw_connection):
+        pw_connection.execute(
             text("INSERT INTO products (id, name, deleted_at) VALUES (:id, :name, :ts)"),
             {"id": "abc", "name": "thing", "ts": "2026-01-01T00:00:00Z"},
         )
-        result = soft_delete(pf_connection, "products", "id", "abc")
+        result = soft_delete(pw_connection, "products", "id", "abc")
         assert result is False
 
-    @pytest.mark.pf_tables(_PRODUCTS_TABLE)
-    def test_soft_delete_nonexistent_row(self, pf_tables, pf_connection):
-        result = soft_delete(pf_connection, "products", "id", "missing")
+    @pytest.mark.pw_tables(_PRODUCTS_TABLE)
+    def test_soft_delete_nonexistent_row(self, pw_tables, pw_connection):
+        result = soft_delete(pw_connection, "products", "id", "missing")
         assert result is False
 
-    @pytest.mark.pf_tables(_PRODUCTS_TABLE)
-    def test_soft_delete_without_reason(self, pf_tables, pf_connection):
-        pf_connection.execute(
+    @pytest.mark.pw_tables(_PRODUCTS_TABLE)
+    def test_soft_delete_without_reason(self, pw_tables, pw_connection):
+        pw_connection.execute(
             text("INSERT INTO products (id, name) VALUES (:id, :name)"),
             {"id": "abc", "name": "thing"},
         )
-        result = soft_delete(pf_connection, "products", "id", "abc")
+        result = soft_delete(pw_connection, "products", "id", "abc")
         assert result is True
         row = (
-            pf_connection.execute(
+            pw_connection.execute(
                 text("SELECT deleted_at, deleted_reason FROM products WHERE id = :id"),
                 {"id": "abc"},
             )
@@ -79,16 +79,16 @@ class TestSoftDelete:
         assert row["deleted_at"] is not None
         assert row["deleted_reason"] is None
 
-    @pytest.mark.pf_tables(_NOTES_TABLE)
-    def test_soft_delete_no_reason_column(self, pf_tables, pf_connection):
-        pf_connection.execute(
+    @pytest.mark.pw_tables(_NOTES_TABLE)
+    def test_soft_delete_no_reason_column(self, pw_tables, pw_connection):
+        pw_connection.execute(
             text("INSERT INTO notes (id, name) VALUES (:id, :name)"),
             {"id": "abc", "name": "thing"},
         )
-        result = soft_delete(pf_connection, "notes", "id", "abc", reason_column=None)
+        result = soft_delete(pw_connection, "notes", "id", "abc", reason_column=None)
         assert result is True
         row = (
-            pf_connection.execute(
+            pw_connection.execute(
                 text("SELECT deleted_at FROM notes WHERE id = :id"),
                 {"id": "abc"},
             )
@@ -99,18 +99,18 @@ class TestSoftDelete:
 
 
 class TestRestore:
-    @pytest.mark.pf_tables(_PRODUCTS_TABLE)
-    def test_restore_deleted_row(self, pf_tables, pf_connection):
-        pf_connection.execute(
+    @pytest.mark.pw_tables(_PRODUCTS_TABLE)
+    def test_restore_deleted_row(self, pw_tables, pw_connection):
+        pw_connection.execute(
             text(
                 "INSERT INTO products (id, name, deleted_at, deleted_reason) VALUES (:id, :name, :ts, :reason)"
             ),
             {"id": "abc", "name": "thing", "ts": "2026-01-01T00:00:00Z", "reason": "oops"},
         )
-        result = restore(pf_connection, "products", "id", "abc")
+        result = restore(pw_connection, "products", "id", "abc")
         assert result is True
         row = (
-            pf_connection.execute(
+            pw_connection.execute(
                 text("SELECT deleted_at, deleted_reason FROM products WHERE id = :id"),
                 {"id": "abc"},
             )
@@ -120,30 +120,30 @@ class TestRestore:
         assert row["deleted_at"] is None
         assert row["deleted_reason"] is None
 
-    @pytest.mark.pf_tables(_PRODUCTS_TABLE)
-    def test_restore_active_row(self, pf_tables, pf_connection):
-        pf_connection.execute(
+    @pytest.mark.pw_tables(_PRODUCTS_TABLE)
+    def test_restore_active_row(self, pw_tables, pw_connection):
+        pw_connection.execute(
             text("INSERT INTO products (id, name) VALUES (:id, :name)"),
             {"id": "abc", "name": "thing"},
         )
-        result = restore(pf_connection, "products", "id", "abc")
+        result = restore(pw_connection, "products", "id", "abc")
         assert result is False
 
-    @pytest.mark.pf_tables(_PRODUCTS_TABLE)
-    def test_restore_nonexistent_row(self, pf_tables, pf_connection):
-        result = restore(pf_connection, "products", "id", "missing")
+    @pytest.mark.pw_tables(_PRODUCTS_TABLE)
+    def test_restore_nonexistent_row(self, pw_tables, pw_connection):
+        result = restore(pw_connection, "products", "id", "missing")
         assert result is False
 
-    @pytest.mark.pf_tables(_NOTES_TABLE)
-    def test_restore_no_reason_column(self, pf_tables, pf_connection):
-        pf_connection.execute(
+    @pytest.mark.pw_tables(_NOTES_TABLE)
+    def test_restore_no_reason_column(self, pw_tables, pw_connection):
+        pw_connection.execute(
             text("INSERT INTO notes (id, name, deleted_at) VALUES (:id, :name, :ts)"),
             {"id": "abc", "name": "thing", "ts": "2026-01-01T00:00:00Z"},
         )
-        result = restore(pf_connection, "notes", "id", "abc", reason_column=None)
+        result = restore(pw_connection, "notes", "id", "abc", reason_column=None)
         assert result is True
         row = (
-            pf_connection.execute(
+            pw_connection.execute(
                 text("SELECT deleted_at FROM notes WHERE id = :id"),
                 {"id": "abc"},
             )
@@ -154,16 +154,16 @@ class TestRestore:
 
 
 class TestRoundTrip:
-    @pytest.mark.pf_tables(_PRODUCTS_TABLE)
-    def test_delete_then_restore(self, pf_tables, pf_connection):
-        pf_connection.execute(
+    @pytest.mark.pw_tables(_PRODUCTS_TABLE)
+    def test_delete_then_restore(self, pw_tables, pw_connection):
+        pw_connection.execute(
             text("INSERT INTO products (id, name) VALUES (:id, :name)"),
             {"id": "abc", "name": "thing"},
         )
-        assert soft_delete(pf_connection, "products", "id", "abc", reason="test") is True
-        assert restore(pf_connection, "products", "id", "abc") is True
+        assert soft_delete(pw_connection, "products", "id", "abc", reason="test") is True
+        assert restore(pw_connection, "products", "id", "abc") is True
         row = (
-            pf_connection.execute(
+            pw_connection.execute(
                 text("SELECT deleted_at, deleted_reason FROM products WHERE id = :id"),
                 {"id": "abc"},
             )

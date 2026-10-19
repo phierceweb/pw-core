@@ -1,4 +1,4 @@
-"""Tests for ``pf_core.parsers.exceptions``.
+"""Tests for ``pw_core.parsers.exceptions``.
 
 These exception types form the contract between consumer parsers and
 their ingest orchestrator. Tests here cover the exception shape and the
@@ -9,9 +9,9 @@ from __future__ import annotations
 
 import pytest
 
-from pf_core.exceptions import AppError
-from pf_core.parsers import ParseError, PaywalledPost
-from pf_core.parsers.exceptions import (
+from pw_foundation.exceptions import AppError
+from pw_core.parsers import ParseError, PaywalledPost
+from pw_core.parsers.exceptions import (
     ParseError as ExceptionsParseError,
     PaywalledPost as ExceptionsPaywalledPost,
 )

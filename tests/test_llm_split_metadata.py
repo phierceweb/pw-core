@@ -1,8 +1,8 @@
-"""Tests for pf_core.llm.tracking.split_metadata — metadata dict → (tags, metrics)."""
+"""Tests for pw_core.llm.tracking.split_metadata — metadata dict → (tags, metrics)."""
 
 from __future__ import annotations
 
-from pf_core.llm.tracking import split_metadata
+from pw_core.llm.tracking import split_metadata
 
 
 def test_strings_and_bools_become_tags_numbers_become_metrics():

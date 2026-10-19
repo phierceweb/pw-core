@@ -1,0 +1,155 @@
+"""SSRF guard for outbound HTTP fetches.
+
+Blocks any URL whose host resolves, at check time, to a non-public address — on
+the initial request and on every redirect hop.
+
+**Not TOCTOU-safe.** The client resolves the host again when it connects, so DNS
+rebinding defeats the check. `assert_public_url` returns the addresses it vetted
+so a caller can pin the connection to one; pw-core's own fetch helpers do not,
+and so have no rebinding protection. See `docs/urls.md`.
+
+Verification is on by default. `URL_FETCH_ALLOW_PRIVATE=1` opts out for
+consumers that deliberately fetch internal hosts (dev, service mesh); it still
+requires an http/https scheme.
+"""
+
+from __future__ import annotations
+
+import ipaddress
+import socket
+from collections.abc import Iterator
+from contextlib import contextmanager
+from urllib.parse import urljoin, urlsplit
+
+from pw_foundation.exceptions import InvalidInputError
+from pw_foundation.log import get_logger
+from pw_foundation.utils.env import resolve_bool
+
+_logger = get_logger(__name__)
+
+_ALLOW_PRIVATE_ENV = "URL_FETCH_ALLOW_PRIVATE"
+_REDIRECT_CODES = frozenset({301, 302, 303, 307, 308})
+
+
+def _allow_private() -> bool:
+    return resolve_bool(None, _ALLOW_PRIVATE_ENV, default=False)
+
+
+def _ip_is_blocked(ip: str) -> bool:
+    # Don't collapse to `not is_global`: NAT64, SRv6, and multicast all report
+    # is_global=True. It is only here to catch 100.64.0.0/10.
+    addr = ipaddress.ip_address(ip)
+    return (
+        addr.is_private
+        or addr.is_loopback
+        or addr.is_link_local
+        or addr.is_reserved
+        or addr.is_multicast
+        or addr.is_unspecified
+        or not addr.is_global
+    )
+
+
+def assert_public_url(url: str) -> tuple[str, ...]:
+    """Validate *url* as a fetchable public http(s) URL and return its addresses.
+
+    Requires an http/https scheme and a host that resolves entirely to public
+    addresses. Not TOCTOU-safe — see the module docstring.
+
+    Returns:
+        The vetted addresses in resolution order, for callers that pin the
+        connection. Empty when ``URL_FETCH_ALLOW_PRIVATE`` skipped the address
+        check (scheme is still enforced).
+
+    Raises:
+        InvalidInputError: Non-http(s) scheme, missing host, unresolvable host,
+            or any resolved address non-public.
+    """
+    parts = urlsplit(url)
+    scheme = parts.scheme.lower()
+    if scheme not in ("http", "https"):
+        _logger.warning("ssrf_blocked", url=url, reason="scheme")
+        raise InvalidInputError(f"URL scheme not allowed for fetch: {scheme!r}")
+    host = parts.hostname
+    if not host:
+        _logger.warning("ssrf_blocked", url=url, reason="no_host")
+        raise InvalidInputError("URL has no host")
+    if _allow_private():
+        return ()
+    port = parts.port or (443 if scheme == "https" else 80)
+    try:
+        infos = socket.getaddrinfo(host, port, proto=socket.IPPROTO_TCP)
+    except OSError as e:
+        _logger.warning("ssrf_blocked", url=url, host=host, reason="unresolved")
+        raise InvalidInputError(f"could not resolve host: {host}") from e
+    vetted: dict[str, None] = {}
+    for info in infos:
+        ip = str(info[4][0])
+        if _ip_is_blocked(ip):
+            _logger.warning("ssrf_blocked", url=url, host=host, ip=ip)
+            raise InvalidInputError(f"URL resolves to non-public address: {ip}")
+        vetted[ip] = None
+    return tuple(vetted)
+
+
+def _location(resp: object) -> str | None:
+    headers = getattr(resp, "headers", None)
+    if headers is None or not hasattr(headers, "get"):
+        return None
+    return headers.get("location") or headers.get("Location")
+
+
+def guarded_get(client: object, url: str, *, max_redirects: int = 5) -> object:
+    """GET *url* through *client*, validating the target and every redirect hop.
+
+    The client must be built with ``follow_redirects=False`` so this loop sees
+    each 3xx and re-validates the ``Location`` before following it.
+    """
+    return _guarded(client.get, url, max_redirects=max_redirects)  # type: ignore[attr-defined]
+
+
+def guarded_head(client: object, url: str, *, max_redirects: int = 5) -> object:
+    """HEAD *url* through *client*, validating the target and every redirect hop."""
+    return _guarded(client.head, url, max_redirects=max_redirects)  # type: ignore[attr-defined]
+
+
+@contextmanager
+def guarded_stream(client: object, url: str, *, max_redirects: int = 5) -> Iterator[object]:
+    """Stream-GET *url* through *client*, validating the target and every hop.
+
+    The streaming counterpart of :func:`guarded_get`, for callers that must
+    bound how much of a response they pull into memory. Yields the final
+    response with its body unread; the client must be built with
+    ``follow_redirects=False``.
+    """
+    assert_public_url(url)
+    cur = url
+    hops = 0
+    while True:
+        with client.stream("GET", cur) as resp:  # type: ignore[attr-defined]
+            if resp.status_code not in _REDIRECT_CODES or hops >= max_redirects:
+                yield resp
+                return
+            location = _location(resp)
+            if not location:
+                yield resp
+                return
+            cur = urljoin(cur, location)
+            hops += 1
+        assert_public_url(cur)
+
+
+def _guarded(fetch, url, *, max_redirects):
+    assert_public_url(url)
+    cur = url
+    resp = fetch(cur)
+    for _ in range(max_redirects):
+        if resp.status_code not in _REDIRECT_CODES:
+            return resp
+        loc = _location(resp)
+        if not loc:
+            return resp
+        cur = urljoin(cur, loc)
+        assert_public_url(cur)
+        resp = fetch(cur)
+    return resp

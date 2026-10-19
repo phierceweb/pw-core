@@ -11,14 +11,14 @@ from __future__ import annotations
 
 import pytest
 
-from pf_core.exceptions import ClientError
-from pf_core.llm.tracking import (
+from pw_foundation.exceptions import ClientError
+from pw_core.llm.tracking import (
     LlmRunRepo,
     clear_resolver_caches,
     metadata,
     track_run,
 )
-from pf_core.llm.tracking import schema as s
+from pw_core.llm.tracking import schema as s
 
 
 @pytest.fixture(autouse=True)
@@ -48,10 +48,10 @@ def test_track_run_with_explicit_provider_does_not_warn(recwarn):
 
 
 @pytest.fixture()
-def tracking_db(pf_engine):
-    metadata.create_all(pf_engine)
-    yield pf_engine
-    metadata.drop_all(pf_engine)
+def tracking_db(pw_engine):
+    metadata.create_all(pw_engine)
+    yield pw_engine
+    metadata.drop_all(pw_engine)
 
 
 # ---------------------------------------------------------------------------
@@ -261,7 +261,7 @@ def test_decorator_input_hash_matches_public_compute_for_multipart(tracking_db):
     """The decorator never receives input_hash, so it must key off messages
     itself: record()'s rendered-prompt fallback cannot see multipart content,
     and a row hashed that way is invisible to find_by_hash / the exact cache."""
-    from pf_core.llm.tracking import compute_input_hash
+    from pw_core.llm.tracking import compute_input_hash
 
     fake = _FakeOpenRouterClient(content="x", usage={})
 
@@ -303,7 +303,7 @@ def test_decorator_input_hash_unchanged_for_string_messages(tracking_db):
 def test_decorator_failed_run_carries_the_same_input_hash(tracking_db):
     """A failed multipart run must be findable by the same key as a success —
     it is the forensic record of that exact input."""
-    from pf_core.llm.tracking import compute_input_hash
+    from pw_core.llm.tracking import compute_input_hash
 
     @track_run(agent_type="drafter", provider="openrouter")
     def tracked_chat(*, model, messages):

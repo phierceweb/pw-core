@@ -1,6 +1,42 @@
 # Changelog
 
-Notable changes to pf-core, newest first. The project is pre-1.0 — pin to a tagged release; `main` is the development line.
+Notable changes to pw-core, newest first. The project is pre-1.0 — pin to a tagged release; `main` is the development line.
+
+## v0.27.0 — 2026-10-18
+
+### Changed
+- Renamed: the distribution is `pw-core` and the package `pw_core`. Console scripts are `pw-jobs`,
+  `pw-eval`, `pw-export`. Env vars are `PW_*`; the `PF_*` spellings are still read, with a
+  `DeprecationWarning`, until 1.0. The pytest plugin's fixtures are `pw_schema`, `pw_tables`,
+  `pw_connection`, `pw_engine`, `pw_app`, `pw_app_client`, `pw_budget_disabled`,
+  `pw_engine_teardown`. The gate config is `.pw-guards.toml` (`[tool.pw_guards]`).
+- The foundation layer ships as the separate `pw-foundation` package, a hard dependency:
+  `pw_foundation.log`, `.exceptions`, `.config`, `.output`, `.parallel`, `.services`, `.guards`,
+  `.wiring`, `.doctor` and `pw_foundation.utils.{io,env,hashing,slugify,dates,ids,json,yaml,throttle,config_path,periods,reload_cache}`.
+  pw-core does not re-export them (`pw_core.db.now_iso` excepted). The gate is `pw-guards` / `python -m pw_foundation.guards`;
+  `pw-doctor` and `pw-setup` come from pw-foundation, and `pw-setup` installs pw-core's three
+  rules (`layering`, `anti-patterns`, `project-structure`) beside pw-foundation's.
+- `pw_core.config.AppConfig` subclasses pw-foundation's and carries the framework settings
+  (`DATABASE_URL`, `OPENROUTER_*`, `REDIS_URL`, `WEB_*`, `CORS_ORIGINS`, `REQUEST_TIMEOUT`,
+  `THREAD_MAX_WORKERS`, `API_RATE_LIMIT_PER_MINUTE`, `MAX_PER_PAGE`, `ID_LENGTH`).
+- `allocate_id` is `pw_core.db.ids.allocate_id`; `generate_id` is pw-foundation's.
+- `PipelineNotRegisteredError` is defined in `pw_core.llm.validate` (still a `ConfigurationError`).
+- `pw_core.doctor.checks()` supplies the extras, env, router, deps and `--db` rows that
+  `pw-doctor` prints when pw-core is installed; the standalone doctor CLI is gone.
+- `pw_core.guards_rules` carries the HTTP-library rules and the layering check's database
+  modules for `pw-guards`.
+- `bin/new-consumer`: every scaffold pins `pw-foundation~=1.0` beside `pw-core`; `--base-only`
+  (lib layout) scaffolds on pw-foundation alone. Scaffolds no longer copy rules from the
+  checkout; `bin/setup` runs `pw-setup`.
+- `bin/new-consumer`: the pw-core pin is the checkout's version. The scaffold's `bin/setup`
+  installs sibling `../pw-foundation` / `../pw-core` checkouts editable when present and leaves
+  docs, rules and editor links to `pw-setup`. `--base-only` swaps in the `*_base.py` /
+  `*.base.md` twins (argparse CLI, pw-foundation `AppConfig`, its own smoke test and prose).
+- The three shipped rules carry Cursor frontmatter, cite docs by their consumer paths
+  (`docs/pw-core/…`) and show the two-package pin.
+- `pw-doctor`'s env row from pw-core is `env.pw-core` (pw-foundation keeps `env.resolution`);
+  `docs/doctor.md` documents pw-core's rows.
+- `pw_core.db.now_iso` remains as an alias of pw-foundation's.
 
 ## v0.26.0 — 2026-10-04
 

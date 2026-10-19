@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run any command via pf-core's .venv. Single entry point so a single
+# Run any command via pw-core's .venv. Single entry point so a single
 # allow-list rule (`Bash(./bin/run:*)` or absolute glob) covers test
 # runs, alembic, ruff, raw python, and any project script.
 #
@@ -12,9 +12,9 @@
 #   bin/run pytest tests/test_utils_periods.py
 #   bin/run pytest -v
 #   bin/run ruff check src tests
-#   bin/run python -c "from pf_core.utils.periods import resolve; print(resolve('yesterday', now=__import__('datetime').datetime.now(__import__('datetime').timezone.utc)))"
+#   bin/run python -c "from pw_foundation.utils.periods import resolve; print(resolve('yesterday', now=__import__('datetime').datetime.now(__import__('datetime').timezone.utc)))"
 #
-# Mirrors the convention used across pf-core consumer projects so the
+# Mirrors the convention used across pw-core consumer projects so the
 # same permission rule covers every one of them.
 set -euo pipefail
 
@@ -34,7 +34,7 @@ if [ $# -eq 0 ]; then
     echo "Examples:" >&2
     echo "  bin/run pytest tests/test_utils_periods.py" >&2
     echo "  bin/run ruff check src tests" >&2
-    echo "  bin/run python -c 'import pf_core'" >&2
+    echo "  bin/run python -c 'import pw_core'" >&2
     exit 1
 fi
 

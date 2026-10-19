@@ -1,11 +1,11 @@
-"""Tests for pf_core.llm.router — per-agent model/sampling YAML loader."""
+"""Tests for pw_core.llm.router — per-agent model/sampling YAML loader."""
 
 from __future__ import annotations
 
 import pytest
 
-from pf_core.exceptions import ConfigurationError
-from pf_core.llm.router import (
+from pw_foundation.exceptions import ConfigurationError
+from pw_core.llm.router import (
     assert_agents_registered,
     clear_cache,
     get_agent_config,
@@ -329,7 +329,7 @@ def test_reload_failure_with_no_prior_cache_raises(tmp_path, monkeypatch):
 
 def test_clear_cache_resets_module_state(tmp_path, monkeypatch):
     # Cache state lives in the loader's ReloadCache (router re-exports clear_cache).
-    from pf_core.llm import _router_loader as loader
+    from pw_core.llm import _router_loader as loader
 
     path = _write_yaml(tmp_path, VALID_YAML)
     _point_env_at(monkeypatch, path)

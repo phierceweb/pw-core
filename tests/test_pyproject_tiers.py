@@ -27,7 +27,7 @@ def _meta() -> dict:
 def _dist_name(requirement: str) -> str:
     """Bare distribution name from a requirement string.
 
-    'json-repair>=0.40' -> 'json-repair'; 'pf-core[db,llm]' -> 'pf-core';
+    'json-repair>=0.40' -> 'json-repair'; 'pw-core[db,llm]' -> 'pw-core';
     'uvicorn[standard]>=0.30' -> 'uvicorn'.
     """
     name = requirement.strip()
@@ -38,8 +38,11 @@ def _dist_name(requirement: str) -> str:
 
 # Deps that must NOT be in the base install — the whole point of the split.
 _BANNED_FROM_BASE = {"httpx", "pydantic", "typer", "click", "json-repair", "tenacity"}
-# Deps that the foundation genuinely needs.
-_REQUIRED_IN_BASE = {"python-dotenv", "pyyaml", "structlog", "nanoid", "rich"}
+# The base install is pw-foundation (which carries dotenv, structlog, nanoid and rich) plus
+# pyyaml for pw-core's own YAML loaders.
+_REQUIRED_IN_BASE = {"pw-foundation", "pyyaml"}
+# Served by pw-foundation; declaring them here again would let the two pins drift apart.
+_VIA_FOUNDATION = {"python-dotenv", "structlog", "nanoid", "rich"}
 
 
 def test_base_dependencies_are_foundation_only() -> None:
@@ -49,6 +52,9 @@ def test_base_dependencies_are_foundation_only() -> None:
     )
     assert _REQUIRED_IN_BASE <= base, (
         f"foundation deps missing from base: {sorted(_REQUIRED_IN_BASE - base)}"
+    )
+    assert _VIA_FOUNDATION.isdisjoint(base), (
+        f"pw-foundation already brings: {sorted(_VIA_FOUNDATION & base)}"
     )
 
 
@@ -81,7 +87,7 @@ def test_llm_extra_composes_validate_http_and_retry() -> None:
     # [llm] ⊇ [validate] (guards) + [http] (clients need httpx); tenacity direct.
     # Same dependency closure as before, so [llm]/[full]/[tracking] consumers
     # are unchanged — mirrors the [tracking] = [db,llm] superset relationship.
-    assert "pf-core[validate,http]" in refs
+    assert "pw-core[validate,http]" in refs
     assert "tenacity" in names
 
 
@@ -91,12 +97,12 @@ def test_llm_extra_composes_validate_http_and_retry() -> None:
         # A consumer that declares only [image-phash,tracking] stays green
         # ONLY because [tracking] pulls [llm]. This is the load-bearing
         # invariant.
-        ("tracking", "pf-core[db,llm]"),
+        ("tracking", "pw-core[db,llm]"),
         # [jobs] must pull [tracking]: jobs._schema imports llm.tracking.schema at
-        # module scope, so without it `import pf_core.jobs` raises ImportError.
-        ("jobs", "pf-core[db,cli,tracking]"),
-        # pf-export imports pf_core.cli (typer) and reads llm_runs.
-        ("otel", "pf-core[tracking,cli]"),
+        # module scope, so without it `import pw_core.jobs` raises ImportError.
+        ("jobs", "pw-core[db,cli,tracking]"),
+        # pw-export imports pw_core.cli (typer) and reads llm_runs.
+        ("otel", "pw-core[tracking,cli]"),
     ],
 )
 def test_extra_references_required_subextra(extra: str, must_reference: str) -> None:
@@ -106,8 +112,8 @@ def test_extra_references_required_subextra(extra: str, must_reference: str) -> 
 
 def test_full_includes_llm_and_cli() -> None:
     refs = {d.replace(" ", "") for d in _extra("full")}
-    assert "pf-core[llm]" in refs
-    assert "pf-core[cli]" in refs
+    assert "pw-core[llm]" in refs
+    assert "pw-core[cli]" in refs
 
 
 def test_otel_extra_carries_the_sdk_and_otlp_http_exporter() -> None:

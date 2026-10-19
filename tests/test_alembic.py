@@ -1,4 +1,4 @@
-"""Tests for pf_core.alembic — Alembic migration helper."""
+"""Tests for pw_core.alembic — Alembic migration helper."""
 
 from __future__ import annotations
 
@@ -6,21 +6,21 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from pf_core.alembic import run_migrations_online
+from pw_core.alembic import run_migrations_online
 
 
 class TestRunMigrationsOnline:
-    @patch("pf_core.alembic.context")
-    @patch("pf_core.alembic.get_engine")
+    @patch("pw_core.alembic.context")
+    @patch("pw_core.alembic.get_engine")
     def test_raises_in_offline_mode(self, mock_engine, mock_context):
         mock_context.is_offline_mode.return_value = True
         with pytest.raises(RuntimeError, match="Offline mode is not supported"):
             run_migrations_online()
 
-    @patch("pf_core.alembic.context")
-    @patch("pf_core.alembic.get_engine")
-    @patch("pf_core.alembic.db_url")
-    @patch("pf_core.alembic.is_sqlite")
+    @patch("pw_core.alembic.context")
+    @patch("pw_core.alembic.get_engine")
+    @patch("pw_core.alembic.db_url")
+    @patch("pw_core.alembic.is_sqlite")
     def test_online_mode_configures_context(
         self, mock_is_sqlite, mock_db_url, mock_get_engine, mock_context
     ):
@@ -47,10 +47,10 @@ class TestRunMigrationsOnline:
         )
         mock_context.run_migrations.assert_called_once()
 
-    @patch("pf_core.alembic.context")
-    @patch("pf_core.alembic.get_engine")
-    @patch("pf_core.alembic.db_url")
-    @patch("pf_core.alembic.is_sqlite")
+    @patch("pw_core.alembic.context")
+    @patch("pw_core.alembic.get_engine")
+    @patch("pw_core.alembic.db_url")
+    @patch("pw_core.alembic.is_sqlite")
     def test_mysql_mode_no_batch(self, mock_is_sqlite, mock_db_url, mock_get_engine, mock_context):
         mock_context.is_offline_mode.return_value = False
         mock_db_url.return_value = "mysql://localhost/db"
@@ -74,10 +74,10 @@ class TestRunMigrationsOnline:
             render_as_batch=False,
         )
 
-    @patch("pf_core.alembic.context")
-    @patch("pf_core.alembic.get_engine")
-    @patch("pf_core.alembic.db_url")
-    @patch("pf_core.alembic.is_sqlite")
+    @patch("pw_core.alembic.context")
+    @patch("pw_core.alembic.get_engine")
+    @patch("pw_core.alembic.db_url")
+    @patch("pw_core.alembic.is_sqlite")
     def test_passes_target_metadata(
         self, mock_is_sqlite, mock_db_url, mock_get_engine, mock_context
     ):
@@ -101,10 +101,10 @@ class TestRunMigrationsOnline:
         assert call_kwargs["target_metadata"] is fake_metadata
         assert call_kwargs["compare_type"] is True
 
-    @patch("pf_core.alembic.context")
-    @patch("pf_core.alembic.get_engine")
-    @patch("pf_core.alembic.db_url")
-    @patch("pf_core.alembic.is_sqlite")
+    @patch("pw_core.alembic.context")
+    @patch("pw_core.alembic.get_engine")
+    @patch("pw_core.alembic.db_url")
+    @patch("pw_core.alembic.is_sqlite")
     def test_fallback_sqlite(self, mock_is_sqlite, mock_db_url, mock_get_engine, mock_context):
         mock_context.is_offline_mode.return_value = False
         mock_db_url.return_value = "sqlite:///fallback.db"

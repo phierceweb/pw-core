@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import pytest
 
-from pf_core.exceptions import PreconditionError
-from pf_core.jobs import (
+from pw_foundation.exceptions import PreconditionError
+from pw_core.jobs import (
     Job,
     JobRepo,
     get_current_job_id,
 )
-from pf_core.llm.tracking import LlmRunRepo
+from pw_core.llm.tracking import LlmRunRepo
 
 
 # ---------------------------------------------------------------------------

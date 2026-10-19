@@ -1,6 +1,6 @@
 # Logging
 
-All operational logging uses `pf_core.log` (structlog). Never use raw `print()` for operational output in services, repos, or orchestrators — `print()` is acceptable only in CLI entry points for user-facing messages.
+All operational logging uses `pw_foundation.log` (structlog). Never use raw `print()` for operational output in services, repos, or orchestrators — `print()` is acceptable only in CLI entry points for user-facing messages.
 
 - **Get a logger:** `logger = get_logger(__name__)`. Log structured events — `logger.info("event_key", field=value)` — not interpolated strings.
 - **Log exceptions** with `log_exception(exc, message_prepend=..., additional_context=...)` — never `logger.exception()` directly.

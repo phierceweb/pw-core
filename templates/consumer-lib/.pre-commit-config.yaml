@@ -4,9 +4,9 @@
 repos:
   - repo: local
     hooks:
-      - id: pf-guards
-        name: pf-core structural gate
-        entry: .venv/bin/python -m pf_core.guards
+      - id: pw-guards
+        name: structural gate (pw-guards)
+        entry: .venv/bin/python -m pw_foundation.guards
         language: system
         pass_filenames: false
         always_run: true

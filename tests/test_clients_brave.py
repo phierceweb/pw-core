@@ -1,4 +1,4 @@
-"""Tests for pf_core.clients.brave."""
+"""Tests for pw_core.clients.brave."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 import httpx
 import pytest
 
-from pf_core.clients.brave import (
+from pw_core.clients.brave import (
     BraveSearchClient,
     BraveSearchError,
     get_client,

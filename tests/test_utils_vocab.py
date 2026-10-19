@@ -1,10 +1,10 @@
-"""Tests for pf_core.utils.vocab."""
+"""Tests for pw_core.utils.vocab."""
 
 from __future__ import annotations
 
 import pytest
 
-from pf_core.utils.vocab import SlugNormalizer
+from pw_core.utils.vocab import SlugNormalizer
 
 
 @pytest.fixture

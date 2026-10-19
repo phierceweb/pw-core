@@ -1,3 +1,7 @@
+---
+description: The call direction Entry points → Orchestrators → Services → Repo/Clients → DB, what each layer owns and must never do
+alwaysApply: true
+---
 # Layering
 
 The codebase uses a strict layered architecture. No layer skipping.
@@ -14,7 +18,7 @@ Entry points:
                ↓          ↓
     Repo layer (app/repo/)  Clients (app/clients/)
                ↓
-         DB (pf_core.db)
+         DB (pw_core.db)
 ```
 
 **Call direction:** Entry points → Orchestrators → Services → Repo / Clients → DB. No layer may import from a layer above it.
@@ -31,7 +35,7 @@ Entry points:
 | **Service** (`app/services/`) | Single-domain business logic; LLM calls for one step; return plain values | Call other orchestrators; manage task state; open raw DB connections |
 | **Repo** (`app/repo/`) | All SQLAlchemy reads and writes; return plain dicts/lists | Call LLM APIs; read files; import from service or orchestrator modules |
 | **Clients** (`app/clients/`) | Wrap external API calls; handle retries, timeouts, transport errors | Import from services, orchestrators, or repo; contain business logic |
-| **DB** (`pf_core.db`) | Engine, transaction manager, connection setup | Contain business logic; call LLM APIs |
+| **DB** (`pw_core.db`) | Engine, transaction manager, connection setup | Contain business logic; call LLM APIs |
 
 ---
 
@@ -61,17 +65,18 @@ Entry points:
 **Role:** Single-domain logic. Each module owns exactly one concern.
 
 **Rules:**
-- Use `pf_core.clients.openrouter` for LLM calls — never construct raw HTTP requests.
+- Use `pw_core.clients.openrouter` for LLM calls — never construct raw HTTP requests.
 - Use repo layer for all data access — never open raw DB connections.
 - Never import from orchestrators or entry points.
 - Never read `os.environ` — use the project's config object.
-- Never `print()` — use `pf_core.log.get_logger(__name__)`.
+- Never `print()` — use `pw_foundation.log.get_logger(__name__)`.
 - Return plain dicts, lists, or primitives.
 
-**For new services**, subclass `pf_core.services.Service` for built-in logging, config injection, and repo access:
+**For new services**, subclass `pw_foundation.services.Service` for built-in logging, config injection, and repo access:
 
 ```python
-from pf_core.services import Service
+from pw_foundation.services import Service
+
 
 class ReportService(Service):
     def active_reports(self) -> list[dict]:
@@ -88,7 +93,7 @@ Existing function-based services don't need to be converted — the rules above 
 **Role:** Pure data access. SQLAlchemy queries only.
 
 **Rules:**
-- Always use `with transaction() as conn:` from `pf_core.db`.
+- Always use `with transaction() as conn:` from `pw_core.db`.
 - No LLM calls. No file I/O. No business logic.
 - Return plain dicts, lists, or ORM objects.
 

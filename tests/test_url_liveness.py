@@ -1,4 +1,4 @@
-"""Tests for ``pf_core.utils.url_liveness``.
+"""Tests for ``pw_core.utils.url_liveness``.
 
 Network calls (``check_url`` and ``_get_with_browser_ua``) are mocked. The
 cache is exercised via a tiny in-memory backend so the production redis
@@ -12,8 +12,8 @@ from unittest.mock import patch
 import httpx
 import pytest
 
-from pf_core.exceptions import InvalidInputError
-from pf_core.utils.url_liveness import (
+from pw_foundation.exceptions import InvalidInputError
+from pw_core.utils.url_liveness import (
     CacheBackend,
     DEFAULT_CACHE_TTL_SECONDS,
     DEFAULT_NEGATIVE_CACHE_TTL_SECONDS,
@@ -25,7 +25,7 @@ from pf_core.utils.url_liveness import (
 @pytest.fixture(autouse=True)
 def _bypass_ssrf_guard(monkeypatch):
     """Neutralize the SSRF guard here (covered in test_url_safety.py)."""
-    monkeypatch.setattr("pf_core.utils.url_safety.assert_public_url", lambda *_a, **_k: None)
+    monkeypatch.setattr("pw_core.utils.url_safety.assert_public_url", lambda *_a, **_k: None)
 
 
 # ---------------------------------------------------------------------------
@@ -67,18 +67,18 @@ class TestCheckUrlCached:
     def test_disabled_short_circuits_without_network(self):
         # If disabled=True, neither check_url nor cache reads are attempted.
         cache = FakeCache()
-        with patch("pf_core.utils.url_liveness.check_url") as mock_check:
+        with patch("pw_core.utils.url_liveness.check_url") as mock_check:
             assert check_url_cached("https://example.com", disabled=True) == (0, "disabled")
             mock_check.assert_not_called()
         assert cache.get_calls == []
 
     def test_ok_passes_through(self):
-        with patch("pf_core.utils.url_liveness.check_url", return_value=(200, "ok")):
+        with patch("pw_core.utils.url_liveness.check_url", return_value=(200, "ok")):
             assert check_url_cached("https://example.com/ok") == (200, "ok")
 
     def test_404_passes_through(self):
         with patch(
-            "pf_core.utils.url_liveness.check_url",
+            "pw_core.utils.url_liveness.check_url",
             return_value=(404, "not_found"),
         ):
             assert check_url_cached("https://example.com/fake") == (404, "not_found")
@@ -87,11 +87,11 @@ class TestCheckUrlCached:
         """HEAD 403 → GET with browser UA → 200 = real content."""
         with (
             patch(
-                "pf_core.utils.url_liveness.check_url",
+                "pw_core.utils.url_liveness.check_url",
                 return_value=(403, "forbidden"),
             ),
             patch(
-                "pf_core.utils.url_liveness._get_with_browser_ua",
+                "pw_core.utils.url_liveness._get_with_browser_ua",
                 return_value=(200, "ok"),
             ) as mock_get,
         ):
@@ -103,11 +103,11 @@ class TestCheckUrlCached:
         """HEAD 403 → GET 403 → stays forbidden (real bot-block)."""
         with (
             patch(
-                "pf_core.utils.url_liveness.check_url",
+                "pw_core.utils.url_liveness.check_url",
                 return_value=(403, "forbidden"),
             ),
             patch(
-                "pf_core.utils.url_liveness._get_with_browser_ua",
+                "pw_core.utils.url_liveness._get_with_browser_ua",
                 return_value=(403, "forbidden"),
             ),
         ):
@@ -117,11 +117,11 @@ class TestCheckUrlCached:
         """HEAD 401 → GET fallback. 404 via GET indicates fabrication."""
         with (
             patch(
-                "pf_core.utils.url_liveness.check_url",
+                "pw_core.utils.url_liveness.check_url",
                 return_value=(401, "http_401"),
             ),
             patch(
-                "pf_core.utils.url_liveness._get_with_browser_ua",
+                "pw_core.utils.url_liveness._get_with_browser_ua",
                 return_value=(404, "not_found"),
             ),
         ):
@@ -130,21 +130,21 @@ class TestCheckUrlCached:
 
 class TestCacheBehavior:
     def test_cache_none_skips_read_and_write(self):
-        with patch("pf_core.utils.url_liveness.check_url", return_value=(200, "ok")):
+        with patch("pw_core.utils.url_liveness.check_url", return_value=(200, "ok")):
             # No cache passed; nothing to inspect, but also nothing should error.
             assert check_url_cached("https://example.com/x", cache=None) == (200, "ok")
 
     def test_cache_hit_skips_network(self):
         cache = FakeCache()
         cache._data["url_liveness:https://example.com/cached"] = '[200, "ok"]'
-        with patch("pf_core.utils.url_liveness.check_url") as mock_check:
+        with patch("pw_core.utils.url_liveness.check_url") as mock_check:
             result = check_url_cached("https://example.com/cached", cache=cache)
         assert result == (200, "ok")
         mock_check.assert_not_called()
 
     def test_cache_miss_writes_through(self):
         cache = FakeCache()
-        with patch("pf_core.utils.url_liveness.check_url", return_value=(200, "ok")):
+        with patch("pw_core.utils.url_liveness.check_url", return_value=(200, "ok")):
             check_url_cached("https://example.com/new", cache=cache)
         assert cache.setex_calls
         key, ttl, value = cache.setex_calls[0]
@@ -154,7 +154,7 @@ class TestCacheBehavior:
 
     def test_custom_cache_key_prefix(self):
         cache = FakeCache()
-        with patch("pf_core.utils.url_liveness.check_url", return_value=(200, "ok")):
+        with patch("pw_core.utils.url_liveness.check_url", return_value=(200, "ok")):
             check_url_cached(
                 "https://example.com/x",
                 cache=cache,
@@ -164,7 +164,7 @@ class TestCacheBehavior:
 
     def test_custom_cache_ttl(self):
         cache = FakeCache()
-        with patch("pf_core.utils.url_liveness.check_url", return_value=(200, "ok")):
+        with patch("pw_core.utils.url_liveness.check_url", return_value=(200, "ok")):
             check_url_cached(
                 "https://example.com/x",
                 cache=cache,
@@ -176,7 +176,7 @@ class TestCacheBehavior:
         """Garbage in cache shouldn't crash — silently re-check."""
         cache = FakeCache()
         cache._data["url_liveness:https://example.com/x"] = "not-json"
-        with patch("pf_core.utils.url_liveness.check_url", return_value=(200, "ok")) as mock_check:
+        with patch("pw_core.utils.url_liveness.check_url", return_value=(200, "ok")) as mock_check:
             assert check_url_cached("https://example.com/x", cache=cache) == (200, "ok")
             mock_check.assert_called_once()
 
@@ -190,7 +190,7 @@ class TestCacheBehavior:
             def setex(self, key, time, value):
                 raise RuntimeError("redis down")
 
-        with patch("pf_core.utils.url_liveness.check_url", return_value=(200, "ok")):
+        with patch("pw_core.utils.url_liveness.check_url", return_value=(200, "ok")):
             assert check_url_cached("https://example.com/x", cache=BrokenCache()) == (200, "ok")
 
     def test_cache_backend_protocol_runtime_compatibility(self):
@@ -262,7 +262,7 @@ class TestGetWithBrowserUa:
         def boom(*_a, **_k):
             raise InvalidInputError("blocked")
 
-        monkeypatch.setattr("pf_core.utils.url_safety.assert_public_url", boom)
+        monkeypatch.setattr("pw_core.utils.url_safety.assert_public_url", boom)
         with patch("httpx.Client") as mock_client:
             resp = type("R", (), {"status_code": 200})()
             mock_client.return_value.__enter__.return_value.get.return_value = resp
@@ -271,14 +271,14 @@ class TestGetWithBrowserUa:
 
 class TestReExports:
     def test_check_url_cached_importable_from_pf_core_utils(self):
-        from pf_core.utils import check_url_cached as exported
-        from pf_core.utils.url_liveness import check_url_cached
+        from pw_core.utils import check_url_cached as exported
+        from pw_core.utils.url_liveness import check_url_cached
 
         assert exported is check_url_cached
 
     def test_cache_backend_importable_from_pf_core_utils(self):
-        from pf_core.utils import CacheBackend as exported
-        from pf_core.utils.url_liveness import CacheBackend
+        from pw_core.utils import CacheBackend as exported
+        from pw_core.utils.url_liveness import CacheBackend
 
         assert exported is CacheBackend
 
@@ -290,7 +290,7 @@ class TestNegativeCacheTtl:
 
     def _ttl(self, result, **kwargs) -> int:
         cache = FakeCache()
-        with patch("pf_core.utils.url_liveness.check_url", return_value=result):
+        with patch("pw_core.utils.url_liveness.check_url", return_value=result):
             check_url_cached("https://example.com/x", cache=cache, **kwargs)
         assert cache.setex_calls, "verdict was not cached at all"
         return cache.setex_calls[0][1]
@@ -320,8 +320,8 @@ class TestNegativeCacheTtl:
     def test_browser_ua_fallback_verdict_also_short_ttl(self):
         cache = FakeCache()
         with (
-            patch("pf_core.utils.url_liveness.check_url", return_value=(403, "forbidden")),
-            patch("pf_core.utils.url_liveness._get_with_browser_ua", return_value=(0, "timeout")),
+            patch("pw_core.utils.url_liveness.check_url", return_value=(403, "forbidden")),
+            patch("pw_core.utils.url_liveness._get_with_browser_ua", return_value=(0, "timeout")),
         ):
             check_url_cached("https://example.com/x", cache=cache)
         assert cache.setex_calls[0][1] == DEFAULT_NEGATIVE_CACHE_TTL_SECONDS

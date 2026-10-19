@@ -1,10 +1,10 @@
-"""Tests for pf_core.utils.similarity."""
+"""Tests for pw_core.utils.similarity."""
 
 from __future__ import annotations
 
 import pytest
 
-from pf_core.utils.similarity import is_near_duplicate, jaccard, shingle
+from pw_core.utils.similarity import is_near_duplicate, jaccard, shingle
 
 
 class TestShingle:

@@ -1,4 +1,4 @@
-"""Tests for pf_core.db.models — model name → ID resolver."""
+"""Tests for pw_core.db.models — model name → ID resolver."""
 
 from __future__ import annotations
 
@@ -8,8 +8,8 @@ from types import SimpleNamespace
 import pytest
 from sqlalchemy.dialects import mysql, postgresql, sqlite
 
-import pf_core.db.models as models_mod
-from pf_core.db.models import clear_cache, resolve_model_id
+import pw_core.db.models as models_mod
+from pw_core.db.models import clear_cache, resolve_model_id
 
 
 @pytest.fixture(autouse=True)
@@ -20,22 +20,22 @@ def _clear_model_cache():
 
 
 class TestResolveModelId:
-    def test_creates_new_model(self, pf_tables, pf_connection):
+    def test_creates_new_model(self, pw_tables, pw_connection):
         model_id = resolve_model_id("anthropic/claude-sonnet-4.6")
         assert model_id is not None
         assert isinstance(model_id, int)
 
-    def test_returns_same_id_for_same_name(self, pf_tables, pf_connection):
+    def test_returns_same_id_for_same_name(self, pw_tables, pw_connection):
         id1 = resolve_model_id("test/model-a")
         id2 = resolve_model_id("test/model-a")
         assert id1 == id2
 
-    def test_different_models_get_different_ids(self, pf_tables, pf_connection):
+    def test_different_models_get_different_ids(self, pw_tables, pw_connection):
         id1 = resolve_model_id("model-a")
         id2 = resolve_model_id("model-b")
         assert id1 != id2
 
-    def test_empty_name_returns_none(self, pf_tables, pf_connection):
+    def test_empty_name_returns_none(self, pw_tables, pw_connection):
         assert resolve_model_id("") is None
 
     def test_cached_after_first_call(self, recording_conn):
@@ -46,7 +46,7 @@ class TestResolveModelId:
         assert after_first == 2  # insert-or-ignore + SELECT
         assert len(recording_conn.statements) == 2  # second call never reached the DB
 
-    def test_cached_id_survives_the_db_going_away(self, pf_tables, pf_connection, monkeypatch):
+    def test_cached_id_survives_the_db_going_away(self, pw_tables, pw_connection, monkeypatch):
         model_id = resolve_model_id("real-model")
 
         @contextlib.contextmanager
@@ -57,10 +57,10 @@ class TestResolveModelId:
         monkeypatch.setattr(models_mod, "transaction", _explode)
         assert resolve_model_id("real-model") == model_id
 
-    def test_creates_the_row_in_the_db(self, pf_tables, pf_connection):
+    def test_creates_the_row_in_the_db(self, pw_tables, pw_connection):
         from sqlalchemy import text
 
-        from pf_core.db import transaction
+        from pw_core.db import transaction
 
         model_id = resolve_model_id("anthropic/claude-sonnet-4.6")
         with transaction() as conn:

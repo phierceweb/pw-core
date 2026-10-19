@@ -1,4 +1,4 @@
-"""Tests for ``pf_core.budget.scheduler``.
+"""Tests for ``pw_core.budget.scheduler``.
 
 The scheduler is a thin daemon-thread wrapper over ``refresh_snapshots()``.
 We never start a real network or DB call here — every test patches both
@@ -17,7 +17,7 @@ import pytest
 @pytest.fixture(autouse=True)
 def _reset_started_flag(monkeypatch):
     """Each test sees a fresh ``_started`` flag and lock."""
-    import pf_core.budget.scheduler as scheduler
+    import pw_core.budget.scheduler as scheduler
 
     monkeypatch.setattr(scheduler, "_started", False)
     monkeypatch.setattr(scheduler, "_lock", threading.Lock())
@@ -25,9 +25,9 @@ def _reset_started_flag(monkeypatch):
 
 class TestStartBudgetRefreshLoop:
     def test_starts_a_timer_on_first_call(self):
-        from pf_core.budget.scheduler import start_budget_refresh_loop
+        from pw_core.budget.scheduler import start_budget_refresh_loop
 
-        with patch("pf_core.budget.scheduler.threading.Timer") as TimerCls:
+        with patch("pw_core.budget.scheduler.threading.Timer") as TimerCls:
             timer = TimerCls.return_value
             start_budget_refresh_loop(interval_seconds=60)
             TimerCls.assert_called_once()
@@ -36,39 +36,39 @@ class TestStartBudgetRefreshLoop:
             timer.start.assert_called_once()
 
     def test_idempotent_second_call_is_noop(self):
-        from pf_core.budget.scheduler import start_budget_refresh_loop
+        from pw_core.budget.scheduler import start_budget_refresh_loop
 
-        with patch("pf_core.budget.scheduler.threading.Timer") as TimerCls:
+        with patch("pw_core.budget.scheduler.threading.Timer") as TimerCls:
             start_budget_refresh_loop(interval_seconds=60)
             start_budget_refresh_loop(interval_seconds=60)
             start_budget_refresh_loop(interval_seconds=60)
             assert TimerCls.call_count == 1
 
     def test_default_interval(self):
-        from pf_core.budget.scheduler import (
+        from pw_core.budget.scheduler import (
             _DEFAULT_INTERVAL_SECONDS,
             start_budget_refresh_loop,
         )
 
-        with patch("pf_core.budget.scheduler.threading.Timer") as TimerCls:
+        with patch("pw_core.budget.scheduler.threading.Timer") as TimerCls:
             start_budget_refresh_loop()
             assert TimerCls.call_args.args[0] == _DEFAULT_INTERVAL_SECONDS
 
     def test_re_export_from_pf_core_budget(self):
         """``start_budget_refresh_loop`` is importable from the package root."""
-        from pf_core.budget import start_budget_refresh_loop as exported
-        from pf_core.budget.scheduler import start_budget_refresh_loop
+        from pw_core.budget import start_budget_refresh_loop as exported
+        from pw_core.budget.scheduler import start_budget_refresh_loop
 
         assert exported is start_budget_refresh_loop
 
 
 class TestTick:
     def test_calls_refresh_snapshots_then_reschedules(self):
-        from pf_core.budget.scheduler import _tick
+        from pw_core.budget.scheduler import _tick
 
         with (
-            patch("pf_core.budget.scheduler.refresh_snapshots") as refresh,
-            patch("pf_core.budget.scheduler.threading.Timer") as TimerCls,
+            patch("pw_core.budget.scheduler.refresh_snapshots") as refresh,
+            patch("pw_core.budget.scheduler.threading.Timer") as TimerCls,
         ):
             _tick(60)
             refresh.assert_called_once()
@@ -77,14 +77,14 @@ class TestTick:
 
     def test_swallows_refresh_errors_and_reschedules(self):
         """A failed ``refresh_snapshots()`` must not stop the loop."""
-        from pf_core.budget.scheduler import _tick
+        from pw_core.budget.scheduler import _tick
 
         with (
             patch(
-                "pf_core.budget.scheduler.refresh_snapshots",
+                "pw_core.budget.scheduler.refresh_snapshots",
                 side_effect=RuntimeError("boom"),
             ),
-            patch("pf_core.budget.scheduler.threading.Timer") as TimerCls,
+            patch("pw_core.budget.scheduler.threading.Timer") as TimerCls,
         ):
             timer = TimerCls.return_value
             # _tick must not raise even when refresh_snapshots raises
@@ -94,11 +94,11 @@ class TestTick:
             timer.start.assert_called_once()
 
     def test_rescheduled_timer_is_daemon(self):
-        from pf_core.budget.scheduler import _tick
+        from pw_core.budget.scheduler import _tick
 
         with (
-            patch("pf_core.budget.scheduler.refresh_snapshots"),
-            patch("pf_core.budget.scheduler.threading.Timer") as TimerCls,
+            patch("pw_core.budget.scheduler.refresh_snapshots"),
+            patch("pw_core.budget.scheduler.threading.Timer") as TimerCls,
         ):
             timer = TimerCls.return_value
             _tick(30)

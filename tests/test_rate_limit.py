@@ -1,4 +1,4 @@
-"""Tests for pf_core.web.rate_limit — rate limiting setup."""
+"""Tests for pw_core.web.rate_limit — rate limiting setup."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
-from pf_core.web.rate_limit import setup_rate_limit
+from pw_core.web.rate_limit import setup_rate_limit
 
 
 def _default_limits(limiter) -> list[str]:
@@ -80,14 +80,14 @@ class TestRateLimitEnforcement:
 
 class TestCreateAppIntegration:
     def test_rate_limit_enabled_by_default(self):
-        from pf_core.web.app_factory import create_app
+        from pw_core.web.app_factory import create_app
 
         app = create_app(title="Test")
         assert hasattr(app.state, "limiter")
         assert app.state.limiter is not None
 
     def test_rate_limit_disabled(self):
-        from pf_core.web.app_factory import create_app
+        from pw_core.web.app_factory import create_app
 
         app = create_app(title="Test", rate_limit=False)
         assert not hasattr(app.state, "limiter")

@@ -1,10 +1,10 @@
-"""Tests for pf_core.web.app_factory exception→HTTP mapping."""
+"""Tests for pw_core.web.app_factory exception→HTTP mapping."""
 
 import pytest
 from fastapi.testclient import TestClient
 
-from pf_core.budget.check import CostBudgetExceeded
-from pf_core.exceptions import (
+from pw_core.budget.check import CostBudgetExceeded
+from pw_foundation.exceptions import (
     ActionNotAllowedError,
     AppError,
     ConfigurationError,
@@ -13,7 +13,7 @@ from pf_core.exceptions import (
     NotFoundError,
     PreconditionError,
 )
-from pf_core.web.app_factory import create_app
+from pw_core.web.app_factory import create_app
 
 
 def test_error_page_escapes_reflected_message():
@@ -295,7 +295,7 @@ class TestFlowExceptionInsideValidation:
         from fastapi.responses import JSONResponse
         from pydantic import BaseModel, field_validator
 
-        from pf_core.utils.dates import parse_date
+        from pw_foundation.utils.dates import parse_date
 
         class Window(BaseModel):
             start: date

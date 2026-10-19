@@ -23,8 +23,8 @@ jobs:
       - run: python -m mypy
         if: matrix.python-version == '3.12'
 
-  # The same suite against real servers: pf_engine gives each test its own
-  # schema (Postgres) or database (MySQL) under PF_TEST_DATABASE_URL.
+  # The same suite against real servers: pw_engine gives each test its own
+  # schema (Postgres) or database (MySQL) under PW_TEST_DATABASE_URL.
   postgres:
     runs-on: ubuntu-latest
     services:
@@ -39,7 +39,7 @@ jobs:
           --health-cmd "pg_isready -U pf -d pftest"
           --health-interval 5s --health-timeout 5s --health-retries 20
     env:
-      PF_TEST_DATABASE_URL: postgresql+psycopg://pf:pf@127.0.0.1:5432/pftest
+      PW_TEST_DATABASE_URL: postgresql+psycopg://pf:pf@127.0.0.1:5432/pftest
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
@@ -61,8 +61,8 @@ jobs:
           --health-cmd "mysqladmin ping -h 127.0.0.1 -ppf"
           --health-interval 5s --health-timeout 5s --health-retries 30
     env:
-      PF_TEST_DATABASE_URL: mysql+pymysql://root:pf@127.0.0.1:3306/pftest
-      PF_CORE_TEST_MYSQL_URL: mysql+pymysql://root:pf@127.0.0.1:3306/pftest
+      PW_TEST_DATABASE_URL: mysql+pymysql://root:pf@127.0.0.1:3306/pftest
+      PW_CORE_TEST_MYSQL_URL: mysql+pymysql://root:pf@127.0.0.1:3306/pftest
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6

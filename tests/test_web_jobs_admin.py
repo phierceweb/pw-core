@@ -6,23 +6,23 @@ import pytest
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
-from pf_core.exceptions import ConfigurationError
-from pf_core.jobs import JobRepo
-from pf_core.jobs.registry import register_kind
-from pf_core.web.jobs_admin import make_jobs_router
+from pw_foundation.exceptions import ConfigurationError
+from pw_core.jobs import JobRepo
+from pw_core.jobs.registry import register_kind
+from pw_core.web.jobs_admin import make_jobs_router
 
 KIND = "dash_probe"
 
 
 @pytest.fixture
-def pf_schema():
-    from pf_core.testing.db_fixtures import framework_ddl
+def pw_schema():
+    from pw_core.testing.db_fixtures import framework_ddl
 
     return framework_ddl()
 
 
 @pytest.fixture(autouse=True)
-def _kind(pf_tables):
+def _kind(pw_tables):
     register_kind(kind=KIND, description="dashboard test kind")
 
 
@@ -119,7 +119,7 @@ class TestCancel:
 
 class TestFindPage:
     def test_rejects_unknown_sort_and_direction(self):
-        from pf_core.exceptions import InvalidInputError
+        from pw_foundation.exceptions import InvalidInputError
 
         repo = JobRepo()
         with pytest.raises(InvalidInputError):

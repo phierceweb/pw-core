@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import json
 
-from pf_core.llm.tracking import LlmRunRepo
-from pf_core.llm.tracking import schema as ts
-from pf_core.llm.validate import parse_and_validate, register
+from pw_core.llm.tracking import LlmRunRepo
+from pw_core.llm.tracking import schema as ts
+from pw_core.llm.validate import parse_and_validate, register
 
 from .conftest import PydOk
 

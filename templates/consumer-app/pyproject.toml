@@ -5,16 +5,14 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "__NAME__"
 version = "0.1.0"
-description = "A pf-core full-stack app (FastAPI + SQLAlchemy)."
+description = "A pw-core full-stack app (FastAPI + SQLAlchemy)."
 requires-python = ">=3.12"
 dependencies = [
-    # pf-core with the whole framework surface. Add a DB driver extra
-    # ([postgres] or [mysql]) for non-SQLite backends. ~= takes patch releases only.
-    "pf-core[__EXTRAS__]~=0.26.0",
+    "__DEPS__",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0", "ruff~=0.15.0", "pre-commit>=3.0"]
+dev = ["pytest>=8.0", "ruff~=0.16.0", "pre-commit>=3.0"]
 
 [tool.setuptools.packages.find]
 where = ["."]
@@ -24,7 +22,7 @@ include = ["app*"]
 testpaths = ["tests"]
 pythonpath = ["."]
 
-# Ruff config mirrors pf-core's conservative set (see .ai/rules/code-style.md).
+# Ruff config mirrors the framework's conservative set (see .ai/rules/code-style.md).
 [tool.ruff]
 line-length = 100
 target-version = "py312"

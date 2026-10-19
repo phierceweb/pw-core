@@ -1,4 +1,4 @@
-"""Tests for pf_core.eval._config."""
+"""Tests for pw_core.eval._config."""
 
 from __future__ import annotations
 
@@ -8,13 +8,13 @@ import threading
 
 import pytest
 
-from pf_core.eval._config import (
+from pw_core.eval._config import (
     AgentEvalConfig,
     EvalConfig,
     clear_config_cache,
     load_eval_config,
 )
-from pf_core.exceptions import ConfigurationError
+from pw_foundation.exceptions import ConfigurationError
 
 
 @pytest.fixture(autouse=True)
@@ -226,7 +226,7 @@ def test_load_eval_config_cached(tmp_path, monkeypatch):
 
 
 def test_load_eval_config_invalid_yaml(tmp_path, monkeypatch):
-    from pf_core.exceptions import ConfigurationError
+    from pw_foundation.exceptions import ConfigurationError
 
     config_file = tmp_path / "eval.yaml"
     config_file.write_text(":\ninvalid: [unclosed\n")
@@ -242,11 +242,11 @@ def test_load_eval_config_invalid_yaml(tmp_path, monkeypatch):
 
 
 def test_imports_register_project_comparators(tmp_path, monkeypatch, request):
-    from pf_core.eval import _compare
+    from pw_core.eval import _compare
 
     monkeypatch.setattr(_compare, "_registry", dict(_compare._registry))
     (tmp_path / "evalproj_comparators.py").write_text(
-        "from pf_core.eval import register_comparator\n\n"
+        "from pw_core.eval import register_comparator\n\n"
         "@register_comparator('evalproj_count_ratio')\n"
         "def count_ratio(golden, replay, *, context):\n"
         "    return 1.0\n"
@@ -277,10 +277,10 @@ def test_imports_must_be_a_list_of_module_names(tmp_path):
 
 def test_an_imported_module_may_load_the_eval_config(tmp_path, monkeypatch, request):
     # A deadlocked load holds this lock forever; a throwaway keeps the rest of the suite running.
-    monkeypatch.setattr("pf_core.eval._config._lock", threading.Lock())
+    monkeypatch.setattr("pw_core.eval._config._lock", threading.Lock())
     config_file = tmp_path / "eval.yaml"
     (tmp_path / "evalproj_reentrant.py").write_text(
-        f"from pf_core.eval import load_eval_config\n\nCFG = load_eval_config({str(config_file)!r})\n"
+        f"from pw_core.eval import load_eval_config\n\nCFG = load_eval_config({str(config_file)!r})\n"
     )
     monkeypatch.syspath_prepend(str(tmp_path))
     request.addfinalizer(lambda: sys.modules.pop("evalproj_reentrant", None))

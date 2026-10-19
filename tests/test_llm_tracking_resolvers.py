@@ -1,4 +1,4 @@
-"""Tests for pf_core.llm.tracking._resolvers.
+"""Tests for pw_core.llm.tracking._resolvers.
 
 Covers:
   - resolve_agent_type_id / resolve_llm_model_id: lookup + insert + cache
@@ -11,8 +11,8 @@ from __future__ import annotations
 import pytest
 from sqlalchemy import text
 
-from pf_core.db import transaction
-from pf_core.llm.tracking import (
+from pw_core.db import transaction
+from pw_core.llm.tracking import (
     clear_resolver_caches,
     metadata,
     resolve_agent_type_id,
@@ -29,10 +29,10 @@ def _clear_caches_between_tests():
 
 
 @pytest.fixture()
-def tracking_db(pf_engine):
-    metadata.create_all(pf_engine)
-    yield pf_engine
-    metadata.drop_all(pf_engine)
+def tracking_db(pw_engine):
+    metadata.create_all(pw_engine)
+    yield pw_engine
+    metadata.drop_all(pw_engine)
 
 
 # ---------------------------------------------------------------------------
@@ -222,7 +222,7 @@ class TestOnChangeUpdateUnused:
         """An llm_runs row cites the prompt → mutate-in-place would break audit →
         insert a new row at the next version."""
         aid = resolve_agent_type_id("drafter")
-        from pf_core.llm.tracking import resolve_llm_model_id
+        from pw_core.llm.tracking import resolve_llm_model_id
 
         mid = resolve_llm_model_id("test-model")
         first = resolve_prompt_id(

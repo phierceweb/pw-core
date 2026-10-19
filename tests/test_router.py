@@ -1,7 +1,7 @@
-"""Tests for pf_core.llm.router fallback safety — which exceptions may burn a
+"""Tests for pw_core.llm.router fallback safety — which exceptions may burn a
 second (paid) backend.
 
-Fake backends are registered through pf_core.clients.routing.register_client so
+Fake backends are registered through pw_core.clients.routing.register_client so
 no real transport or API key is involved.
 """
 
@@ -9,10 +9,10 @@ from __future__ import annotations
 
 import pytest
 
-from pf_core.budget.check import CostBudgetExceeded
-from pf_core.clients.routing import register_client, unregister_client
-from pf_core.exceptions import ConfigurationError, FlowException, InvalidInputError
-from pf_core.llm.router import call_with_fallback, clear_cache
+from pw_core.budget.check import CostBudgetExceeded
+from pw_core.clients.routing import register_client, unregister_client
+from pw_foundation.exceptions import ConfigurationError, FlowException, InvalidInputError
+from pw_core.llm.router import call_with_fallback, clear_cache
 
 
 class _FakeClient:

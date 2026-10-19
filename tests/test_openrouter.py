@@ -1,4 +1,4 @@
-"""Tests for pf_core.clients.openrouter — OpenRouter API client."""
+"""Tests for pw_core.clients.openrouter — OpenRouter API client."""
 
 from __future__ import annotations
 
@@ -8,14 +8,14 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from pf_core.clients.openrouter import (
+from pw_core.clients.openrouter import (
     _retry_delay,
     OpenRouterClient,
     OpenRouterError,
     get_client,
     reset_client,
 )
-from pf_core.exceptions import ClientError
+from pw_foundation.exceptions import ClientError
 
 
 @pytest.fixture(autouse=True)
@@ -102,7 +102,7 @@ class TestOpenRouterClientChat:
         resp.json.return_value = data
         return resp
 
-    @patch("pf_core.clients.openrouter.httpx.post")
+    @patch("pw_core.clients.openrouter.httpx.post")
     def test_successful_chat(self, mock_post):
         mock_post.return_value = self._mock_response("Hello world")
         client = OpenRouterClient(api_key="k")
@@ -115,21 +115,21 @@ class TestOpenRouterClientChat:
         assert usage["completion_tokens"] == 5
         assert "duration_ms" in usage
 
-    @patch("pf_core.clients.openrouter.httpx.post")
+    @patch("pw_core.clients.openrouter.httpx.post")
     def test_non_200_raises(self, mock_post):
         mock_post.return_value = self._mock_response(status_code=429, content="rate limited")
         client = OpenRouterClient(api_key="k")
         with pytest.raises(OpenRouterError, match="429"):
             client.chat(messages=[{"role": "user", "content": "Hi"}], model="test/model")
 
-    @patch("pf_core.clients.openrouter.httpx.post")
+    @patch("pw_core.clients.openrouter.httpx.post")
     def test_api_error_in_response(self, mock_post):
         mock_post.return_value = self._mock_response(error={"message": "bad model"})
         client = OpenRouterClient(api_key="k")
         with pytest.raises(OpenRouterError, match="OpenRouter error"):
             client.chat(messages=[{"role": "user", "content": "Hi"}], model="bad/model")
 
-    @patch("pf_core.clients.openrouter.httpx.post")
+    @patch("pw_core.clients.openrouter.httpx.post")
     def test_timeout_raises(self, mock_post):
         import httpx
 
@@ -138,7 +138,7 @@ class TestOpenRouterClientChat:
         with pytest.raises(OpenRouterError, match="timed out"):
             client.chat(messages=[{"role": "user", "content": "Hi"}], model="test/model")
 
-    @patch("pf_core.clients.openrouter.httpx.post")
+    @patch("pw_core.clients.openrouter.httpx.post")
     def test_provider_ignore_merged(self, mock_post):
         mock_post.return_value = self._mock_response()
         client = OpenRouterClient(api_key="k", provider_ignore=["openai"])
@@ -151,7 +151,7 @@ class TestOpenRouterClientChat:
         assert "openai" in call_body["provider"]["ignore"]
         assert "anthropic" in call_body["provider"]["ignore"]
 
-    @patch("pf_core.clients.openrouter.httpx.post")
+    @patch("pw_core.clients.openrouter.httpx.post")
     def test_citations_in_usage_not_content(self, mock_post):
         """Citation URLs ride in usage["citations"]; content stays exactly
         what the model returned."""
@@ -170,7 +170,7 @@ class TestOpenRouterClientChat:
             "https://example.com/2",
         ]
 
-    @patch("pf_core.clients.openrouter.httpx.post")
+    @patch("pw_core.clients.openrouter.httpx.post")
     def test_no_citations_no_usage_key(self, mock_post):
         mock_post.return_value = self._mock_response(content="Answer")
         client = OpenRouterClient(api_key="k")
@@ -181,7 +181,7 @@ class TestOpenRouterClientChat:
         assert content == "Answer"
         assert "citations" not in usage
 
-    @patch("pf_core.clients.openrouter.httpx.post")
+    @patch("pw_core.clients.openrouter.httpx.post")
     def test_none_content_returns_empty_string(self, mock_post):
         resp = MagicMock()
         resp.status_code = 200
@@ -197,7 +197,7 @@ class TestOpenRouterClientChat:
         )
         assert content == ""
 
-    @patch("pf_core.clients.openrouter.httpx.post")
+    @patch("pw_core.clients.openrouter.httpx.post")
     def test_response_format_passed(self, mock_post):
         mock_post.return_value = self._mock_response()
         client = OpenRouterClient(api_key="k")
@@ -222,7 +222,7 @@ class TestOpenRouterClientChatUsageExpansion:
         }
         return resp
 
-    @patch("pf_core.clients.openrouter.httpx.post")
+    @patch("pw_core.clients.openrouter.httpx.post")
     def test_new_usage_keys_always_present(self, mock_post):
         """Every response yields a usage dict with the full key set."""
         mock_post.return_value = self._mock(usage={"prompt_tokens": 10, "completion_tokens": 5})
@@ -244,7 +244,7 @@ class TestOpenRouterClientChatUsageExpansion:
         assert usage["reasoning_tokens"] == 0
         assert usage["system_fingerprint"] is None
 
-    @patch("pf_core.clients.openrouter.httpx.post")
+    @patch("pw_core.clients.openrouter.httpx.post")
     def test_system_fingerprint_passed_through(self, mock_post):
         mock_post.return_value = self._mock(
             usage={"prompt_tokens": 10, "completion_tokens": 5},
@@ -254,7 +254,7 @@ class TestOpenRouterClientChatUsageExpansion:
         _, usage = client.chat(messages=[{"role": "user", "content": "Hi"}], model="test/model")
         assert usage["system_fingerprint"] == "fp_abc123"
 
-    @patch("pf_core.clients.openrouter.httpx.post")
+    @patch("pw_core.clients.openrouter.httpx.post")
     def test_cache_tokens_from_flat_keys(self, mock_post):
         """Anthropic-via-OpenRouter shape: flat cache_read_tokens / cache_write_tokens."""
         mock_post.return_value = self._mock(
@@ -270,7 +270,7 @@ class TestOpenRouterClientChatUsageExpansion:
         assert usage["cache_read_tokens"] == 900
         assert usage["cache_write_tokens"] == 100
 
-    @patch("pf_core.clients.openrouter.httpx.post")
+    @patch("pw_core.clients.openrouter.httpx.post")
     def test_cache_tokens_from_nested_details(self, mock_post):
         """OpenAI-via-OpenRouter shape: nested prompt_tokens_details.cached_tokens."""
         mock_post.return_value = self._mock(
@@ -284,7 +284,7 @@ class TestOpenRouterClientChatUsageExpansion:
         _, usage = client.chat(messages=[{"role": "user", "content": "Hi"}], model="test/model")
         assert usage["cache_read_tokens"] == 750
 
-    @patch("pf_core.clients.openrouter.httpx.post")
+    @patch("pw_core.clients.openrouter.httpx.post")
     def test_cache_write_from_anthropic_creation_key(self, mock_post):
         """Direct Anthropic shape leaks through with ``cache_creation_input_tokens``."""
         mock_post.return_value = self._mock(
@@ -298,7 +298,7 @@ class TestOpenRouterClientChatUsageExpansion:
         _, usage = client.chat(messages=[{"role": "user", "content": "Hi"}], model="test/model")
         assert usage["cache_write_tokens"] == 240
 
-    @patch("pf_core.clients.openrouter.httpx.post")
+    @patch("pw_core.clients.openrouter.httpx.post")
     def test_reasoning_tokens_from_flat_and_nested(self, mock_post):
         """Reasoning-token extraction supports both flat and nested shapes."""
         mock_post.return_value = self._mock(
@@ -312,7 +312,7 @@ class TestOpenRouterClientChatUsageExpansion:
         _, usage = client.chat(messages=[{"role": "user", "content": "Hi"}], model="test/model")
         assert usage["reasoning_tokens"] == 300
 
-    @patch("pf_core.clients.openrouter.httpx.post")
+    @patch("pw_core.clients.openrouter.httpx.post")
     def test_flat_reasoning_tokens_preferred_when_both_present(self, mock_post):
         mock_post.return_value = self._mock(
             usage={
@@ -326,7 +326,7 @@ class TestOpenRouterClientChatUsageExpansion:
         _, usage = client.chat(messages=[{"role": "user", "content": "Hi"}], model="test/model")
         assert usage["reasoning_tokens"] == 250
 
-    @patch("pf_core.clients.openrouter.httpx.post")
+    @patch("pw_core.clients.openrouter.httpx.post")
     def test_missing_usage_object_still_yields_zeros(self, mock_post):
         resp = MagicMock()
         resp.status_code = 200
@@ -407,7 +407,7 @@ class TestRetry:
         }
         return resp
 
-    @patch("pf_core.clients.openrouter.httpx.post")
+    @patch("pw_core.clients.openrouter.httpx.post")
     def test_default_retry_zero_no_retry_on_failure(self, mock_post):
         mock_post.return_value = self._resp(status_code=503, body="upstream busy")
         client = OpenRouterClient(api_key="k")  # retry default 0
@@ -415,7 +415,7 @@ class TestRetry:
             client.chat(messages=[{"role": "user", "content": "x"}], model="m")
         assert mock_post.call_count == 1
 
-    @patch("pf_core.clients.openrouter.httpx.post")
+    @patch("pw_core.clients.openrouter.httpx.post")
     def test_retry_on_5xx(self, mock_post, sleeps):
         mock_post.side_effect = [self._resp(status_code=502), self._resp()]
         client = OpenRouterClient(api_key="k", retry=1)
@@ -423,7 +423,7 @@ class TestRetry:
         assert content == "ok"
         assert mock_post.call_count == 2
 
-    @patch("pf_core.clients.openrouter.httpx.post")
+    @patch("pw_core.clients.openrouter.httpx.post")
     def test_retry_on_429(self, mock_post, sleeps):
         mock_post.side_effect = [
             self._resp(status_code=429, body="rate limit"),
@@ -434,7 +434,7 @@ class TestRetry:
         assert content == "ok"
         assert mock_post.call_count == 2
 
-    @patch("pf_core.clients.openrouter.httpx.post")
+    @patch("pw_core.clients.openrouter.httpx.post")
     def test_retry_on_timeout(self, mock_post, sleeps):
         import httpx
 
@@ -447,7 +447,7 @@ class TestRetry:
         assert content == "ok"
         assert mock_post.call_count == 2
 
-    @patch("pf_core.clients.openrouter.httpx.post")
+    @patch("pw_core.clients.openrouter.httpx.post")
     def test_no_retry_on_4xx_other_than_429(self, mock_post):
         """400/401/403 are caller errors — retrying wastes API budget on
         a deterministic failure."""
@@ -457,7 +457,7 @@ class TestRetry:
             client.chat(messages=[{"role": "user", "content": "x"}], model="m")
         assert mock_post.call_count == 1  # not retried
 
-    @patch("pf_core.clients.openrouter.httpx.post")
+    @patch("pw_core.clients.openrouter.httpx.post")
     def test_retry_exhausted_raises(self, mock_post, sleeps):
         mock_post.return_value = self._resp(status_code=503)
         client = OpenRouterClient(api_key="k", retry=2)
@@ -465,7 +465,7 @@ class TestRetry:
             client.chat(messages=[{"role": "user", "content": "x"}], model="m")
         assert mock_post.call_count == 3  # initial + 2 retries
 
-    @patch("pf_core.clients.openrouter.httpx.post")
+    @patch("pw_core.clients.openrouter.httpx.post")
     def test_negative_retry_raises_client_error(self, mock_post):
         """retry < 0 leaves the attempt loop unentered — must raise a real
         OpenRouterError, not an assert (stripped under python -O)."""
@@ -496,7 +496,7 @@ class TestPreflight:
     of burning an LLM call. Raises OpenRouterError with actionable
     remediation message on any failure."""
 
-    @patch("pf_core.clients.openrouter.httpx.get")
+    @patch("pw_core.clients.openrouter.httpx.get")
     def test_succeeds_returns_none(self, mock_get):
         resp = MagicMock()
         resp.status_code = 200
@@ -505,7 +505,7 @@ class TestPreflight:
         client = OpenRouterClient(api_key="k")
         assert client.preflight() is None
 
-    @patch("pf_core.clients.openrouter.httpx.get")
+    @patch("pw_core.clients.openrouter.httpx.get")
     def test_calls_models_endpoint(self, mock_get):
         resp = MagicMock()
         resp.status_code = 200
@@ -516,7 +516,7 @@ class TestPreflight:
         called_url = mock_get.call_args.args[0]
         assert called_url == "https://example.com/v1/models"
 
-    @patch("pf_core.clients.openrouter.httpx.get")
+    @patch("pw_core.clients.openrouter.httpx.get")
     def test_uses_auth_headers(self, mock_get):
         resp = MagicMock()
         resp.status_code = 200
@@ -528,7 +528,7 @@ class TestPreflight:
         assert headers["Authorization"] == "Bearer my-key"
         assert headers["X-Title"] == "MyApp"
 
-    @patch("pf_core.clients.openrouter.httpx.get")
+    @patch("pw_core.clients.openrouter.httpx.get")
     def test_default_timeout_is_short(self, mock_get):
         """Preflight should fail fast — short default timeout."""
         resp = MagicMock()
@@ -539,7 +539,7 @@ class TestPreflight:
         client.preflight()
         assert mock_get.call_args.kwargs["timeout"] < 60
 
-    @patch("pf_core.clients.openrouter.httpx.get")
+    @patch("pw_core.clients.openrouter.httpx.get")
     def test_per_call_timeout_respected(self, mock_get):
         resp = MagicMock()
         resp.status_code = 200
@@ -549,7 +549,7 @@ class TestPreflight:
         client.preflight(timeout=5)
         assert mock_get.call_args.kwargs["timeout"] == 5
 
-    @patch("pf_core.clients.openrouter.httpx.get")
+    @patch("pw_core.clients.openrouter.httpx.get")
     def test_401_raises_with_actionable_message(self, mock_get):
         """Auth failure → raise with `OPENROUTER_API_KEY` remediation."""
         resp = MagicMock()
@@ -560,7 +560,7 @@ class TestPreflight:
         with pytest.raises(OpenRouterError, match=r"OPENROUTER_API_KEY"):
             client.preflight()
 
-    @patch("pf_core.clients.openrouter.httpx.get")
+    @patch("pw_core.clients.openrouter.httpx.get")
     def test_5xx_raises_with_preflight_marker(self, mock_get):
         resp = MagicMock()
         resp.status_code = 503
@@ -570,7 +570,7 @@ class TestPreflight:
         with pytest.raises(OpenRouterError, match=r"preflight"):
             client.preflight()
 
-    @patch("pf_core.clients.openrouter.httpx.get")
+    @patch("pw_core.clients.openrouter.httpx.get")
     def test_timeout_raises_with_preflight_marker(self, mock_get):
         import httpx
 
@@ -579,7 +579,7 @@ class TestPreflight:
         with pytest.raises(OpenRouterError, match=r"preflight"):
             client.preflight()
 
-    @patch("pf_core.clients.openrouter.httpx.get")
+    @patch("pw_core.clients.openrouter.httpx.get")
     def test_error_carries_preflight_context_flag(self, mock_get):
         resp = MagicMock()
         resp.status_code = 500
@@ -632,7 +632,7 @@ class TestRetryPacing:
     def _chat(self, client):
         return client.chat(messages=[{"role": "user", "content": "x"}], model="m")
 
-    @patch("pf_core.clients.openrouter.httpx.post")
+    @patch("pw_core.clients.openrouter.httpx.post")
     def test_5xx_backoff_grows_between_attempts(self, mock_post, sleeps):
         mock_post.return_value = self._resp(status_code=503)
         client = OpenRouterClient(api_key="k", retry=2)
@@ -642,7 +642,7 @@ class TestRetryPacing:
         assert 0.5 <= sleeps[0] < 0.75
         assert 1.0 <= sleeps[1] < 1.5
 
-    @patch("pf_core.clients.openrouter.httpx.post")
+    @patch("pw_core.clients.openrouter.httpx.post")
     def test_429_honours_retry_after(self, mock_post, sleeps):
         mock_post.side_effect = [
             self._resp(status_code=429, headers={"Retry-After": "7"}),
@@ -653,7 +653,7 @@ class TestRetryPacing:
         assert content == "ok"
         assert sleeps == [7.0]
 
-    @patch("pf_core.clients.openrouter.httpx.post")
+    @patch("pw_core.clients.openrouter.httpx.post")
     def test_retry_after_capped(self, mock_post, sleeps):
         mock_post.side_effect = [
             self._resp(status_code=429, headers={"Retry-After": "600"}),
@@ -663,7 +663,7 @@ class TestRetryPacing:
         self._chat(client)
         assert sleeps == [30.0]
 
-    @patch("pf_core.clients.openrouter.httpx.post")
+    @patch("pw_core.clients.openrouter.httpx.post")
     def test_malformed_retry_after_falls_back_to_backoff(self, mock_post, sleeps):
         mock_post.side_effect = [
             self._resp(status_code=429, headers={"Retry-After": "in a bit"}),
@@ -674,7 +674,7 @@ class TestRetryPacing:
         assert len(sleeps) == 1
         assert 0.5 <= sleeps[0] < 0.75
 
-    @patch("pf_core.clients.openrouter.httpx.post")
+    @patch("pw_core.clients.openrouter.httpx.post")
     def test_429_without_retry_after_uses_backoff(self, mock_post, sleeps):
         mock_post.side_effect = [self._resp(status_code=429), self._resp()]
         client = OpenRouterClient(api_key="k", retry=1)
@@ -682,7 +682,7 @@ class TestRetryPacing:
         assert len(sleeps) == 1
         assert 0.5 <= sleeps[0] < 0.75
 
-    @patch("pf_core.clients.openrouter.httpx.post")
+    @patch("pw_core.clients.openrouter.httpx.post")
     def test_5xx_retry_after_ignored(self, mock_post, sleeps):
         mock_post.side_effect = [
             self._resp(status_code=503, headers={"Retry-After": "9"}),
@@ -693,7 +693,7 @@ class TestRetryPacing:
         assert len(sleeps) == 1
         assert 0.5 <= sleeps[0] < 0.75
 
-    @patch("pf_core.clients.openrouter.httpx.post")
+    @patch("pw_core.clients.openrouter.httpx.post")
     def test_timeout_retry_sleeps(self, mock_post, sleeps):
         import httpx
 
@@ -703,7 +703,7 @@ class TestRetryPacing:
         assert len(sleeps) == 1
         assert 0.5 <= sleeps[0] < 0.75
 
-    @patch("pf_core.clients.openrouter.httpx.post")
+    @patch("pw_core.clients.openrouter.httpx.post")
     def test_exhausted_timeout_no_final_sleep(self, mock_post, sleeps):
         import httpx
 
@@ -713,7 +713,7 @@ class TestRetryPacing:
             self._chat(client)
         assert len(sleeps) == 1
 
-    @patch("pf_core.clients.openrouter.httpx.post")
+    @patch("pw_core.clients.openrouter.httpx.post")
     def test_jitter_varies_delay(self, mock_post, sleeps):
         mock_post.return_value = self._resp(status_code=503)
         for _ in range(12):
@@ -722,14 +722,14 @@ class TestRetryPacing:
                 self._chat(client)
         assert len(set(sleeps)) > 1
 
-    @patch("pf_core.clients.openrouter.httpx.post")
+    @patch("pw_core.clients.openrouter.httpx.post")
     def test_no_sleep_on_success(self, mock_post, sleeps):
         mock_post.return_value = self._resp()
         client = OpenRouterClient(api_key="k", retry=2)
         self._chat(client)
         assert sleeps == []
 
-    @patch("pf_core.clients.openrouter.httpx.post")
+    @patch("pw_core.clients.openrouter.httpx.post")
     def test_no_sleep_on_non_retryable_status(self, mock_post, sleeps):
         mock_post.return_value = self._resp(status_code=401, body="bad key")
         client = OpenRouterClient(api_key="k", retry=2)
@@ -754,28 +754,28 @@ class TestChoicesAndFinishReason:
     def _chat(self, client):
         return client.chat(messages=[{"role": "user", "content": "x"}], model="m")
 
-    @patch("pf_core.clients.openrouter.httpx.post")
+    @patch("pw_core.clients.openrouter.httpx.post")
     def test_empty_choices_raises(self, mock_post):
         mock_post.return_value = self._resp({"choices": [], "usage": {}})
         client = OpenRouterClient(api_key="k")
         with pytest.raises(OpenRouterError, match="choices"):
             self._chat(client)
 
-    @patch("pf_core.clients.openrouter.httpx.post")
+    @patch("pw_core.clients.openrouter.httpx.post")
     def test_missing_choices_key_raises(self, mock_post):
         mock_post.return_value = self._resp({"usage": {}})
         client = OpenRouterClient(api_key="k")
         with pytest.raises(OpenRouterError, match="choices"):
             self._chat(client)
 
-    @patch("pf_core.clients.openrouter.httpx.post")
+    @patch("pw_core.clients.openrouter.httpx.post")
     def test_missing_message_yields_empty_content(self, mock_post):
         mock_post.return_value = self._resp({"choices": [{}], "usage": {}})
         client = OpenRouterClient(api_key="k")
         content, _ = self._chat(client)
         assert content == ""
 
-    @patch("pf_core.clients.openrouter.httpx.post")
+    @patch("pw_core.clients.openrouter.httpx.post")
     def test_finish_reason_surfaced_in_usage(self, mock_post):
         mock_post.return_value = self._resp(
             {
@@ -787,7 +787,7 @@ class TestChoicesAndFinishReason:
         _, usage = self._chat(client)
         assert usage["finish_reason"] == "stop"
 
-    @patch("pf_core.clients.openrouter.httpx.post")
+    @patch("pw_core.clients.openrouter.httpx.post")
     def test_finish_reason_none_when_absent(self, mock_post):
         mock_post.return_value = self._resp(
             {"choices": [{"message": {"content": "hi"}}], "usage": {}}
@@ -796,7 +796,7 @@ class TestChoicesAndFinishReason:
         _, usage = self._chat(client)
         assert usage["finish_reason"] is None
 
-    @patch("pf_core.clients.openrouter.httpx.post")
+    @patch("pw_core.clients.openrouter.httpx.post")
     def test_max_tokens_truncation_surfaced(self, mock_post):
         mock_post.return_value = self._resp(
             {
@@ -805,7 +805,7 @@ class TestChoicesAndFinishReason:
             }
         )
         client = OpenRouterClient(api_key="k")
-        with patch("pf_core.clients.openrouter._log") as mock_log:
+        with patch("pw_core.clients.openrouter._log") as mock_log:
             content, usage = self._chat(client)
         assert content == "half an ans"
         assert usage["finish_reason"] == "length"
@@ -848,7 +848,7 @@ class TestRetryAfterClamping:
 
 
 class TestPromptTokensExcludesCachedInput:
-    """pf_core.pricing bills cache_read on top of prompt_tokens, so
+    """pw_core.pricing bills cache_read on top of prompt_tokens, so
     prompt_tokens must be the uncached remainder. OpenAI-shaped responses
     report it cache-inclusive."""
 
@@ -858,7 +858,7 @@ class TestPromptTokensExcludesCachedInput:
         resp.json.return_value = {"choices": [{"message": {"content": "ok"}}], **data}
         return resp
 
-    @patch("pf_core.clients.openrouter.httpx.post")
+    @patch("pw_core.clients.openrouter.httpx.post")
     def test_cached_tokens_are_subtracted_from_prompt_tokens(self, mock_post):
         mock_post.return_value = self._mock(
             usage={
@@ -872,7 +872,7 @@ class TestPromptTokensExcludesCachedInput:
         assert usage["prompt_tokens"] == 200
         assert usage["cache_read_tokens"] == 1000
 
-    @patch("pf_core.clients.openrouter.httpx.post")
+    @patch("pw_core.clients.openrouter.httpx.post")
     def test_billable_input_is_never_negative(self, mock_post):
         """A provider reporting cached_tokens above prompt_tokens must not
         produce a negative count."""

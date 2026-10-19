@@ -48,7 +48,7 @@ def _offending_minors(line: str, released_minor: int) -> list[int]:
 def _pin_example_files() -> list[Path]:
     return [
         ROOT / "README.md",
-        *sorted((ROOT / "src/pf_core/docs").rglob("*.md")),
+        *sorted((ROOT / "src/pw_core/docs").rglob("*.md")),
         *sorted((ROOT / ".ai/rules").glob("*.md")),
         *sorted(ROOT.glob("templates/*/pyproject.toml")),
     ]
@@ -61,7 +61,7 @@ def test_pin_examples_track_current_minor():
     offenders = []
     for path in _pin_example_files():
         for lineno, line in enumerate(path.read_text().splitlines(), 1):
-            if "pf-core" not in line:
+            if "pw-core" not in line:
                 continue
             for m in PIN_RE.finditer(line):
                 if (int(m.group(1)), int(m.group(2))) != (major, minor):
@@ -69,7 +69,7 @@ def test_pin_examples_track_current_minor():
                         f"{path.relative_to(ROOT)}:{lineno}: ~={m.group(1)}.{m.group(2)}.x"
                     )
     assert not offenders, (
-        f"pf-core pin examples not on the current minor ({major}.{minor}.x):\n"
+        f"pw-core pin examples not on the current minor ({major}.{minor}.x):\n"
         + "\n".join(offenders)
     )
 
@@ -100,8 +100,8 @@ def test_no_prepublication_version_references():
         ROOT / "CONTRIBUTING.md",
         ROOT / "CHANGELOG.md",
         ROOT / "pyproject.toml",
-        *sorted((ROOT / "src/pf_core").rglob("*.md")),
-        *sorted((ROOT / "src/pf_core").rglob("*.py")),
+        *sorted((ROOT / "src/pw_core").rglob("*.md")),
+        *sorted((ROOT / "src/pw_core").rglob("*.py")),
         *sorted((ROOT / "tests").rglob("*.py")),
         *sorted((ROOT / "bin").iterdir()),
         *sorted((ROOT / ".github").rglob("*")),
@@ -177,7 +177,7 @@ def test_pin_prose_tracks_current_minor():
 
 
 def test_templates_track_requires_python():
-    """A scaffolded project that claims a lower floor than the pf-core it pins
+    """A scaffolded project that claims a lower floor than the pw-core it pins
     is unresolvable on the interpreters it advertises."""
     ours = _requires_python()
     offenders = []
@@ -187,23 +187,13 @@ def test_templates_track_requires_python():
         if not m or (int(m.group(1)), int(m.group(2))) != ours:
             offenders.append(f"{path.relative_to(ROOT)}: {spec}")
     assert not offenders, (
-        f"template requires-python does not match pf-core's (>={ours[0]}.{ours[1]}):\n"
+        f"template requires-python does not match pw-core's (>={ours[0]}.{ours[1]}):\n"
         + "\n".join(offenders)
     )
 
 
-def test_doctor_floor_matches_requires_python():
-    """``pf-doctor`` reports whether the interpreter can run pf-core, so a stale
-    floor makes it PASS the exact environment the install rejects."""
-    from pf_core.doctor import _MIN_PY
-
-    assert _MIN_PY == _requires_python(), (
-        f"pf_core.doctor._MIN_PY {_MIN_PY} != requires-python {_requires_python()}"
-    )
-
-
 def _setup_scripts() -> list[Path]:
-    """Every script that picks an interpreter or validates a venv — pf-core's own
+    """Every script that picks an interpreter or validates a venv — pw-core's own
     plus the copies ``bin/new-consumer`` stamps into each scaffolded project."""
     return [
         ROOT / "bin" / "setup-common",
@@ -247,4 +237,20 @@ def test_ruff_target_version_tracks_requires_python():
                 offenders.append(f"{path.relative_to(ROOT)}:{lineno}: {m.group(1)} != {wanted}")
     assert not offenders, (
         f"ruff target-version does not match requires-python ({wanted}):\n" + "\n".join(offenders)
+    )
+
+
+_BASE_PIN_THREE_COMPONENTS = re.compile(r"pw-foundation\s*~=\s*1\.0\.\d")
+
+
+def test_base_pin_examples_use_two_components():
+    """``pw-foundation~=1.0`` admits every additive 1.x release; a third component
+    (``~=1.0.0``) would pin consumers to 1.0.x patches and miss them."""
+    offenders = []
+    for path in _pin_example_files():
+        for lineno, line in enumerate(path.read_text().splitlines(), 1):
+            if _BASE_PIN_THREE_COMPONENTS.search(line):
+                offenders.append(f"{path.relative_to(ROOT)}:{lineno}: {line.strip()}")
+    assert not offenders, "pw-foundation pins must be two components (~=1.0):\n" + "\n".join(
+        offenders
     )

@@ -1,4 +1,4 @@
-"""Tests for connection racing in pf_core.fetch (RFC 8305 Happy Eyeballs).
+"""Tests for connection racing in pw_core.fetch (RFC 8305 Happy Eyeballs).
 
 Hermetic: ``socket.getaddrinfo``, ``socket.socket`` and ``selectors.DefaultSelector`` are
 replaced with fakes whose connect outcome is scripted per address, so nothing leaves the process.
@@ -17,7 +17,7 @@ import urllib.error
 
 import pytest
 
-from pf_core.fetch import Fetcher
+from pw_core.fetch import Fetcher
 
 V6 = "2606:2800:220:1:248:1893:25c8:1946"
 V6B = "2606:2800:220:1:248:1893:25c8:1947"
@@ -272,7 +272,7 @@ class TestFetcherConnects:
 
 
 def _race(net, *ips, timeout=2.0, source_address=None):
-    from pf_core.fetch import _connect
+    from pw_core.fetch import _connect
 
     net.hosts["example.com"] = list(ips)
     return _connect.create_connection(("example.com", 443), timeout, source_address)

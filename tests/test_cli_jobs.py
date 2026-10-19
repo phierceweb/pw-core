@@ -1,4 +1,4 @@
-"""Tests for pf_core.cli.jobs — the pf-jobs admin CLI sub-app.
+"""Tests for pw_core.cli.jobs — the pw-jobs admin CLI sub-app.
 
 Exercises the command layer (list / show / retry / cancel / reclaim / purge)
 end-to-end through Typer's CliRunner against a real JobRepo on the test DB,
@@ -15,10 +15,10 @@ import typer
 from pydantic import BaseModel
 from typer.testing import CliRunner
 
-import pf_core.jobs.registry as _jobs_registry
-from pf_core.cli.jobs import app, parse_duration
-from pf_core.jobs import JobRepo, register_kind
-from pf_core.llm.tracking import metadata
+import pw_core.jobs.registry as _jobs_registry
+from pw_core.cli.jobs import app, parse_duration
+from pw_core.jobs import JobRepo, register_kind
+from pw_core.llm.tracking import metadata
 
 runner = CliRunner()
 
@@ -40,11 +40,11 @@ def _isolate_registry():
 
 
 @pytest.fixture()
-def jobs_db(pf_engine):
+def jobs_db(pw_engine):
     """Test engine with the jobs + llm_* tables created."""
-    metadata.create_all(pf_engine)
-    yield pf_engine
-    metadata.drop_all(pf_engine)
+    metadata.create_all(pw_engine)
+    yield pw_engine
+    metadata.drop_all(pw_engine)
 
 
 @pytest.fixture()

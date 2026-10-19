@@ -1,4 +1,4 @@
-"""Tests for pf_core.llm.recording — the ambient call-recording window."""
+"""Tests for pw_core.llm.recording — the ambient call-recording window."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import contextvars
 import threading
 from concurrent.futures import ThreadPoolExecutor
 
-from pf_core.llm.recording import (
+from pw_core.llm.recording import (
     begin_call_recording,
     current_session_metadata,
     end_call_recording,

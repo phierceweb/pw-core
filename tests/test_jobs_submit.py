@@ -6,9 +6,9 @@ import threading
 
 import pytest
 
-from pf_core.jobs import JobRepo
-from pf_core.jobs.registry import register_kind
-from pf_core.jobs.submit import (
+from pw_core.jobs import JobRepo
+from pw_core.jobs.registry import register_kind
+from pw_core.jobs.submit import (
     JobAlreadyRunning,
     submit_detached,
     submit_tracked,
@@ -19,14 +19,14 @@ KIND = "submit_probe"
 
 
 @pytest.fixture
-def pf_schema():
-    from pf_core.testing.db_fixtures import framework_ddl
+def pw_schema():
+    from pw_core.testing.db_fixtures import framework_ddl
 
     return framework_ddl()
 
 
 @pytest.fixture(autouse=True)
-def _kind(pf_tables):
+def _kind(pw_tables):
     register_kind(kind=KIND, description="submitter test kind")
     yield
     wait_all(timeout=10.0)

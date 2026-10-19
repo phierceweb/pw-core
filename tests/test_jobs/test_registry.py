@@ -5,8 +5,8 @@ from __future__ import annotations
 import pytest
 from pydantic import BaseModel
 
-from pf_core.exceptions import ConfigurationError, InvalidInputError
-from pf_core.jobs import (
+from pw_foundation.exceptions import ConfigurationError, InvalidInputError
+from pw_core.jobs import (
     DEFAULT_STATES,
     DEFAULT_TRANSITIONS,
     all_kinds,

@@ -7,9 +7,9 @@ import time
 
 import pytest
 
-from pf_core.jobs import JobRepo
-from pf_core.jobs.registry import register_kind
-from pf_core.jobs.workers import (
+from pw_core.jobs import JobRepo
+from pw_core.jobs.registry import register_kind
+from pw_core.jobs.workers import (
     SubprocessJobSpec,
     run_subprocess_job,
     start_workers,
@@ -22,14 +22,14 @@ KIND = "worker_probe"
 
 
 @pytest.fixture
-def pf_schema():
-    from pf_core.testing.db_fixtures import framework_ddl
+def pw_schema():
+    from pw_core.testing.db_fixtures import framework_ddl
 
     return framework_ddl()
 
 
 @pytest.fixture(autouse=True)
-def _kind(pf_tables):
+def _kind(pw_tables):
     register_kind(kind=KIND, description="worker test kind")
 
 
@@ -71,7 +71,7 @@ class TestRunSubprocessJob:
         job_id = JobRepo().create(kind=KIND, created_by="test")
         row = JobRepo().get(job_id)
         out = tmp_path / "envdump"
-        code = f"import os, pathlib; pathlib.Path({str(out)!r}).write_text(os.environ.get('PF_JOB_ID', ''))"
+        code = f"import os, pathlib; pathlib.Path({str(out)!r}).write_text(os.environ.get('PW_JOB_ID', ''))"
         run_subprocess_job(row, _spec(tmp_path, _py(code)))
         assert out.read_text() == str(job_id)
 
@@ -85,7 +85,7 @@ class TestTerminate:
         # after the kill, the runner must leave the canceled row untouched.
         import threading
 
-        from pf_core.jobs import workers as workers_mod
+        from pw_core.jobs import workers as workers_mod
 
         job_id = JobRepo().create(kind=KIND, created_by="test")
         row = JobRepo().get(job_id)
@@ -113,7 +113,7 @@ class TestLeaseRenewal:
     def test_subprocess_job_outliving_its_lease_is_not_reclaimed(self, tmp_path, monkeypatch):
         import threading
 
-        from pf_core.jobs import workers as workers_mod
+        from pw_core.jobs import workers as workers_mod
 
         monkeypatch.setenv("JOB_LEASE_SECONDS", "2")
         repo = JobRepo()
@@ -155,8 +155,8 @@ class TestLeaseRenewal:
 
         from sqlalchemy import update
 
-        from pf_core.db import transaction
-        from pf_core.jobs import _schema as s
+        from pw_core.db import transaction
+        from pw_core.jobs import _schema as s
 
         monkeypatch.setenv("JOB_LEASE_SECONDS", "1")
         repo = JobRepo()
@@ -165,7 +165,7 @@ class TestLeaseRenewal:
         row = repo.get(job_id)
 
         spec = _spec(tmp_path, _py("import time; time.sleep(30)"))
-        with caplog.at_level(logging.WARNING, logger="pf_core.jobs.workers"):
+        with caplog.at_level(logging.WARNING, logger="pw_core.jobs.workers"):
             t = threading.Thread(target=run_subprocess_job, args=(row, spec), daemon=True)
             t.start()
             time.sleep(0.6)  # at least one successful renewal
@@ -187,7 +187,7 @@ class TestLeaseRenewal:
         job_id = JobRepo().create(kind=KIND, created_by="test")
         row = JobRepo().get(job_id)
 
-        with caplog.at_level(logging.WARNING, logger="pf_core.jobs.workers"):
+        with caplog.at_level(logging.WARNING, logger="pw_core.jobs.workers"):
             run_subprocess_job(row, _spec(tmp_path, _py("import time; time.sleep(1)")))
 
         assert JobRepo().get(job_id)["status"] == "succeeded"
@@ -292,3 +292,13 @@ class TestTailLog:
         text, offset = tail_log(p, since_byte=0, max_bytes=4)
         assert text == "abcd"
         assert offset == 4
+
+
+def test_job_id_env_is_mirrored_under_the_pf_spelling(tmp_path):
+    """Until 1.0 a child sees PF_JOB_ID beside PW_JOB_ID (CHANGELOG v0.27.0)."""
+    job_id = JobRepo().create(kind=KIND, created_by="test")
+    row = JobRepo().get(job_id)
+    out = tmp_path / "envdump"
+    code = f"import os, pathlib; pathlib.Path({str(out)!r}).write_text(os.environ.get('PW_JOB_ID', '') + '|' + os.environ.get('PF_JOB_ID', ''))"
+    run_subprocess_job(row, _spec(tmp_path, _py(code)))
+    assert out.read_text() == f"{job_id}|{job_id}"

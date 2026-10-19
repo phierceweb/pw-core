@@ -1,10 +1,10 @@
-"""Tests for pf_core.web.pagination."""
+"""Tests for pw_core.web.pagination."""
 
 from __future__ import annotations
 
 import pytest
 
-from pf_core.web.pagination import paginate_params, paginate_result
+from pw_core.web.pagination import paginate_params, paginate_result
 
 
 class TestPaginateParams:

@@ -1,4 +1,4 @@
-"""Retry-backoff regression for pf_core.clients.claude_code.
+"""Retry-backoff regression for pw_core.clients.claude_code.
 
 The retry loop re-invoked ``claude --print`` with zero delay, so a
 rate-limited or refreshing session got hammered inside the same window.
@@ -13,7 +13,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from pf_core.clients.claude_code import ClaudeCodeClient, ClaudeCodeError, reset_client
+from pw_core.clients.claude_code import ClaudeCodeClient, ClaudeCodeError, reset_client
 
 
 @pytest.fixture(autouse=True)
@@ -25,7 +25,7 @@ def _reset():
 
 @pytest.fixture(autouse=True)
 def _no_sleep():
-    with patch("pf_core.clients.claude_code.time.sleep") as sleep:
+    with patch("pw_core.clients.claude_code.time.sleep") as sleep:
         yield sleep
 
 
@@ -47,8 +47,8 @@ def _fail_run(returncode: int = 1) -> MagicMock:
 
 
 class TestRetryBacksOff:
-    @patch("pf_core.clients.claude_code.subprocess.run")
-    @patch("pf_core.clients.claude_code.shutil.which")
+    @patch("pw_core.clients.claude_code.subprocess.run")
+    @patch("pw_core.clients.claude_code.shutil.which")
     def test_sleeps_between_nonzero_exit_retries(self, mock_which, mock_run, _no_sleep):
         mock_which.return_value = "/usr/local/bin/claude"
         mock_run.return_value = _fail_run()
@@ -60,8 +60,8 @@ class TestRetryBacksOff:
         assert all(d > 0 for d in delays)
         assert delays[1] > delays[0]
 
-    @patch("pf_core.clients.claude_code.subprocess.run")
-    @patch("pf_core.clients.claude_code.shutil.which")
+    @patch("pw_core.clients.claude_code.subprocess.run")
+    @patch("pw_core.clients.claude_code.shutil.which")
     def test_sleeps_between_timeout_retries(self, mock_which, mock_run, _no_sleep):
         mock_which.return_value = "/usr/local/bin/claude"
         mock_run.side_effect = subprocess.TimeoutExpired(cmd="claude", timeout=5)
@@ -72,8 +72,8 @@ class TestRetryBacksOff:
         assert len(delays) == 2
         assert all(d > 0 for d in delays)
 
-    @patch("pf_core.clients.claude_code.subprocess.run")
-    @patch("pf_core.clients.claude_code.shutil.which")
+    @patch("pw_core.clients.claude_code.subprocess.run")
+    @patch("pw_core.clients.claude_code.shutil.which")
     def test_no_sleep_after_last_attempt(self, mock_which, mock_run, _no_sleep):
         """The final failure raises — sleeping after it just delays the error."""
         mock_which.return_value = "/usr/local/bin/claude"
@@ -83,8 +83,8 @@ class TestRetryBacksOff:
         assert content == "recovered"
         assert _no_sleep.call_count == 1
 
-    @patch("pf_core.clients.claude_code.subprocess.run")
-    @patch("pf_core.clients.claude_code.shutil.which")
+    @patch("pw_core.clients.claude_code.subprocess.run")
+    @patch("pw_core.clients.claude_code.shutil.which")
     def test_no_sleep_on_success(self, mock_which, mock_run, _no_sleep):
         mock_which.return_value = "/usr/local/bin/claude"
         mock_run.return_value = _ok_run()

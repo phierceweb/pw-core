@@ -5,8 +5,8 @@ from __future__ import annotations
 import pytest
 from pydantic import BaseModel
 
-from pf_core.exceptions import ConfigurationError
-from pf_core.llm.validate import (
+from pw_foundation.exceptions import ConfigurationError
+from pw_core.llm.validate import (
     parse_and_validate,
     register,
     register_tier1_domains,

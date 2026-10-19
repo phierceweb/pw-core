@@ -1,9 +1,9 @@
-"""Tests for pf_core.web.helpers."""
+"""Tests for pw_core.web.helpers."""
 
 import pytest
 
-from pf_core.exceptions import NotFoundError, FlowException
-from pf_core.web.helpers import resolve_or_404
+from pw_foundation.exceptions import NotFoundError, FlowException
+from pw_core.web.helpers import resolve_or_404
 
 
 class TestResolveOr404:
@@ -40,20 +40,3 @@ class TestResolveOr404:
             resolve_or_404(None, "Order")
         assert exc_info.value.entity == "Order"
         assert exc_info.value.identifier is None
-
-
-class TestNotFoundError:
-    def test_with_entity_only(self):
-        exc = NotFoundError("Order")
-        assert str(exc) == "Order not found"
-        assert exc.entity == "Order"
-        assert exc.identifier is None
-
-    def test_with_entity_and_id(self):
-        exc = NotFoundError("Order", 42)
-        assert str(exc) == "Order not found: 42"
-        assert exc.entity == "Order"
-        assert exc.identifier == 42
-
-    def test_is_flow_exception(self):
-        assert issubclass(NotFoundError, FlowException)

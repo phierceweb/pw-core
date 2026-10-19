@@ -3,7 +3,7 @@
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-DOCS = ROOT / "src" / "pf_core" / "docs"
+DOCS = ROOT / "src" / "pw_core" / "docs"
 
 
 def test_llms_txt_lists_every_shipped_doc():
@@ -11,7 +11,7 @@ def test_llms_txt_lists_every_shipped_doc():
     missing = [
         str(p.relative_to(ROOT))
         for p in sorted(DOCS.rglob("*.md"))
-        if f"/src/pf_core/docs/{p.relative_to(DOCS)}" not in text
+        if f"/src/pw_core/docs/{p.relative_to(DOCS)}" not in text
     ]
     assert not missing, "docs missing from llms.txt:\n" + "\n".join(missing)
 

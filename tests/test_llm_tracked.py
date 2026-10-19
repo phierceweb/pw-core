@@ -1,4 +1,4 @@
-"""Tests for ``pf_core.llm.tracked.tracked_call``.
+"""Tests for ``pw_core.llm.tracked.tracked_call``.
 
 Exercises the orchestration this module adds on top of existing
 primitives:
@@ -21,14 +21,14 @@ from __future__ import annotations
 import pytest
 from sqlalchemy import select
 
-from pf_core.exceptions import InvalidInputError
-from pf_core.llm import LlmJsonError, tracked_call
-from pf_core.llm.tracking import (
+from pw_foundation.exceptions import InvalidInputError
+from pw_core.llm import LlmJsonError, tracked_call
+from pw_core.llm.tracking import (
     LlmRunRepo,
     clear_resolver_caches,
     metadata,
 )
-from pf_core.llm.tracking import schema as s
+from pw_core.llm.tracking import schema as s
 
 
 @pytest.fixture(autouse=True)
@@ -39,10 +39,10 @@ def _clear_caches_between_tests():
 
 
 @pytest.fixture()
-def tracking_db(pf_engine):
-    metadata.create_all(pf_engine)
-    yield pf_engine
-    metadata.drop_all(pf_engine)
+def tracking_db(pw_engine):
+    metadata.create_all(pw_engine)
+    yield pw_engine
+    metadata.drop_all(pw_engine)
 
 
 _SPEC = {"agent": "classifier", "version": 3, "system": "You are @@ROLE@@."}

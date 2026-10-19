@@ -1,4 +1,4 @@
-"""Tests for pf_core.fetch.images — remote-image localizer.
+"""Tests for pw_core.fetch.images — remote-image localizer.
 
 Hermetic: every download goes through a recording fake fetcher; an autouse
 tripwire fakes DNS and fails loudly if a real request is ever attempted.
@@ -15,10 +15,10 @@ from email.message import Message
 
 import pytest
 
-from pf_core.exceptions import ClientError, InvalidInputError
-from pf_core.fetch import Fetcher
-from pf_core.fetch import images as images_mod
-from pf_core.fetch.images import (
+from pw_foundation.exceptions import ClientError, InvalidInputError
+from pw_core.fetch import Fetcher
+from pw_core.fetch import images as images_mod
+from pw_core.fetch.images import (
     _IMAGE_EXTENSIONS,
     LocalizeResult,
     count_remote_images,

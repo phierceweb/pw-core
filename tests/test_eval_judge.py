@@ -1,4 +1,4 @@
-"""Tests for pf_core.eval._judge — config hard-fail behavior.
+"""Tests for pw_core.eval._judge — config hard-fail behavior.
 
 The judge routes via ``resolve_agent`` like any agent: a missing judge-agent
 config raises ``ConfigurationError`` before anything is recorded, with no
@@ -9,9 +9,9 @@ from __future__ import annotations
 
 import pytest
 
-from pf_core.eval._judge import run_judge
-from pf_core.exceptions import ClientError, ConfigurationError
-from pf_core.llm.router import clear_cache
+from pw_core.eval._judge import run_judge
+from pw_foundation.exceptions import ClientError, ConfigurationError
+from pw_core.llm.router import clear_cache
 
 
 @pytest.fixture(autouse=True)
@@ -58,9 +58,9 @@ def test_judge_agent_without_resolvable_backend_raises(tmp_path, monkeypatch):
 
 
 @pytest.fixture
-def replay_run(pf_engine):
+def replay_run(pw_engine):
     """(engine, id) of a recorded replay run for the judge to link its own run to."""
-    from pf_core.llm.tracking import (
+    from pw_core.llm.tracking import (
         clear_resolver_caches,
         llm_agent_types,
         llm_models,
@@ -68,17 +68,17 @@ def replay_run(pf_engine):
         metadata,
     )
 
-    metadata.create_all(pf_engine)
+    metadata.create_all(pw_engine)
     clear_resolver_caches()
-    with pf_engine.begin() as conn:
+    with pw_engine.begin() as conn:
         mid = conn.execute(llm_models.insert().values(name="replay-model")).inserted_primary_key[0]
         aid = conn.execute(llm_agent_types.insert().values(slug="drafter")).inserted_primary_key[0]
         replay_id = conn.execute(
             llm_runs.insert().values(agent_type_id=aid, model_id=mid, status="success")
         ).inserted_primary_key[0]
-    yield pf_engine, replay_id
+    yield pw_engine, replay_id
     clear_resolver_caches()
-    metadata.drop_all(pf_engine)
+    metadata.drop_all(pw_engine)
 
 
 def _judge_replying(monkeypatch, reply: str | Exception) -> None:
@@ -89,7 +89,7 @@ def _judge_replying(monkeypatch, reply: str | Exception) -> None:
             return reply, {"duration_ms": 1}
 
     monkeypatch.setattr(
-        "pf_core.eval._judge.resolve_agent",
+        "pw_core.eval._judge.resolve_agent",
         lambda slug, **k: (_JudgeClient(), {"model": "judge-m"}, "fake_backend"),
     )
 
@@ -128,7 +128,7 @@ def test_a_reply_without_a_usable_score_raises_and_keeps_the_judge_run(
 ):
     from sqlalchemy import select
 
-    from pf_core.llm.tracking import llm_run_links
+    from pw_core.llm.tracking import llm_run_links
 
     engine, replay_id = replay_run
     _judge_replying(monkeypatch, reply)
@@ -158,10 +158,10 @@ def test_a_numeric_score_is_read_and_clamped(replay_run, monkeypatch, reply, sco
     assert _judge_replay(replay_run[1]) == score
 
 
-def test_judge_yaml_sampling_wins_over_defaults(pf_engine, monkeypatch):
+def test_judge_yaml_sampling_wins_over_defaults(pw_engine, monkeypatch):
     """The judge's YAML-declared sampling is honored; 0.0/512 only fill gaps
     (a reasoning judge capped at 512 tokens would emit nothing and score 0)."""
-    from pf_core.llm.tracking import (
+    from pw_core.llm.tracking import (
         clear_resolver_caches,
         llm_agent_types,
         llm_models,
@@ -169,10 +169,10 @@ def test_judge_yaml_sampling_wins_over_defaults(pf_engine, monkeypatch):
         metadata,
     )
 
-    metadata.create_all(pf_engine)
+    metadata.create_all(pw_engine)
     clear_resolver_caches()
     try:
-        with pf_engine.begin() as conn:
+        with pw_engine.begin() as conn:
             mid = conn.execute(
                 llm_models.insert().values(name="judge-parent-model")
             ).inserted_primary_key[0]
@@ -192,7 +192,7 @@ def test_judge_yaml_sampling_wins_over_defaults(pf_engine, monkeypatch):
                 return '{"score": 0.8, "rationale": "ok"}', {"duration_ms": 1}
 
         monkeypatch.setattr(
-            "pf_core.eval._judge.resolve_agent",
+            "pw_core.eval._judge.resolve_agent",
             lambda slug, **k: (
                 _JudgeClient(),
                 {"model": "judge-m", "max_tokens": 2000, "reasoning_effort": "medium"},
@@ -215,4 +215,4 @@ def test_judge_yaml_sampling_wins_over_defaults(pf_engine, monkeypatch):
         assert seen["reasoning_effort"] == "medium"  # passes through untouched
     finally:
         clear_resolver_caches()
-        metadata.drop_all(pf_engine)
+        metadata.drop_all(pw_engine)

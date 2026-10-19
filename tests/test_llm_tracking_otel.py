@@ -1,4 +1,4 @@
-"""Tests for pf_core.llm.tracking.otel — llm_runs rows exported as OTel GenAI spans."""
+"""Tests for pw_core.llm.tracking.otel — llm_runs rows exported as OTel GenAI spans."""
 
 from __future__ import annotations
 
@@ -12,26 +12,26 @@ from opentelemetry.sdk.trace.export import SpanExportResult
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from opentelemetry.trace import SpanKind, StatusCode
 
-from pf_core.db import transaction
-from pf_core.exceptions import ClientError, InvalidInputError
-from pf_core.jobs._schema import jobs
-from pf_core.llm.tracking import (
+from pw_core.db import transaction
+from pw_foundation.exceptions import ClientError, InvalidInputError
+from pw_core.jobs._schema import jobs
+from pw_core.llm.tracking import (
     LlmRunRepo,
     metadata,
     resolve_agent_type_id,
     resolve_prompt_id,
 )
-from pf_core.llm.tracking.otel import OtelExportSummary, export_runs
+from pw_core.llm.tracking.otel import OtelExportSummary, export_runs
 
 MODEL = "anthropic/claude-sonnet-4.6"
 T_END = dt.datetime(2026, 10, 1, 12, 0, 0, 250000)
 
 
 @pytest.fixture()
-def tracking_db(pf_engine):
-    metadata.create_all(pf_engine)
-    yield pf_engine
-    metadata.drop_all(pf_engine)
+def tracking_db(pw_engine):
+    metadata.create_all(pw_engine)
+    yield pw_engine
+    metadata.drop_all(pw_engine)
 
 
 def _job(**values) -> int:
@@ -49,7 +49,7 @@ def _run(*, created_at: dt.datetime = T_END, **kwargs) -> int:
 def _export(**kwargs) -> tuple[OtelExportSummary, dict]:
     exporter = InMemorySpanExporter()
     summary = export_runs(exporter=exporter, **kwargs)
-    spans = {int(s.attributes["pf_core.run_id"]): s for s in exporter.get_finished_spans()}
+    spans = {int(s.attributes["pw_core.run_id"]): s for s in exporter.get_finished_spans()}
     return summary, spans
 
 
@@ -112,14 +112,14 @@ def test_span_attributes_map_every_run_column(tracking_db):
         "gen_ai.usage.cache_read.input_tokens": 900,
         "gen_ai.usage.cache_creation.input_tokens": 50,
         "gen_ai.usage.reasoning.output_tokens": 10,
-        "pf_core.run_id": run_id,
-        "pf_core.agent_type": "drafter",
-        "pf_core.job_id": job,
-        "pf_core.prompt.system_id": sys_id,
-        "pf_core.prompt.user_id": user_id,
-        "pf_core.cost_usd": 0.0123,
-        "pf_core.cache_hit": False,
-        "pf_core.status": "success",
+        "pw_core.run_id": run_id,
+        "pw_core.agent_type": "drafter",
+        "pw_core.job_id": job,
+        "pw_core.prompt.system_id": sys_id,
+        "pw_core.prompt.user_id": user_id,
+        "pw_core.cost_usd": 0.0123,
+        "pw_core.cache_hit": False,
+        "pw_core.status": "success",
     }
 
 
@@ -131,10 +131,10 @@ def test_minimal_run_emits_only_known_values(tracking_db):
     assert dict(spans[run_id].attributes) == {
         "gen_ai.operation.name": "chat",
         "gen_ai.request.model": MODEL,
-        "pf_core.run_id": run_id,
-        "pf_core.agent_type": "drafter",
-        "pf_core.cache_hit": False,
-        "pf_core.status": "success",
+        "pw_core.run_id": run_id,
+        "pw_core.agent_type": "drafter",
+        "pw_core.cache_hit": False,
+        "pw_core.status": "success",
     }
 
 
@@ -146,7 +146,7 @@ def test_span_is_a_genai_client_span_named_for_the_model(tracking_db):
     span = spans[run_id]
     assert span.name == f"chat {MODEL}"
     assert span.kind is SpanKind.CLIENT
-    assert span.instrumentation_scope.name == "pf_core.llm.tracking.otel"
+    assert span.instrumentation_scope.name == "pw_core.llm.tracking.otel"
     assert span.instrumentation_scope.schema_url == "https://opentelemetry.io/schemas/1.41.0"
 
 
@@ -242,9 +242,9 @@ def test_cache_hit_run_is_flagged_and_not_an_error(tracking_db):
 
     _, spans = _export()
 
-    assert spans[hit].attributes["pf_core.cache_hit"] is True
+    assert spans[hit].attributes["pw_core.cache_hit"] is True
     assert spans[hit].status.status_code is StatusCode.UNSET
-    assert spans[ok].attributes["pf_core.cache_hit"] is False
+    assert spans[ok].attributes["pw_core.cache_hit"] is False
     assert spans[ok].status.status_code is StatusCode.UNSET
 
 
@@ -254,17 +254,17 @@ def test_a_cache_tag_alone_flags_a_cache_hit(tracking_db):
 
     _, spans = _export()
 
-    assert spans[tagged].attributes["pf_core.cache_hit"] is True
-    assert spans[aged].attributes["pf_core.cache_hit"] is False
+    assert spans[tagged].attributes["pw_core.cache_hit"] is True
+    assert spans[aged].attributes["pw_core.cache_hit"] is False
 
 
 def test_a_missing_otlp_exporter_names_the_otel_extra(monkeypatch):
     import sys
 
-    from pf_core.llm.tracking import otel
+    from pw_core.llm.tracking import otel
 
     monkeypatch.setitem(sys.modules, "opentelemetry.exporter.otlp.proto.http.trace_exporter", None)
-    with pytest.raises(ImportError, match=r"pip install pf-core\[otel\]"):
+    with pytest.raises(ImportError, match=r"pip install pw-core\[otel\]"):
         otel._otlp_exporter()
 
 
@@ -283,9 +283,9 @@ def test_failed_run_is_an_error_span_with_its_error_fields(tracking_db):
     assert span.status.status_code is StatusCode.ERROR
     assert span.status.description == "rate limited upstream"
     assert span.attributes["error.type"] == "ClientError"
-    assert span.attributes["pf_core.error_code"] == "rate_limited"
+    assert span.attributes["pw_core.error_code"] == "rate_limited"
     assert span.attributes["http.response.status_code"] == 429
-    assert span.attributes["pf_core.status"] == "failed"
+    assert span.attributes["pw_core.status"] == "failed"
 
 
 def test_non_success_status_without_error_class_types_the_error_by_status(tracking_db):
@@ -296,7 +296,7 @@ def test_non_success_status_without_error_class_types_the_error_by_status(tracki
     span = spans[run_id]
     assert span.status.status_code is StatusCode.ERROR
     assert span.attributes["error.type"] == "budget_blocked"
-    assert "pf_core.error_code" not in span.attributes
+    assert "pw_core.error_code" not in span.attributes
     assert "http.response.status_code" not in span.attributes
 
 
@@ -458,7 +458,7 @@ def test_batch_size_follows_the_standard_otel_env_var(tracking_db, monkeypatch):
     summary = export_runs(exporter=exporter)
 
     assert exporter.batches == [2, 2, 1]
-    assert {int(s.attributes["pf_core.run_id"]) for s in exporter.get_finished_spans()} == run_ids
+    assert {int(s.attributes["pw_core.run_id"]) for s in exporter.get_finished_spans()} == run_ids
     assert summary.spans == 5
 
 

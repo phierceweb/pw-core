@@ -1,10 +1,9 @@
-"""Tests for pf_core.services.Service base class."""
+"""Service._repo against a real repository and connection (the base class itself is pw-foundation's)."""
 
 from sqlalchemy import Column, Integer, MetaData, String, Table, insert, text
 
-from pf_core.config import AppConfig
-from pf_core.db.repository import Repository
-from pf_core.services import Service
+from pw_core.db.repository import Repository
+from pw_foundation.services import Service
 
 
 # --- Test doubles ---
@@ -47,36 +46,8 @@ class ItemService(Service):
 # --- Tests ---
 
 
-class TestServiceLogger:
-    def test_has_logger(self):
-        svc = ItemService()
-        assert svc._log is not None
-
-    def test_logger_uses_concrete_module(self):
-        svc = ItemService()
-        # Bind forces lazy resolution; name should reflect this test module
-        bound = svc._log.bind()
-        assert bound._logger.name == __name__
-
-
-class TestServiceConfig:
-    def test_config_is_none_by_default(self):
-        svc = ItemService()
-        assert svc._config is None
-
-    def test_config_accessible(self):
-        cfg = AppConfig()
-        svc = ItemService(config=cfg)
-        assert svc._config is cfg
-
-    def test_config_attributes_accessible(self):
-        cfg = AppConfig(overrides={"APP_NAME": "TestApp"})
-        svc = ItemService(config=cfg)
-        assert svc._config.APP_NAME == "TestApp"
-
-
 class TestServiceRepo:
-    def test_repo_without_conn(self, pf_tables):
+    def test_repo_without_conn(self, pw_tables):
         """Service with no conn — repos create their own transactions."""
         svc = ItemService()
         row_id = svc.add_item("no_conn_item")
@@ -86,21 +57,21 @@ class TestServiceRepo:
         assert result is not None
         assert result["name"] == "no_conn_item"
 
-    def test_repo_with_shared_conn(self, pf_tables, pf_connection):
+    def test_repo_with_shared_conn(self, pw_tables, pw_connection):
         """Service with conn — repos share the caller's transaction."""
-        svc = ItemService(conn=pf_connection)
+        svc = ItemService(conn=pw_connection)
         svc.add_item("shared_item")
 
         # The raw connection should see the insert (same transaction)
-        row = pf_connection.execute(
+        row = pw_connection.execute(
             text("SELECT name FROM items WHERE name = :name"),
             {"name": "shared_item"},
         ).fetchone()
         assert row is not None
 
-    def test_multiple_repos_share_conn(self, pf_tables, pf_connection):
+    def test_multiple_repos_share_conn(self, pw_tables, pw_connection):
         """Two repos from the same service share the connection."""
-        svc = ItemService(conn=pf_connection)
+        svc = ItemService(conn=pw_connection)
         svc.add_item("multi_repo")
 
         # A second repo call should see the first repo's data

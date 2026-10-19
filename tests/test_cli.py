@@ -1,4 +1,4 @@
-"""Tests for pf_core.cli — CLI framework."""
+"""Tests for pw_core.cli — CLI framework."""
 
 from unittest.mock import patch
 
@@ -7,8 +7,8 @@ import pytest
 import typer
 from typer.testing import CliRunner
 
-from pf_core.cli import _ABORT, _USAGE, _exc, _merge, create_cli, run_cli
-from pf_core.exceptions import (
+from pw_core.cli import _ABORT, _USAGE, _exc, _merge, create_cli, run_cli
+from pw_foundation.exceptions import (
     ClientError,
     ConfigurationError,
     InvalidInputError,
@@ -37,7 +37,7 @@ class TestCreateCli:
         result = runner.invoke(app, ["--help"])
         assert "--verbose" in result.output or "-v" in result.output
 
-    @patch("pf_core.cli.setup_logging")
+    @patch("pw_core.cli.setup_logging")
     def test_verbose_calls_setup_logging_debug(self, mock_setup):
         app = create_cli("test")
 
@@ -48,7 +48,7 @@ class TestCreateCli:
         runner.invoke(app, ["--verbose", "hello"])
         mock_setup.assert_called_with(level="DEBUG")
 
-    @patch("pf_core.cli.setup_logging")
+    @patch("pw_core.cli.setup_logging")
     def test_normal_calls_setup_logging_default(self, mock_setup):
         app = create_cli("test")
 
@@ -347,7 +347,7 @@ class TestRunCliParserErrors:
 
 class TestExceptionResolution:
     def test_missing_module_or_attr_resolves_empty(self):
-        assert _exc("pf_core_no_such_module", "Abort") == ()
+        assert _exc("pw_core_no_such_module", "Abort") == ()
         assert _exc("typer", "NoSuchException") == ()
 
     def test_duplicate_classes_collapse(self):
@@ -382,7 +382,7 @@ class TestRunCliErrorMessagesAreData:
 
     def test_an_app_error_keeps_its_bracketed_example(self, capsys):
         """Keep a letter-led run — rich passes `[1, 2, 3]` through and proves nothing."""
-        with patch("pf_core.cli.log_exception"):
+        with patch("pw_core.cli.log_exception"):
             err = self._run(ClientError("upstream wanted [x, y] and got none"), capsys)
         assert "[x, y]" in err
 

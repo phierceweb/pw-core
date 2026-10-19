@@ -1,8 +1,8 @@
-"""Tests for pf_core.db.helpers."""
+"""Tests for pw_core.db.helpers."""
 
 import json
 
-from pf_core.db.helpers import coerce_json_col, dumps_json, now_iso, row_to_dict
+from pw_core.db.helpers import coerce_json_col, dumps_json, row_to_dict
 
 
 def test_coerce_json_col_none():
@@ -35,13 +35,6 @@ def test_dumps_json_no_ascii_escape():
     assert "Müller" in result
     parsed = json.loads(result)
     assert parsed["name"] == "Müller"
-
-
-def test_now_iso_format():
-    ts = now_iso()
-    assert ts.endswith("Z")
-    assert "T" in ts
-    assert len(ts) == 20  # YYYY-MM-DDTHH:MM:SSZ
 
 
 def test_row_to_dict_with_mapping():

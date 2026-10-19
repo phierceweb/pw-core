@@ -1,0 +1,198 @@
+"""
+CLI framework for pw-core projects.
+
+Provides a pre-configured Typer app with structured logging setup,
+verbose flag, and standardized exception handling.
+
+Usage::
+
+    from pw_core.cli import create_cli, run_cli
+
+    app = create_cli("myapp", help="My application CLI.")
+
+    @app.command()
+    def greet(name: str):
+        print(f"Hello, {name}!")
+
+    def main():
+        run_cli(app)
+"""
+
+from __future__ import annotations
+
+import importlib
+import sys
+from types import CodeType
+from typing import TYPE_CHECKING, Any, cast
+
+import typer
+from rich.console import Console
+from rich.markup import escape
+
+from pw_foundation.exceptions import (
+    AppError,
+    FlowException,
+    InvalidInputError,
+    unwrap_flow_exception,
+)
+from pw_foundation.log import get_logger, log_exception, setup_logging
+
+if TYPE_CHECKING:
+    from click.exceptions import ClickException
+
+logger = get_logger(__name__)
+
+_stderr = Console(stderr=True)
+
+
+def _print_error(exc: BaseException) -> None:
+    """Print an exception in red.
+
+    The message is data, not markup: unescaped, rich drops bracketed runs and
+    raises ``MarkupError`` on a ``[/]`` inside this handler.
+    """
+    _stderr.print(f"[red]{escape(str(exc))}[/red]")
+
+
+def _exc(module: str, name: str) -> tuple[type[BaseException], ...]:
+    try:
+        return (getattr(importlib.import_module(module), name),)
+    except (ImportError, AttributeError):
+        return ()
+
+
+def _merge(*groups: tuple[type[BaseException], ...]) -> tuple[type[BaseException], ...]:
+    return tuple(dict.fromkeys(exc for group in groups for exc in group))
+
+
+# typer >= 0.26 vendors its own click, so typer.Abort/BadParameter are NOT the
+# installed click's classes. Both hierarchies are live across the typer pin.
+_ABORT = _merge(_exc("typer", "Abort"), _exc("click.exceptions", "Abort"))
+_INTERRUPT: tuple[type[BaseException], ...] = (KeyboardInterrupt, *_ABORT)
+# Typed as the installed click's; both variants share the interface.
+_USAGE = cast(
+    "tuple[type[ClickException], ...]",
+    _merge(
+        _exc("typer._click.exceptions", "ClickException"),
+        _exc("click.exceptions", "ClickException"),
+    ),
+)
+
+
+def _converter_code(module: str) -> tuple[CodeType, ...]:
+    try:
+        return (importlib.import_module(module).FuncParamType.convert.__code__,)
+    except (ImportError, AttributeError):
+        return ()
+
+
+# click's FuncParamType, which runs a typer parser=, turns a ValueError into a usage error
+# showing only the raw value, and InvalidInputError is one.
+_CONVERTERS = frozenset(_converter_code("typer._click.types") + _converter_code("click.types"))
+
+
+def _also_a_builtin_error(cls: type) -> bool:
+    """Whether ``cls`` is a ValueError or AssertionError other than through InvalidInputError."""
+    if cls is InvalidInputError:
+        return False
+    return cls in (ValueError, AssertionError) or any(map(_also_a_builtin_error, cls.__bases__))
+
+
+def _parser_flow_exception(exc: BaseException) -> FlowException | None:
+    """The InvalidInputError a ``parser=`` raised, when click's conversion turned it into ``exc``."""
+    raised = exc.__context__
+    tb = None if raised is None else raised.__traceback__
+    if raised is None or tb is None or tb.tb_frame.f_code not in _CONVERTERS:
+        return None
+    if isinstance(raised, InvalidInputError) and not _also_a_builtin_error(type(raised)):
+        return raised
+    return unwrap_flow_exception(raised)
+
+
+def create_cli(name: str, *, help: str = "", **kwargs: Any) -> typer.Typer:
+    """Create a Typer app with standard framework configuration.
+
+    Args:
+        name: Application name.
+        help: Help text shown in ``--help``.
+        **kwargs: Additional kwargs passed to ``typer.Typer()``.
+
+    Returns:
+        A configured Typer application.
+    """
+    app = typer.Typer(
+        name=name,
+        help=help,
+        add_completion=False,
+        **kwargs,
+    )
+
+    @app.callback()
+    def _setup(
+        verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable debug logging"),
+    ) -> None:
+        level = "DEBUG" if verbose else None
+        setup_logging(level=level)
+
+    return app
+
+
+def run_cli(app: typer.Typer, *, args: list[str] | None = None) -> None:
+    """Run a Typer app with standardized exception handling.
+
+    Catches framework exceptions and exits cleanly:
+    - ``typer.Exit(N)`` — exits with N (see below).
+    - ``ClickException`` (bad option, missing argument, ``typer.BadParameter``)
+      — shows the usage message, exits with the exception's own ``exit_code``
+      (2 for usage errors, 1 otherwise). The usage error click makes of an
+      ``InvalidInputError`` from a ``parser=`` is answered as that error.
+    - ``FlowException`` — prints message to stderr, exits 1. So does a pydantic
+      ``ValidationError`` holding one a validator raised (``InvalidInputError``):
+      the first one's message, whatever else the error holds.
+    - ``AppError`` — logs with traceback, prints message to stderr, exits 1.
+    - ``typer.Abort`` — prints "Interrupted.", exits 130.
+    - ``KeyboardInterrupt`` — exits 130 silently: typer converts it to
+      ``Exit(130)`` before ``run_cli`` sees it, so it arrives as an int return.
+
+    With ``standalone_mode=False`` click does not raise for ``typer.Exit`` —
+    it RETURNS the exit code from ``app()``. Dropping that return value made
+    every consumer's ``raise typer.Exit(N)`` exit 0 in the real process, so a
+    non-zero int return is converted to ``sys.exit`` here. A command callback
+    that legitimately returns a non-zero int is indistinguishable from an exit
+    code in this mode (click's API conflates them) — pw-core commands report
+    via echo/log, not return values. ``bool`` returns are exempt (``True`` is
+    an ``int`` but not an exit code).
+
+    Args:
+        app: The Typer application to run.
+        args: Optional CLI args (defaults to sys.argv). Useful for testing.
+    """
+    try:
+        rv = app(standalone_mode=False, args=args)
+        if isinstance(rv, int) and not isinstance(rv, bool) and rv != 0:
+            sys.exit(rv)
+    except SystemExit:
+        raise
+    except _INTERRUPT:
+        _stderr.print("\nInterrupted.")
+        sys.exit(130)
+    except _USAGE as exc:
+        flow = _parser_flow_exception(exc)
+        if flow is not None:
+            _print_error(flow)
+            sys.exit(1)
+        exc.show()
+        sys.exit(exc.exit_code)
+    except FlowException as exc:
+        _print_error(exc)
+        sys.exit(1)
+    except AppError as exc:
+        log_exception(exc, message_prepend="cli error")
+        _print_error(exc)
+        sys.exit(1)
+    except Exception as exc:
+        flow = unwrap_flow_exception(exc)
+        if flow is None:
+            raise
+        _print_error(flow)
+        sys.exit(1)

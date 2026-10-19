@@ -1,7 +1,7 @@
-"""Tests for the pf_core.llm.tracking repos, stats, and purge helper.
+"""Tests for the pw_core.llm.tracking repos, stats, and purge helper.
 
-Uses the ``pf_engine`` fixture (in-memory SQLite, patched into
-``pf_core.db.connection``) so the repo's ``transaction()`` calls hit the
+Uses the ``pw_engine`` fixture (in-memory SQLite, patched into
+``pw_core.db.connection``) so the repo's ``transaction()`` calls hit the
 test engine.
 """
 
@@ -12,7 +12,7 @@ import logging
 
 import pytest
 
-from pf_core.llm.tracking import (
+from pw_core.llm.tracking import (
     LlmRunLinkRepo,
     LlmRunMetricRepo,
     LlmRunOutcomeRepo,
@@ -23,7 +23,7 @@ from pf_core.llm.tracking import (
     metadata,
     purge_old_payloads,
 )
-from pf_core.llm.tracking import schema as s
+from pw_core.llm.tracking import schema as s
 
 
 # ---------------------------------------------------------------------------
@@ -40,11 +40,11 @@ def _clear_caches_between_tests():
 
 
 @pytest.fixture()
-def tracking_db(pf_engine):
+def tracking_db(pw_engine):
     """In-memory SQLite engine with all ``llm_*`` tables created."""
-    metadata.create_all(pf_engine)
-    yield pf_engine
-    metadata.drop_all(pf_engine)
+    metadata.create_all(pw_engine)
+    yield pw_engine
+    metadata.drop_all(pw_engine)
 
 
 # ---------------------------------------------------------------------------
@@ -149,7 +149,7 @@ def test_input_hash_algorithm_is_pinned():
     separator, sampling filter — re-keys every stored run and orphans every
     cache entry. If this test fails, that is a DATA MIGRATION, not a refactor:
     bump deliberately and changelog the re-key."""
-    from pf_core.llm.tracking import compute_input_hash
+    from pw_core.llm.tracking import compute_input_hash
 
     assert (
         compute_input_hash(
@@ -166,7 +166,7 @@ def test_input_hash_algorithm_is_pinned():
 def test_input_hash_string_messages_keep_pinned_value():
     """Plain-string message lists must keep their historical digest — every
     consumer's exact-cache entry is keyed on it."""
-    from pf_core.llm.tracking import compute_input_hash
+    from pw_core.llm.tracking import compute_input_hash
 
     assert (
         compute_input_hash(
@@ -186,7 +186,7 @@ def test_input_hash_distinguishes_multipart_messages():
     """Multi-part (vision) content must key the hash: without it every
     multipart call on a model collapses to one digest, and the exact cache
     returns page 1's answer for pages 2..N."""
-    from pf_core.llm.tracking import compute_input_hash
+    from pw_core.llm.tracking import compute_input_hash
 
     def page(name: str) -> list[dict]:
         return [
@@ -215,7 +215,7 @@ def test_input_hash_distinguishes_assistant_tool_calls():
     """``tool_calls`` ride on an assistant message with string content, which
     the rendered prompts drop entirely — two different tool invocations must
     not share a cache key."""
-    from pf_core.llm.tracking import compute_input_hash
+    from pw_core.llm.tracking import compute_input_hash
 
     def call(fn: str) -> list[dict]:
         return [
@@ -235,7 +235,7 @@ def test_input_hash_distinguishes_assistant_tool_calls():
 def test_input_hash_distinguishes_assistant_and_tool_turns():
     """Assistant/tool turns are dropped from the rendered prompts, so two
     conversation branches with identical system+user text must still differ."""
-    from pf_core.llm.tracking import compute_input_hash
+    from pw_core.llm.tracking import compute_input_hash
 
     def branch(answer: str) -> list[dict]:
         return [
@@ -252,7 +252,7 @@ def test_input_hash_distinguishes_assistant_and_tool_turns():
 def test_input_hash_never_raises_on_hostile_message_shapes():
     """Hashing is total: mixed-type keys, non-JSON values, and a self-
     referential part must all yield a key rather than a TypeError."""
-    from pf_core.llm.tracking import compute_input_hash
+    from pw_core.llm.tracking import compute_input_hash
 
     cyclic: dict = {"type": "text"}
     cyclic["self"] = cyclic
@@ -271,7 +271,7 @@ def test_input_hash_keys_opaque_objects_per_instance():
     """A part holding a non-JSON object is stringified, not rejected. Objects
     without a stable repr therefore key per instance — a cache that misses
     across processes, never a wrong hit."""
-    from pf_core.llm.tracking import compute_input_hash
+    from pw_core.llm.tracking import compute_input_hash
 
     class Blob:
         pass
@@ -287,7 +287,7 @@ def test_record_hash_matches_public_compute_with_dirty_sampling(tracking_db):
     inputs even when the sampling dict carries non-sampling keys (model, custom
     knobs) — the exact cache keys on the public function, so a divergent
     record() hash makes cache lookups and find_by_hash silently miss."""
-    from pf_core.llm.tracking import compute_input_hash
+    from pw_core.llm.tracking import compute_input_hash
 
     dirty_sampling = {"temperature": 0.3, "model": "hash-model", "custom_knob": 1}
     repo = LlmRunRepo()
@@ -318,7 +318,7 @@ def test_record_extra_run_values_overrides_framework_column(tracking_db):
     assert row["provider"] == "from-extra"
 
 
-def test_record_extra_run_values_writes_project_column(pf_engine):
+def test_record_extra_run_values_writes_project_column(pw_engine):
     """A consumer that adds a project-specific column to ``llm_runs`` can
     write it through ``extra_run_values`` without overriding ``record()``.
 
@@ -331,19 +331,19 @@ def test_record_extra_run_values_writes_project_column(pf_engine):
 
     s.llm_runs.append_column(Column("project_widget_id", Integer, nullable=True))
     try:
-        metadata.create_all(pf_engine)
+        metadata.create_all(pw_engine)
         run_id = LlmRunRepo().record(
             agent_type="drafter",
             model="claude-opus-4-7",
             extra_run_values={"project_widget_id": 4242},
         )
-        with pf_engine.connect() as conn:
+        with pw_engine.connect() as conn:
             row = (
                 conn.execute(s.llm_runs.select().where(s.llm_runs.c.id == run_id)).mappings().one()
             )
         assert row["project_widget_id"] == 4242
     finally:
-        metadata.drop_all(pf_engine)
+        metadata.drop_all(pw_engine)
         s.llm_runs._columns.remove(s.llm_runs.c.project_widget_id)
 
 
@@ -558,7 +558,7 @@ def test_validation_repo_stores_non_finite_details_as_null(tracking_db):
 
 
 def test_record_skips_non_finite_metrics_and_keeps_the_run(tracking_db, caplog):
-    with caplog.at_level(logging.WARNING, logger="pf_core.llm.tracking.repo"):
+    with caplog.at_level(logging.WARNING, logger="pw_core.llm.tracking.repo"):
         run_id = LlmRunRepo().record(
             agent_type="drafter",
             model="claude-opus-4-7",
@@ -580,7 +580,7 @@ def test_record_with_only_non_finite_metrics_writes_no_metric_rows(tracking_db):
 
 def test_metric_repo_skips_non_finite_values(tracking_db, caplog):
     run_id = LlmRunRepo().record(agent_type="drafter", model="claude-opus-4-7")
-    with caplog.at_level(logging.WARNING, logger="pf_core.llm.tracking.subrepos"):
+    with caplog.at_level(logging.WARNING, logger="pw_core.llm.tracking.subrepos"):
         LlmRunMetricRepo().record(run_id, metrics={"m": float("inf"), "ok": 1.0})
     assert LlmRunMetricRepo().list_for_run(run_id) == {"ok": 1.0}
     assert _count_events(caplog, "llm_run_metric_non_finite") == 1
@@ -1126,7 +1126,7 @@ def test_cost_by_model_aggregates_runs(tracking_db):
     opus = by_model["claude-opus-4-7"]
     assert opus["runs"] == 2
     assert float(opus["total_cost_usd"]) == pytest.approx(0.03)
-    # prompt_tokens already excludes cached input (pf_core.pricing bills
+    # prompt_tokens already excludes cached input (pw_core.pricing bills
     # cache_read separately on top of it), so nothing is subtracted here.
     assert opus["billable_input"] == 1000 + 1500
     assert opus["cached_input"] == 500

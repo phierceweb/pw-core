@@ -1,4 +1,4 @@
-"""Tests for pf_core.web.json — JSON serialization helpers."""
+"""Tests for pw_core.web.json — JSON serialization helpers."""
 
 import json
 from datetime import date, datetime, timezone
@@ -6,7 +6,7 @@ from decimal import Decimal
 
 import pytest
 
-from pf_core.web.json import json_default, safe_json_response
+from pw_core.web.json import json_default, safe_json_response
 
 
 class TestJsonDefault:

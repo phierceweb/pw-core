@@ -1,4 +1,4 @@
-"""Tests for the client registry in pf_core.clients.routing.
+"""Tests for the client registry in pw_core.clients.routing.
 
 The registry is the extension point that lets the model router's YAML
 ``backends:`` keys name consumer-provided clients (ollama, openai-direct, …)
@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import pytest
 
-from pf_core.clients import claude_code, openrouter
-from pf_core.clients.routing import (
+from pw_core.clients import claude_code, openrouter
+from pw_core.clients.routing import (
     BUILTIN_BACKENDS,
     clear_client_cache,
     get_client_for_backend,
@@ -19,7 +19,7 @@ from pf_core.clients.routing import (
     registered_backends,
     unregister_client,
 )
-from pf_core.exceptions import ConfigurationError
+from pw_foundation.exceptions import ConfigurationError
 
 
 @pytest.fixture(autouse=True)

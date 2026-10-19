@@ -1,6 +1,6 @@
 ---
 name: Bug report
-about: Something in pf-core behaves incorrectly
+about: Something in pw-core behaves incorrectly
 title: ""
 labels: bug
 ---
@@ -19,7 +19,7 @@ The smallest snippet or steps that trigger it. A failing test is ideal.
 ```
 
 **Environment**
-- pf-core version: <!-- e.g. 0.7.2, or git SHA -->
+- pw-core version: <!-- e.g. 0.7.2, or git SHA -->
 - Install extras: <!-- e.g. [full,llm,postgres] -->
 - Python version:
 - OS:

@@ -3,7 +3,7 @@
 Every other Anthropic test mocks ``anthropic.Anthropic`` at the module boundary,
 so it passes whether the SDK is present, absent, or incompatible. These bind the
 kwargs ``chat()`` actually builds against the real ``Messages.create`` signature,
-which is the only thing that catches the SDK dropping a parameter pf-core sends.
+which is the only thing that catches the SDK dropping a parameter pw-core sends.
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ import pytest
 
 anthropic = pytest.importorskip("anthropic", reason="requires the [anthropic] extra")
 
-from pf_core.clients.anthropic import AnthropicClient  # noqa: E402
+from pw_core.clients.anthropic import AnthropicClient  # noqa: E402
 
 
 def _canned_response():

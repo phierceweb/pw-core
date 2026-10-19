@@ -1,10 +1,10 @@
-"""Tests for pf_core.db.json_compat — three-dialect SQL fragment helpers."""
+"""Tests for pw_core.db.json_compat — three-dialect SQL fragment helpers."""
 
 from __future__ import annotations
 
 import pytest
 
-from pf_core.db.json_compat import (
+from pw_core.db.json_compat import (
     SUPPORTED_DIALECTS,
     autoinc_pk,
     bool_type,

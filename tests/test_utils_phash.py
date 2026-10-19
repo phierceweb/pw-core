@@ -1,4 +1,4 @@
-"""Tests for pf_core.utils.phash — perceptual-hash image dedup helpers.
+"""Tests for pw_core.utils.phash — perceptual-hash image dedup helpers.
 
 These tests exercise the hex-string utilities (Hamming distance,
 clustering, decoration detection) directly. The ``compute_phash``
@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from pf_core.utils.phash import (
+from pw_core.utils.phash import (
     cluster_phashes,
     detect_decoration_basenames,
     hamming_distance_hex,
@@ -124,7 +124,7 @@ def _make_test_png(path: Path, *, size: int = 16) -> None:
 @pytest.mark.skipif(not _have_phash_deps(), reason="[image-phash] extra not installed")
 def test_compute_phash_returns_hex_string(tmp_path: Path) -> None:
     """A 16x16 PNG hashes to a 16-char hex string (8x8 DCT, 64 bits)."""
-    from pf_core.utils.phash import compute_phash
+    from pw_core.utils.phash import compute_phash
 
     target = tmp_path / "img.png"
     _make_test_png(target)
@@ -146,7 +146,7 @@ def test_compute_phash_refuses_psd_without_decoding(tmp_path: Path, monkeypatch)
     """Pillow picks the decoder by content, so a PSD named .png must not reach the PSD plugin."""
     from PIL import PsdImagePlugin, UnidentifiedImageError
 
-    from pf_core.utils.phash import compute_phash
+    from pw_core.utils.phash import compute_phash
 
     target = tmp_path / "embedded.png"
     _write_psd(target)
@@ -170,7 +170,7 @@ def test_compute_phash_refuses_other_raster_formats(tmp_path: Path, fmt: str) ->
     """Formats outside the allowlist are refused even when Pillow can decode them, so widening the list fails here."""
     from PIL import Image, UnidentifiedImageError
 
-    from pf_core.utils.phash import compute_phash
+    from pw_core.utils.phash import compute_phash
 
     target = tmp_path / "embedded.png"
     try:
@@ -202,7 +202,7 @@ def test_compute_phash_hashes_document_formats(tmp_path: Path, fmt: str, name: s
     import imagehash
     from PIL import Image
 
-    from pf_core.utils.phash import compute_phash
+    from pw_core.utils.phash import compute_phash
 
     target = tmp_path / name
     img = Image.linear_gradient("L").convert("RGB").resize((32, 32))
@@ -239,7 +239,7 @@ def test_compute_phash_missing_deps_raises_import_error(monkeypatch) -> None:
     import sys
 
     monkeypatch.setitem(sys.modules, "imagehash", None)
-    from pf_core.utils.phash import compute_phash
+    from pw_core.utils.phash import compute_phash
 
     with pytest.raises(ImportError, match=r"\[image-phash\] extra"):
         compute_phash(Path("/nonexistent.png"))

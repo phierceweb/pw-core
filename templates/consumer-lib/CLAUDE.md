@@ -1,18 +1,18 @@
 # __NAME__ — AI assistant context
 
-A pf-core consumer: a library/tool in the **src-layout** (no web/DB layers),
-built on the pf-core framework.
+A library/tool in the **src-layout** (no web/DB layers), built on pw-foundation and pw-core.
 
 ## Rules
 
-Project rules live in `.ai/rules/` (copied from pf-core; `bin/setup` symlinks
-`.claude/rules` and `.cursor/rules` to them). Read them for layering, code
-style, error handling, config-driven design, and structure conventions.
+Project rules live in `.ai/rules/`, installed by `pw-setup` (which `bin/setup` runs) from both
+packages: pw-foundation's (code style, config-driven design, error handling, logging,
+framework-first, docs-sync, plans) and pw-core's (layering, anti-patterns, project-structure).
+`.claude/rules` and `.cursor/rules` point at them.
 
 ## Layout
 
-- `src/__PKG__/cli.py` — CLI entry (thin; pf-core `create_cli` / `run_cli`).
-- `src/__PKG__/config.py` — `Config(AppConfig)` subclass; the `cfg` singleton.
+- `src/__PKG__/cli.py` — CLI entry (thin; `pw_core.cli.create_cli` / `run_cli`).
+- `src/__PKG__/config.py` — `Config(AppConfig)` subclass of `pw_core.config.AppConfig`; the `cfg` singleton.
 - Add one package per domain under `src/__PKG__/`. Grow a layer dir
   (`<domain>/services/`, `orchestrators/`, `utils/`) only when it has ≥2 files.
 
@@ -20,12 +20,16 @@ style, error handling, config-driven design, and structure conventions.
 
 `bin/setup`, `bin/run <cmd>`, `bin/test`, `bin/lint`.
 
-## pf-core
+## The framework
 
-Declared in `pyproject.toml` as `pf-core[__EXTRAS__]`. Import from `pf_core.*`.
-**Module reference: [docs/pf-core/modules.md](docs/pf-core/modules.md)** —
-`bin/setup` symlinks the installed pf-core's docs into the project docs dir.
-If the link is missing, resolve directly:
-`bin/run python -c "import pf_core, pathlib; print(pathlib.Path(pf_core.__file__).parent / 'docs')"`.
-Never reach for a third-party library when pf-core already provides it
-(logging, config, exceptions, parallel, LLM clients, etc.).
+Two packages, both declared in `pyproject.toml`:
+
+- **pw-foundation** (`pw_foundation.*`) — logging, exceptions, the config base and env
+  resolvers, pure utils (dates, ids, hashing, json, yaml, slugify, throttle), `Service`,
+  parallel helpers, output reporters, and the `pw-guards` / `pw-doctor` / `pw-setup` tools.
+  Module index: [docs/pw-foundation/modules.md](docs/pw-foundation/modules.md).
+- **pw-core[__EXTRAS__]** (`pw_core.*`) — the Typer CLI scaffold, LLM clients and output
+  guards, fetch, db, web, jobs. Module index: [docs/pw-core/modules.md](docs/pw-core/modules.md).
+
+`pw-setup` links each package's bundled docs under `docs/`; if a link is missing, run
+`bin/run pw-setup`. Never reach for a third-party library when the framework already provides it.

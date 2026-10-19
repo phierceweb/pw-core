@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """Verify the install tiers resolve and guard correctly.
 
-Builds throwaway venvs and runs smoke checks inside each:
-  1. bare `pip install pf-core` (no extras) -> bin/bare_install_smoke.py
+Builds the wheel once through the sdist (`python -m build`, the route publish.yml takes,
+so a stale build/ tree never leaks in), then throwaway venvs with smoke checks inside each:
+  1. the bare wheel (no extras) -> bin/bare_install_smoke.py
        - foundation (+ stdlib/pyyaml llm members) import on five base deps,
        - httpx / pydantic / json-repair / tenacity / typer absent,
        - parse/validate guard to [validate], clients to [llm], url utils to [http].
-  2. `pip install pf-core[validate]` -> bin/validate_install_smoke.py
+  2. the wheel with `[validate]` -> bin/validate_install_smoke.py
        - anti-slop guards (parse + validate) import with NO client/HTTP stack,
        - clients still guard to [llm], tracked to [tracking].
 
@@ -16,7 +17,7 @@ Run from anywhere:
 Exit codes:
     0 -- all phases lean and guards fire correctly
     1 -- a smoke check failed
-    2 -- venv creation or install failed
+    2 -- build, venv creation or install failed
 """
 
 from __future__ import annotations
@@ -29,15 +30,26 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 
-# (label, install spec relative to REPO, smoke script)
+# (label, extras, smoke script)
 PHASES = [
-    ("bare (no extras)", str(REPO), REPO / "bin" / "bare_install_smoke.py"),
-    ("[validate]", f"{REPO}[validate]", REPO / "bin" / "validate_install_smoke.py"),
+    ("bare (no extras)", "", REPO / "bin" / "bare_install_smoke.py"),
+    ("[validate]", "[validate]", REPO / "bin" / "validate_install_smoke.py"),
 ]
 
 
+def _build_wheel(outdir: Path) -> Path | None:
+    """sdist -> wheel in an isolated env; None when the build fails."""
+    print(f"Building sdist + wheel into {outdir} ...")
+    if subprocess.run(
+        [sys.executable, "-m", "build", "--outdir", str(outdir)], cwd=REPO
+    ).returncode:
+        print("ERROR: python -m build failed (is the `build` package installed?)", file=sys.stderr)
+        return None
+    return next(outdir.glob("pw_core-*.whl"))
+
+
 def _base_python() -> str | None:
-    """A Python >=3.12 to build the venv with (pf-core's floor)."""
+    """A Python >=3.12 to build the venv with (pw-core's floor)."""
     if sys.version_info >= (3, 12):
         return sys.executable
     for name in ("python3.13", "python3.12"):
@@ -65,7 +77,7 @@ def _run_phase(base_py: str, label: str, spec: str, smoke: Path) -> int:
             return 2
 
         print("Running smoke checks ...\n")
-        # cwd=tmp so `import pf_core` resolves to the installed copy, never the
+        # cwd=tmp so `import pw_core` resolves to the installed copy, never the
         # source tree under REPO/src.
         return 1 if subprocess.run([str(py), str(smoke)], cwd=tmp).returncode else 0
 
@@ -77,9 +89,13 @@ def main() -> int:
         return 2
 
     worst = 0
-    for label, spec, smoke in PHASES:
-        rc = _run_phase(base_py, label, spec, smoke)
-        worst = max(worst, rc)
+    with tempfile.TemporaryDirectory(prefix="pfbuild-") as dist:
+        wheel = _build_wheel(Path(dist))
+        if wheel is None:
+            return 2
+        for label, extras, smoke in PHASES:
+            rc = _run_phase(base_py, label, f"{wheel}{extras}", smoke)
+            worst = max(worst, rc)
     return worst
 
 

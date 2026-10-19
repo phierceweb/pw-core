@@ -8,10 +8,10 @@ import pytest
 from pydantic import BaseModel
 from sqlalchemy import update
 
-from pf_core.db import transaction
-from pf_core.jobs import _schema as s
-from pf_core.jobs import clear_registry, register_kind
-from pf_core.llm.tracking import clear_resolver_caches, metadata
+from pw_core.db import transaction
+from pw_core.jobs import _schema as s
+from pw_core.jobs import clear_registry, register_kind
+from pw_core.llm.tracking import clear_resolver_caches, metadata
 
 
 class SimpleInputs(BaseModel):
@@ -34,11 +34,11 @@ def _reset_jobs_state():
 
 
 @pytest.fixture()
-def jobs_db(pf_engine):
+def jobs_db(pw_engine):
     """In-memory SQLite engine with jobs + llm_* tables created."""
-    metadata.create_all(pf_engine)
-    yield pf_engine
-    metadata.drop_all(pf_engine)
+    metadata.create_all(pw_engine)
+    yield pw_engine
+    metadata.drop_all(pw_engine)
 
 
 @pytest.fixture()

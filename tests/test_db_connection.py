@@ -1,4 +1,4 @@
-"""Tests for pf_core.db.connection — database connection management."""
+"""Tests for pw_core.db.connection — database connection management."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ import types
 import pytest
 from sqlalchemy import text
 
-from pf_core.db.connection import (
+from pw_core.db.connection import (
     DatabaseUnavailableError,
     _install_mysqldb_shim,
     connect_args,
@@ -23,7 +23,7 @@ from pf_core.db.connection import (
     reset_engine,
     transaction,
 )
-from pf_core.exceptions import ConfigurationError
+from pw_foundation.exceptions import ConfigurationError
 
 
 class TestDbUrl:
@@ -71,13 +71,13 @@ class TestIsSqlite:
 
 class TestIsPostgres:
     def test_postgresql_url(self):
-        from pf_core.db.connection import is_postgres
+        from pw_core.db.connection import is_postgres
 
         assert is_postgres("postgresql+psycopg://localhost/db") is True
         assert is_postgres("postgres://localhost/db") is True
 
     def test_non_postgres_urls(self):
-        from pf_core.db.connection import is_postgres
+        from pw_core.db.connection import is_postgres
 
         assert is_postgres("sqlite:///x.db") is False
         assert is_postgres("mysql://localhost/db") is False
@@ -85,25 +85,25 @@ class TestIsPostgres:
 
 class TestDialectOf:
     def test_sqlite(self):
-        from pf_core.db.connection import dialect_of
+        from pw_core.db.connection import dialect_of
 
         assert dialect_of("sqlite:///x.db") == "sqlite"
 
     def test_mysql(self):
-        from pf_core.db.connection import dialect_of
+        from pw_core.db.connection import dialect_of
 
         assert dialect_of("mysql://localhost/db") == "mysql"
         assert dialect_of("mariadb://localhost/db") == "mysql"
 
     def test_postgresql(self):
-        from pf_core.db.connection import dialect_of
+        from pw_core.db.connection import dialect_of
 
         assert dialect_of("postgresql+psycopg://localhost/db") == "postgresql"
         assert dialect_of("postgres://localhost/db") == "postgresql"
 
     def test_unknown_raises(self):
-        from pf_core.db.connection import dialect_of
-        from pf_core.exceptions import ConfigurationError
+        from pw_core.db.connection import dialect_of
+        from pw_foundation.exceptions import ConfigurationError
 
         with pytest.raises(ConfigurationError):
             dialect_of("oracle://localhost/db")
@@ -116,7 +116,7 @@ class TestPostgresEngine:
     def test_engine_has_postgresql_dialect(self):
         psycopg = pytest.importorskip("psycopg")  # noqa: F841
 
-        from pf_core.db.connection import get_engine, reset_engine
+        from pw_core.db.connection import get_engine, reset_engine
 
         reset_engine()
         try:
@@ -128,25 +128,25 @@ class TestPostgresEngine:
 
 class TestPublicReExports:
     def test_is_postgres_re_exported(self):
-        from pf_core.db import is_postgres as exported
-        from pf_core.db.connection import is_postgres
+        from pw_core.db import is_postgres as exported
+        from pw_core.db.connection import is_postgres
 
         assert exported is is_postgres
 
     def test_dialect_of_re_exported(self):
-        from pf_core.db import dialect_of as exported
-        from pf_core.db.connection import dialect_of
+        from pw_core.db import dialect_of as exported
+        from pw_core.db.connection import dialect_of
 
         assert exported is dialect_of
 
 
 class TestGetEngine:
-    def test_returns_engine(self, pf_engine):
-        # pf_engine fixture already sets up the engine
+    def test_returns_engine(self, pw_engine):
+        # pw_engine fixture already sets up the engine
         engine = get_engine()
         assert engine is not None
 
-    def test_caches_engine(self, pf_engine):
+    def test_caches_engine(self, pw_engine):
         assert get_engine() is get_engine()
 
 
@@ -154,7 +154,7 @@ class TestGetEngineConcurrency:
     """Two threads racing an uncached get_engine must build exactly one engine."""
 
     def test_single_engine_built_under_a_race(self, monkeypatch, tmp_path):
-        import pf_core.db.connection as conn_mod
+        import pw_core.db.connection as conn_mod
 
         real_create = conn_mod.create_engine
         created: list = []
@@ -191,10 +191,10 @@ class TestGetEngineConcurrency:
 
 
 class TestGetEngineUrlMismatchWarning:
-    def test_differing_url_warns_and_returns_cached(self, pf_engine, caplog):
-        with caplog.at_level(logging.WARNING, logger="pf_core.db.connection"):
+    def test_differing_url_warns_and_returns_cached(self, pw_engine, caplog):
+        with caplog.at_level(logging.WARNING, logger="pw_core.db.connection"):
             engine = get_engine("mysql://alice:s3cr3t@db.example.test:3306/other")
-        assert engine is pf_engine
+        assert engine is pw_engine
         messages = [r.getMessage() for r in caplog.records]
         assert any("get_engine_url_ignored" in m for m in messages)
         joined = " ".join(messages)
@@ -202,17 +202,17 @@ class TestGetEngineUrlMismatchWarning:
         assert "alice" not in joined
         assert "db.example.test" in joined
 
-    def test_matching_url_no_warning(self, pf_engine, caplog):
-        url = pf_engine.url.render_as_string(hide_password=False)
-        with caplog.at_level(logging.WARNING, logger="pf_core.db.connection"):
+    def test_matching_url_no_warning(self, pw_engine, caplog):
+        url = pw_engine.url.render_as_string(hide_password=False)
+        with caplog.at_level(logging.WARNING, logger="pw_core.db.connection"):
             engine = get_engine(url)
-        assert engine is pf_engine
+        assert engine is pw_engine
         assert not [r for r in caplog.records if "get_engine_url_ignored" in r.getMessage()]
 
-    def test_none_url_no_warning(self, pf_engine, caplog):
-        with caplog.at_level(logging.WARNING, logger="pf_core.db.connection"):
+    def test_none_url_no_warning(self, pw_engine, caplog):
+        with caplog.at_level(logging.WARNING, logger="pw_core.db.connection"):
             engine = get_engine()
-        assert engine is pf_engine
+        assert engine is pw_engine
         assert not [r for r in caplog.records if "get_engine_url_ignored" in r.getMessage()]
 
 
@@ -227,7 +227,7 @@ class TestMysqldbShim:
 
     def test_import_pf_core_db_does_not_install_shim(self):
         self._run(
-            "import sys, pf_core.db; "
+            "import sys, pw_core.db; "
             "assert 'MySQLdb' not in sys.modules, 'shim installed at import time'"
         )
 
@@ -235,7 +235,7 @@ class TestMysqldbShim:
         pytest.importorskip("pymysql")
         self._run(
             "import sys; "
-            "from pf_core.db.connection import get_engine; "
+            "from pw_core.db.connection import get_engine; "
             "engine = get_engine('mysql://demo:demo@127.0.0.1:3306/nope'); "
             "import pymysql; "
             "assert sys.modules.get('MySQLdb') is pymysql; "
@@ -246,7 +246,7 @@ class TestMysqldbShim:
         pytest.importorskip("pymysql")
         self._run(
             "import sys; "
-            "from pf_core.db.connection import get_engine; "
+            "from pw_core.db.connection import get_engine; "
             "engine = get_engine('mysql+pymysql://demo:demo@127.0.0.1:3306/nope'); "
             "assert 'MySQLdb' not in sys.modules; "
             "assert engine.dialect.driver == 'pymysql'"
@@ -274,8 +274,8 @@ class TestMysqldbShim:
 
 
 class TestResetEngine:
-    def test_clears_the_cached_engine(self, pf_engine):
-        import pf_core.db.connection as conn_mod
+    def test_clears_the_cached_engine(self, pw_engine):
+        import pw_core.db.connection as conn_mod
 
         get_engine()
         assert conn_mod._engine is not None
@@ -286,19 +286,19 @@ class TestResetEngine:
 class TestTransaction:
     @staticmethod
     def _count(name: str) -> int:
-        # Read back through a NEW transaction: pf_connection holds its own open
+        # Read back through a NEW transaction: pw_connection holds its own open
         # one, so a commit here is not reliably visible on it.
         with transaction() as conn:
             return conn.execute(
                 text("SELECT COUNT(*) FROM items WHERE name = :name"), {"name": name}
             ).scalar()
 
-    def test_commits_on_success(self, pf_tables, pf_connection):
+    def test_commits_on_success(self, pw_tables, pw_connection):
         with transaction() as conn:
             conn.execute(text("INSERT INTO items (name) VALUES (:name)"), {"name": "tx_commit"})
         assert self._count("tx_commit") == 1
 
-    def test_rolls_back_on_exception(self, pf_tables, pf_connection):
+    def test_rolls_back_on_exception(self, pw_tables, pw_connection):
         with pytest.raises(RuntimeError, match="boom"):
             with transaction() as conn:
                 conn.execute(
@@ -307,14 +307,14 @@ class TestTransaction:
                 raise RuntimeError("boom")
         assert self._count("tx_rollback") == 0
 
-    def test_yields_connection(self, pf_tables, pf_connection):
+    def test_yields_connection(self, pw_tables, pw_connection):
         with transaction() as conn:
             result = conn.execute(text("SELECT 1")).scalar()
             assert result == 1
 
 
 class TestPing:
-    def test_ping_executes_a_query(self, pf_engine):
+    def test_ping_executes_a_query(self, pw_engine):
         from sqlalchemy import event
 
         seen: list[str] = []
@@ -322,17 +322,17 @@ class TestPing:
         def _spy(conn, cursor, statement, *args):
             seen.append(statement)
 
-        event.listen(pf_engine, "before_cursor_execute", _spy)
+        event.listen(pw_engine, "before_cursor_execute", _spy)
         try:
             ping()
         finally:
-            event.remove(pf_engine, "before_cursor_execute", _spy)
+            event.remove(pw_engine, "before_cursor_execute", _spy)
         assert any("SELECT 1" in s for s in seen)
 
 
 def _engine_kwargs(monkeypatch, url: str) -> dict:
     """Kwargs ``get_engine`` hands to ``create_engine`` for ``url``."""
-    import pf_core.db.connection as conn_mod
+    import pw_core.db.connection as conn_mod
 
     real_create = conn_mod.create_engine
     captured: dict = {}

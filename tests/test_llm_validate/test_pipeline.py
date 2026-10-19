@@ -6,8 +6,8 @@ import json
 
 import pytest
 
-from pf_core.exceptions import PipelineNotRegisteredError
-from pf_core.llm.validate import (
+from pw_core.llm.validate import PipelineNotRegisteredError
+from pw_core.llm.validate import (
     ValidationResult,
     ValidationSignal,
     cross_field_validator,

@@ -1,4 +1,4 @@
-"""Tests for pf_core.pipeline.baseline."""
+"""Tests for pw_core.pipeline.baseline."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from pf_core.pipeline.baseline import (
+from pw_core.pipeline.baseline import (
     BaselineConfig,
     BaselineRecord,
     auto_snapshot_on_version_change,
@@ -218,7 +218,7 @@ def test_auto_snapshot_failure_is_non_fatal(tmp_path: Path, monkeypatch) -> None
     out = tmp_path / "out"
     _populate_live_output(out, version="1.0.0")
 
-    import pf_core.pipeline.baseline as baseline_mod
+    import pw_core.pipeline.baseline as baseline_mod
 
     def boom(*args, **kwargs):
         raise OSError("disk full")

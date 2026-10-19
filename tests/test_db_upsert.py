@@ -1,9 +1,9 @@
-"""Tests for pf_core.db.insert_ignore / upsert — dialect-agnostic upserts.
+"""Tests for pw_core.db.insert_ignore / upsert — dialect-agnostic upserts.
 
-SQLite behaviour is exercised at runtime via the ``pf_engine`` fixture. Every supported dialect's
+SQLite behaviour is exercised at runtime via the ``pw_engine`` fixture. Every supported dialect's
 generated SQL is pinned by compiling against that dialect — which needs no database driver, so the
 suite stays dependency-light (no pymysql / psycopg). The MySQL *runtime* path is exercised by a
-real roundtrip against either ``PF_CORE_TEST_MYSQL_URL`` or an ephemeral ``testcontainers`` MySQL
+real roundtrip against either ``PW_CORE_TEST_MYSQL_URL`` or an ephemeral ``testcontainers`` MySQL
 (needs Docker); it skips cleanly when neither is available.
 """
 
@@ -25,11 +25,11 @@ from sqlalchemy import (
 from sqlalchemy.dialects import mysql, postgresql, sqlite
 from sqlalchemy.exc import DBAPIError
 
-from pf_core.db import insert_ignore, transaction, upsert
-from pf_core.db.upsert import _insert_ignore_stmt, _upsert_stmt
-from pf_core.exceptions import InvalidInputError
+from pw_core.db import insert_ignore, transaction, upsert
+from pw_core.db.upsert import _insert_ignore_stmt, _upsert_stmt
+from pw_foundation.exceptions import InvalidInputError
 
-pytest_plugins = ["pf_core.testing.db_fixtures"]
+pytest_plugins = ["pw_core.testing.db_fixtures"]
 
 _md = MetaData()
 _widgets = Table(
@@ -42,8 +42,8 @@ _widgets = Table(
 
 
 @pytest.fixture()
-def widgets(pf_engine):
-    _md.create_all(pf_engine)
+def widgets(pw_engine):
+    _md.create_all(pw_engine)
     return _widgets
 
 
@@ -137,7 +137,7 @@ def test_unsupported_dialect_raises():
 # ---------------------------------------------------------------------------
 # MySQL / MariaDB — real runtime roundtrip
 #
-# Source order: PF_CORE_TEST_MYSQL_URL (e.g. a CI service container), else an
+# Source order: PW_CORE_TEST_MYSQL_URL (e.g. a CI service container), else an
 # ephemeral testcontainers MySQL (needs Docker). Skips cleanly if neither is
 # available, so the suite stays green without Docker.
 # ---------------------------------------------------------------------------
@@ -145,7 +145,7 @@ def test_unsupported_dialect_raises():
 
 @pytest.fixture(scope="module")
 def mysql_engine():
-    url = os.environ.get("PF_CORE_TEST_MYSQL_URL")
+    url = os.environ.get("PW_CORE_TEST_MYSQL_URL")
     if url:
         engine = create_engine(url)
         try:
@@ -153,7 +153,7 @@ def mysql_engine():
                 pass
         except Exception as e:  # set but unreachable → skip, don't error the module
             engine.dispose()
-            pytest.skip(f"PF_CORE_TEST_MYSQL_URL set but not reachable: {e}")
+            pytest.skip(f"PW_CORE_TEST_MYSQL_URL set but not reachable: {e}")
         yield engine
         engine.dispose()
         return
@@ -162,7 +162,7 @@ def mysql_engine():
         "testcontainers.mysql", reason="testcontainers[mysql] not installed"
     )
     pytest.importorskip("pymysql", reason="MySQL driver ([mysql] extra) not installed")
-    image = os.environ.get("PF_CORE_TEST_MYSQL_IMAGE", "mysql:8.4")
+    image = os.environ.get("PW_CORE_TEST_MYSQL_IMAGE", "mysql:8.4")
     try:
         container = mysql_mod.MySqlContainer(image)
         container.start()
@@ -180,7 +180,7 @@ def test_mysql_roundtrip(mysql_engine):
     assert mysql_engine.dialect.name in ("mysql", "mariadb")  # really a MySQL family server
     md = MetaData()
     t = Table(
-        "pf_core_upsert_test",
+        "pw_core_upsert_test",
         md,
         Column("slug", String(64), primary_key=True),  # MySQL PKs need a bounded length
         Column("name", Text),
@@ -194,14 +194,14 @@ def test_mysql_roundtrip(mysql_engine):
             # second insert conflicts → skipped AND the original row is untouched
             assert insert_ignore(c, t, {"slug": "a", "name": "A2", "n": 2}, conflict=["slug"]) == 0
             row = c.execute(
-                text("SELECT name, n FROM pf_core_upsert_test WHERE slug = 'a'")
+                text("SELECT name, n FROM pw_core_upsert_test WHERE slug = 'a'")
             ).fetchone()
             assert tuple(row) == ("A", 1)
             upsert(
                 c, t, {"slug": "a", "name": "A3", "n": 3}, conflict=["slug"], update=["name", "n"]
             )
             row = c.execute(
-                text("SELECT name, n FROM pf_core_upsert_test WHERE slug = 'a'")
+                text("SELECT name, n FROM pw_core_upsert_test WHERE slug = 'a'")
             ).fetchone()
             assert tuple(row) == ("A3", 3)
     finally:
@@ -216,7 +216,7 @@ def test_mysql_insert_ignore_does_not_swallow_non_duplicate_errors(mysql_engine)
     preserves the original on a dup); this is the test that actually pins the fix.
     """
     md = MetaData()
-    t = Table("pf_core_trunc_test", md, Column("code", String(4), primary_key=True))
+    t = Table("pw_core_trunc_test", md, Column("code", String(4), primary_key=True))
     md.drop_all(mysql_engine)
     md.create_all(mysql_engine)
     try:

@@ -1,4 +1,4 @@
-"""Every pf-core function that looks at an exception class pydantic can wrap also unwraps it.
+"""Every pw-core function that looks at an exception class pydantic can wrap also unwraps it.
 
 pydantic wraps a validator's InvalidInputError in a ValidationError, so a function that catches,
 tests for, or collects ``FlowException`` / ``InvalidInputError`` / a validation error must call
@@ -12,7 +12,7 @@ import ast
 from collections.abc import Iterator
 from pathlib import Path
 
-import pf_core
+import pw_core
 
 _WRAPPABLE = frozenset(
     {
@@ -27,11 +27,12 @@ _WRAPPABLE = frozenset(
 )
 _NO_MODEL = "its try block builds no pydantic model, so nothing it catches can be wrapped"
 EXEMPT = {
-    ("exceptions.py", "unwrap_flow_exception"): "it is the unwrap",
-    ("exceptions.py", "_converted_before"): "part of the unwrap",
     ("llm/tracked.py", "tracked_call"): _NO_MODEL,
     ("budget/snapshot_job.py", "refresh_snapshots"): _NO_MODEL,
-    ("utils/dates.py", "try_parse_date"): _NO_MODEL,
+    (
+        "cli/__init__.py",
+        "_also_a_builtin_error",
+    ): "classifies a class; its one caller, _parser_flow_exception, unwraps",
 }
 _SKIPPED = (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef, ast.Raise)
 
@@ -52,7 +53,7 @@ def _own_nodes(fn: ast.FunctionDef | ast.AsyncFunctionDef) -> Iterator[ast.AST]:
 
 def _sites() -> dict[tuple[str, str], bool]:
     """``(path, function) -> whether it unwraps`` for each function that looks at a class."""
-    root = Path(pf_core.__file__).parent
+    root = Path(pw_core.__file__).parent
     out: dict[tuple[str, str], bool] = {}
     for path in sorted(root.rglob("*.py")):
         for fn in ast.walk(ast.parse(path.read_bytes())):
@@ -79,8 +80,6 @@ def test_the_boundaries_that_answer_one_are_found_and_unwrap() -> None:
     sites = _sites()
     for key in [
         ("cli/__init__.py", "run_cli"),
-        ("log.py", "log_exception"),
-        ("parallel.py", "wrapper"),
         ("llm/router.py", "call_with_fallback"),
         ("jobs/registry.py", "_validate_against_schema"),
         ("llm/validate/_pydantic.py", "validate_shape"),

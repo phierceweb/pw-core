@@ -1,11 +1,11 @@
 # __NAME__
 
-A pf-core full-stack app (FastAPI + SQLAlchemy, app-layout).
+A full-stack app (FastAPI + SQLAlchemy, app-layout) on pw-foundation and pw-core.
 
 ## Setup
 
 ```bash
-bin/setup        # venv (3.12+) + editable install + .env
+bin/setup        # venv (3.12+) + editable install + .env + framework wiring
 bin/web          # start the server → http://127.0.0.1:8000/
 ```
 
@@ -14,7 +14,7 @@ bin/web          # start the server → http://127.0.0.1:8000/
 ```bash
 bin/web          # run the server (uvicorn)
 bin/test         # pytest
-bin/lint         # ruff + pf-core's file-size + layering gate
+bin/lint         # ruff + the pw-guards structural gate (file sizes + layering)
 ```
 
 ## Layout
@@ -23,4 +23,5 @@ bin/lint         # ruff + pf-core's file-size + layering gate
 `services/` (business logic), `repo/` (data access), `orchestrators/`
 (multi-step workflows). No layer imports from a layer above it; see
 `.ai/rules/layering.md` and `.ai/rules/project-structure.md`. Built on
-[pf-core](https://github.com/phierceweb/pf-core).
+[pw-foundation](https://github.com/phierceweb/pw-foundation) and
+[pw-core](https://github.com/phierceweb/pw-core).

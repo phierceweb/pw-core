@@ -1,6 +1,6 @@
 # Error Handling
 
-All exceptions thrown from service and orchestrator code must use the hierarchy in `pf_core.exceptions`. Never raise bare `Exception` — it loses structured context and produces an unsearchable log key.
+All exceptions thrown from service and orchestrator code must use the hierarchy in `pw_foundation.exceptions`. Never raise bare `Exception` — it loses structured context and produces an unsearchable log key.
 
 ---
 
@@ -31,7 +31,7 @@ All exceptions thrown from service and orchestrator code must use the hierarchy 
 Projects subclass these for domain-specific errors:
 
 ```python
-from pf_core.exceptions import ClientError
+from pw_foundation.exceptions import ClientError
 
 class UploadError(ClientError):
     """External upload API call failed."""
@@ -52,7 +52,7 @@ raise UploadError(
 ## `log_exception()` — the logging function
 
 ```python
-from pf_core.log import log_exception
+from pw_foundation.log import log_exception
 
 log_exception(
     exc,
@@ -104,6 +104,6 @@ for task in pending:
 
 **CLI:** Catch `FlowException` → print message, exit 1. Catch `AppError` → log_exception + print, exit 1.
 
-**API:** FastAPI error handlers in `pf_core.web.app_factory` map `FlowException` → 4xx JSON/HTML; `AppError` → 500 JSON/HTML.
+**API:** FastAPI error handlers in `pw_core.web.app_factory` map `FlowException` → 4xx JSON/HTML; `AppError` → 500 JSON/HTML.
 
-Both boundaries also answer a pydantic `ValidationError` that wraps a validator's `InvalidInputError` (pydantic wraps it because it is a `ValueError`) as that `InvalidInputError`, whatever else it holds — `pf_core.exceptions.unwrap_flow_exception`. A boundary you write yourself should do the same.
+Both boundaries also answer a pydantic `ValidationError` that wraps a validator's `InvalidInputError` (pydantic wraps it because it is a `ValueError`) as that `InvalidInputError`, whatever else it holds — `pw_foundation.exceptions.unwrap_flow_exception`. A boundary you write yourself should do the same.

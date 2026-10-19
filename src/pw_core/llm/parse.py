@@ -1,0 +1,237 @@
+"""High-level LLM response JSON parser.
+
+Composes the individual extraction and recovery helpers from
+:mod:`pw_core.utils.json_recovery` into a single call that walks the
+full fallback pipeline: strip fences → json.loads → extract → recover
+→ ``json_repair`` (permissive repair for malformed LLM output).
+
+Usage::
+
+    from pw_core.llm.parse import parse_llm_json
+
+    result = parse_llm_json(llm_response_text, expect="array")
+    if result is None:
+        print("Could not parse response")
+"""
+
+from __future__ import annotations
+
+import json
+from typing import Any
+
+try:
+    import json_repair  # type: ignore[import-untyped]
+except ImportError as e:  # pragma: no cover - exercised by bare-install CI
+    from pw_core._extras import extra_import_error
+
+    raise extra_import_error("validate", "json_repair", feature="pw_core.llm.parse") from e
+
+from pw_foundation.exceptions import InvalidInputError
+from pw_core.utils.json_recovery import (
+    extract_json,
+    extract_json_array,
+    extract_json_object,
+    recover_truncated_json,
+    strip_markdown_fences,
+)
+from pw_foundation.log import get_logger
+
+logger = get_logger(__name__)
+
+
+# Matched case-folded: a routed provider passes its own casing through.
+_TRUNCATED_REASONS = frozenset(
+    {
+        "length",
+        "max_tokens",
+        "model_context_window_exceeded",
+    }
+)
+_COMPLETE_REASONS = frozenset(
+    {
+        "stop",
+        "end_turn",
+        "stop_sequence",
+        "eos",
+        "tool_use",
+        "tool_calls",
+        "function_call",
+    }
+)
+
+
+def truncated_from_usage(usage: dict | None) -> bool | None:
+    """Read the authoritative truncation flag out of a client ``usage`` dict.
+
+    Returns ``True`` for a recognised token-limit reason, ``False`` for a
+    recognised completion reason, and ``None`` when the client reports
+    nothing or reports a reason outside both vocabularies — an unrecognised
+    reason is unknown, not complete. Never inferred from the response text.
+    """
+    finish_reason = (usage or {}).get("finish_reason")
+    if not isinstance(finish_reason, str):
+        return None
+    normalised = finish_reason.strip().lower()
+    if normalised in _TRUNCATED_REASONS:
+        return True
+    if normalised in _COMPLETE_REASONS:
+        return False
+    return None
+
+
+def parse_llm_json(
+    raw: str,
+    *,
+    expect: str = "any",
+    recover: bool = True,
+    strict: bool = False,
+    on_truncation: str = "warn",
+    truncated: bool | None = None,
+) -> dict | list | None:
+    """Parse JSON from an LLM response, with fallbacks.
+
+    Walks a multi-step pipeline to extract valid JSON from the messy
+    output that LLMs typically produce (markdown fences, trailing prose,
+    truncated arrays, unescaped inner quotes).
+
+    Pipeline:
+
+    1. Strip markdown fences.
+    2. ``json.loads`` (strict — zero-tolerance for malformed JSON).
+    3. ``extract_json_*`` — try every balanced array / object span in
+       mixed text, not just the first, and pick the one most likely to
+       be the payload (see :mod:`pw_core.utils.json_recovery`).
+    4. ``recover_truncated_json`` — close unbalanced brackets on a
+       mid-stream-truncated response (e.g., model hit ``max_tokens``
+       while writing the last element of an array).
+    5. ``json_repair.loads`` on the cleaned text — last-resort permissive
+       repair. Handles unescaped inner double quotes (quoted text inside
+       string values), backslash-escaped single quotes,
+       trailing commas, unquoted keys, single-quoted strings.
+       Intentionally last in the chain: strict parsing on a well-formed
+       response is faster and cheaper, and ``json_repair``'s tolerance
+       can mask genuine structural defects if used too eagerly.
+
+    Args:
+        raw: Raw LLM response text.
+        expect: Expected result type — ``"any"``, ``"array"``, or
+            ``"object"``. Filters the parsed result by type.
+        recover: If ``True``, attempt :func:`recover_truncated_json` (when
+            *expect* is ``"array"`` or ``"any"``) and the ``json_repair``
+            fallback. ``False`` opts out of both.
+        strict: If ``True``, raise :class:`InvalidInputError` instead
+            of returning ``None`` on parse failure.
+        on_truncation: What happens when the response is known to be
+            truncated — ``"warn"`` (default) returns what was salvaged and
+            logs a WARNING; ``"raise"`` raises :class:`InvalidInputError`
+            instead, for callers that need completeness. Independent of
+            *strict*.
+        truncated: Authoritative truncation flag from the provider —
+            :func:`truncated_from_usage` reads it off a client ``usage``
+            dict. ``True`` gates the whole pipeline (a truncated response
+            is incomplete even when step 2 parsed it cleanly), ``None``
+            means unknown and leaves every step exactly as it is. Never
+            infer this from the response text: an unescaped inner quote or
+            trailing commentary makes text-based detection fire on
+            complete payloads.
+
+    Returns:
+        Parsed ``dict`` or ``list``, or ``None`` if parsing fails and
+        *strict* is ``False``.
+
+    Raises:
+        InvalidInputError: If *strict* is ``True`` and no JSON could
+            be extracted, if *on_truncation* is ``"raise"`` and the
+            response was truncated, or if *on_truncation* is not one of
+            the two allowed values.
+    """
+    if on_truncation not in ("warn", "raise"):
+        raise InvalidInputError(f"on_truncation must be 'warn' or 'raise', got {on_truncation!r}")
+
+    if truncated and on_truncation == "raise":
+        raise InvalidInputError(
+            "LLM response was truncated (the provider reported hitting the token limit)"
+        )
+
+    cleaned = strip_markdown_fences(raw)
+
+    result: Any = None
+
+    try:
+        result = json.loads(cleaned)
+        logger.debug("parse_llm_json_succeeded", step="json.loads")
+    except (json.JSONDecodeError, ValueError):
+        pass
+
+    # An empty container is usually a decoy (``Result: {}``); accepting it here
+    # would strand the truncated or malformed payload. Restored below if
+    # nothing beats it.
+    empty_span = None
+
+    if result is None:
+        if expect == "array":
+            result = extract_json_array(cleaned)
+        elif expect == "object":
+            result = extract_json_object(cleaned)
+        else:
+            result = extract_json(cleaned)
+
+        if result == [] or result == {}:
+            empty_span, result = result, None
+        elif result is not None:
+            logger.debug("parse_llm_json_succeeded", step="extract")
+
+    warned_truncated = False
+
+    # Recovery salvages a prefix and DROPS the tail; the return carries no
+    # flag, so the WARNING is the only signal under on_truncation="warn".
+    if result is None and recover and expect in ("array", "any"):
+        result = recover_truncated_json(cleaned)
+        if result is not None:
+            recovered = len(result) if isinstance(result, list) else None
+            if on_truncation == "raise":
+                raise InvalidInputError(
+                    f"LLM response was truncated; recovered {recovered} complete "
+                    "item(s) and dropped the tail"
+                )
+            warned_truncated = True
+            logger.debug("parse_llm_json_succeeded", step="recover_truncated")
+            logger.warning(
+                "parse_llm_json_recovered_truncated",
+                recovered_items=recovered,
+                raw_len=len(raw),
+                hint="response was truncated (likely max_tokens); tail dropped",
+            )
+
+    if result is None and recover:
+        try:
+            repaired = json_repair.loads(cleaned)
+            if repaired is not None and repaired != "":
+                result = repaired
+                logger.debug("parse_llm_json_succeeded", step="json_repair")
+        except Exception:
+            # json_repair rarely raises — this is belt-and-suspenders.
+            pass
+
+    if result is None and empty_span is not None:
+        result = empty_span
+        logger.debug("parse_llm_json_succeeded", step="extract_empty")
+
+    if result is not None:
+        if expect == "array" and not isinstance(result, list):
+            result = None
+        elif expect == "object" and not isinstance(result, dict):
+            result = None
+
+    if truncated and not warned_truncated:
+        logger.warning(
+            "parse_llm_json_recovered_truncated",
+            recovered_items=len(result) if isinstance(result, list) else None,
+            raw_len=len(raw),
+            hint="provider reported the response hit the token limit",
+        )
+
+    if result is None and strict:
+        raise InvalidInputError("Failed to parse JSON from LLM response")
+
+    return result

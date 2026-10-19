@@ -1,10 +1,10 @@
-"""Tests for pf_core.eval._compare (comparator registry + structured_diff)."""
+"""Tests for pw_core.eval._compare (comparator registry + structured_diff)."""
 
 from __future__ import annotations
 
 import pytest
 
-from pf_core.eval._compare import (
+from pw_core.eval._compare import (
     _field_score,
     get_comparator,
     list_comparators,
@@ -12,7 +12,7 @@ from pf_core.eval._compare import (
     split_comparator_result,
     structured_diff,
 )
-from pf_core.exceptions import ConfigurationError, InvalidInputError
+from pw_foundation.exceptions import ConfigurationError, InvalidInputError
 
 
 # ---------------------------------------------------------------------------

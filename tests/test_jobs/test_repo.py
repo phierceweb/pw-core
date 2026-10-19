@@ -9,8 +9,8 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from pf_core.exceptions import InvalidInputError, PreconditionError
-from pf_core.jobs import JobRepo, register_kind
+from pw_foundation.exceptions import InvalidInputError, PreconditionError
+from pw_core.jobs import JobRepo, register_kind
 
 
 # ---------------------------------------------------------------------------
@@ -504,8 +504,8 @@ def test_finish_step_clamps_negative_duration(jobs_db, simple_kind):
     on MySQL builds where the column is constrained ``>= 0``."""
     from sqlalchemy import update
 
-    from pf_core.db import transaction
-    from pf_core.jobs import _schema as s
+    from pw_core.db import transaction
+    from pw_core.jobs import _schema as s
 
     repo = JobRepo()
     job_id = repo.create(kind="simple_pass")
@@ -671,8 +671,8 @@ def test_purge_uses_server_side_cutoff(jobs_db, simple_kind):
     via the server-side ``CURRENT_TIMESTAMP - INTERVAL`` expression."""
     from sqlalchemy import update
 
-    from pf_core.db import transaction
-    from pf_core.jobs import _schema as s
+    from pw_core.db import transaction
+    from pw_core.jobs import _schema as s
 
     repo = JobRepo()
     job_id = repo.create(kind="simple_pass")

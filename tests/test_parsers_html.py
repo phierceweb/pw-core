@@ -1,4 +1,4 @@
-"""Tests for ``pf_core.parsers.html`` and ``pf_core.parsers.types``.
+"""Tests for ``pw_core.parsers.html`` and ``pw_core.parsers.types``.
 
 Behavior coverage of the HTML body extractor: paragraphs preserved,
 script/style stripped, link offsets correct, surrounding-text window
@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from pf_core.parsers import (
+from pw_core.parsers import (
     BLOCK_TAGS,
     DEFAULT_CONTEXT_WINDOW_CHARS,
     SKIP_TAGS,
@@ -226,7 +226,7 @@ class TestReExports:
         assert link.url == "https://x"
 
     def test_all_symbols_at_package_root(self):
-        from pf_core.parsers import (
+        from pw_core.parsers import (
             BLOCK_TAGS as r1,
             BodyExtractor as r2,
             PostLink as r5,
@@ -235,14 +235,14 @@ class TestReExports:
             parse_body_html as r8,
         )
 
-        from pf_core.parsers.html import (
+        from pw_core.parsers.html import (
             BLOCK_TAGS as h1,
             BodyExtractor as h2,
             SKIP_TAGS as h6,
             normalize_plain_text as h7,
             parse_body_html as h8,
         )
-        from pf_core.parsers.types import PostLink as t5
+        from pw_core.parsers.types import PostLink as t5
 
         assert r1 is h1
         assert r2 is h2

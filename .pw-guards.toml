@@ -1,0 +1,7 @@
+# pw-core's own structural-gate config — read by default by
+# `python -m pw_foundation.guards`. Every repo — pw-core and consumers alike —
+# keeps gate config in this dedicated file; pyproject.toml is never read.
+[tool.pw_guards]
+root = "src/pw_core"
+
+# No baseline: pw-core passes its own gate with zero exceptions.

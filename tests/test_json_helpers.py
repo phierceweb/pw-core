@@ -1,8 +1,8 @@
-"""Tests for pf_core.utils.json_recovery — JSON extraction and recovery."""
+"""Tests for pw_core.utils.json_recovery — JSON extraction and recovery."""
 
 from __future__ import annotations
 
-from pf_core.utils.json_recovery import (
+from pw_core.utils.json_recovery import (
     extract_json,
     extract_json_array,
     extract_json_object,
@@ -324,7 +324,7 @@ class TestScanCost:
         assert time.perf_counter() - start < 2.0
 
     def test_nesting_filter_keeps_only_outermost_spans(self):
-        from pf_core.utils.json_recovery import _drop_nested
+        from pw_core.utils.json_recovery import _drop_nested
 
         spans = [(0, 20, "outer"), (2, 8, "inner"), (10, 18, "inner2"), (25, 30, "sibling")]
         assert _drop_nested(spans) == [(0, 20, "outer"), (25, 30, "sibling")]

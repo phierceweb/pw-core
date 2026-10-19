@@ -1,4 +1,4 @@
-"""Tests for pf_core.cache.redis — Redis-backed caching."""
+"""Tests for pw_core.cache.redis — Redis-backed caching."""
 
 from __future__ import annotations
 
@@ -6,14 +6,14 @@ from pathlib import Path
 
 import pytest
 
-from pf_core.cache.redis import (
+from pw_core.cache.redis import (
     RedisCache,
     create_region,
     get_cache,
     reset_cache,
 )
 
-CACHE_DOC = Path(__file__).resolve().parents[1] / "src" / "pf_core" / "docs" / "cache.md"
+CACHE_DOC = Path(__file__).resolve().parents[1] / "src" / "pw_core" / "docs" / "cache.md"
 
 
 @pytest.fixture(autouse=True)
@@ -129,7 +129,7 @@ class TestResilientBackendPassthrough:
             return _record
 
     def _wrapped(self):
-        from pf_core.cache.redis import _ResilientBackend
+        from pw_core.cache.redis import _ResilientBackend
 
         inner = self._Inner()
         return _ResilientBackend(inner), inner
@@ -158,7 +158,7 @@ class TestResilientBackendPassthrough:
     def test_an_error_outside_the_redis_families_propagates(self):
         """Degradation covers RedisError and OSError; a bug in a mangler or
         serializer is neither, and must stay loud."""
-        from pf_core.cache.redis import _ResilientBackend
+        from pw_core.cache.redis import _ResilientBackend
 
         class _Broken:
             def get(self, key):
@@ -173,7 +173,7 @@ class TestResilientBackendPassthrough:
         from dogpile.cache.api import NO_VALUE
         from redis.exceptions import ResponseError
 
-        from pf_core.cache.redis import _ResilientBackend
+        from pw_core.cache.redis import _ResilientBackend
 
         class _Oom:
             def get(self, key):
@@ -254,7 +254,7 @@ class TestDroppedWritesAreReported:
         assert cache.delete("k") is False
 
     def test_a_reachable_backend_still_reports_success(self, monkeypatch):
-        from pf_core.cache.redis import _ResilientBackend
+        from pw_core.cache.redis import _ResilientBackend
 
         monkeypatch.delenv("REDIS_URL", raising=False)
         cache = RedisCache()

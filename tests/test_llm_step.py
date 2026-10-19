@@ -8,8 +8,8 @@ import pytest
 from pydantic import BaseModel
 from sqlalchemy import text
 
-from pf_core.budget import CostBudgetExceeded
-from pf_core.llm.validate import register
+from pw_core.budget import CostBudgetExceeded
+from pw_core.llm.validate import register
 
 
 class Verdict(BaseModel):
@@ -52,15 +52,15 @@ class FakeChat:
 
 
 @pytest.fixture
-def pf_schema():
-    from pf_core.testing.db_fixtures import framework_ddl
+def pw_schema():
+    from pw_core.testing.db_fixtures import framework_ddl
 
     return framework_ddl()
 
 
 @pytest.fixture
 def exact_cache(tmp_path, monkeypatch):
-    from pf_core.llm.cache import clear_config_cache
+    from pw_core.llm.cache import clear_config_cache
 
     cfg = tmp_path / "cache.yaml"
     cfg.write_text("defaults:\n  exact: true\n  ttl_seconds: 3600\n")
@@ -80,8 +80,8 @@ def _runs(conn) -> list[dict]:
 
 
 class TestPlainCall:
-    def test_returns_raw_content_and_records_one_run(self, pf_tables, pf_connection):
-        from pf_core.llm.step import llm_step
+    def test_returns_raw_content_and_records_one_run(self, pw_tables, pw_connection):
+        from pw_core.llm.step import llm_step
 
         client = FakeChat(content="plain text")
         res = llm_step(client=client, agent_type="step_raw", messages=MESSAGES, model="m1")
@@ -90,22 +90,22 @@ class TestPlainCall:
         assert res.cache_hit is False
         assert res.validation is None
         assert isinstance(res.run_id, int)
-        runs = _runs(pf_connection)
+        runs = _runs(pw_connection)
         assert len(runs) == 1
         assert runs[0]["status"] == "success"
 
-    def test_client_error_records_failed_row_and_reraises(self, pf_tables, pf_connection):
-        from pf_core.llm.step import llm_step
+    def test_client_error_records_failed_row_and_reraises(self, pw_tables, pw_connection):
+        from pw_core.llm.step import llm_step
 
         client = FakeChat(raise_exc=RuntimeError("boom"))
         with pytest.raises(RuntimeError):
             llm_step(client=client, agent_type="step_raw", messages=MESSAGES, model="m1")
-        runs = _runs(pf_connection)
+        runs = _runs(pw_connection)
         assert len(runs) == 1
         assert runs[0]["status"] == "failed"
 
-    def test_explicit_input_hash_stamped_without_cache(self, pf_tables, pf_connection):
-        from pf_core.llm.step import llm_step
+    def test_explicit_input_hash_stamped_without_cache(self, pw_tables, pw_connection):
+        from pw_core.llm.step import llm_step
 
         given = "ab" * 32
         llm_step(
@@ -115,12 +115,12 @@ class TestPlainCall:
             model="m1",
             input_hash=given,
         )
-        assert _runs(pf_connection)[0]["input_hash"] == given
+        assert _runs(pw_connection)[0]["input_hash"] == given
 
 
 class TestValidate:
-    def test_valid_object_returns_model_value(self, pf_tables, pf_connection):
-        from pf_core.llm.step import llm_step
+    def test_valid_object_returns_model_value(self, pw_tables, pw_connection):
+        from pw_core.llm.step import llm_step
 
         res = llm_step(
             client=FakeChat(),
@@ -133,8 +133,8 @@ class TestValidate:
         assert res.validation.ok
         assert res.value.a == 1
 
-    def test_invalid_returns_not_raises(self, pf_tables, pf_connection):
-        from pf_core.llm.step import llm_step
+    def test_invalid_returns_not_raises(self, pw_tables, pw_connection):
+        from pw_core.llm.step import llm_step
 
         res = llm_step(
             client=FakeChat(content='{"a": "not-an-int"}'),
@@ -151,10 +151,10 @@ class TestValidate:
 
 class TestCache:
     def test_miss_then_hit_short_circuits_chat_and_budget(
-        self, pf_tables, pf_connection, exact_cache, monkeypatch
+        self, pw_tables, pw_connection, exact_cache, monkeypatch
     ):
-        import pf_core.llm.step as step_mod
-        from pf_core.llm.step import BudgetEstimate, llm_step
+        import pw_core.llm.step as step_mod
+        from pw_core.llm.step import BudgetEstimate, llm_step
 
         client = FakeChat()
         r1 = llm_step(
@@ -185,16 +185,16 @@ class TestCache:
         assert len(client.calls) == 1
         assert r2.value.a == 1
         assert r2.run_id != r1.run_id
-        statuses = [r["status"] for r in _runs(pf_connection)]
+        statuses = [r["status"] for r in _runs(pw_connection)]
         assert statuses.count("success") == 1
         assert "cache_hit" in statuses
 
     def test_multipart_pages_do_not_share_a_cache_entry(
-        self, pf_tables, pf_connection, exact_cache
+        self, pw_tables, pw_connection, exact_cache
     ):
         """The vision regression: two pages differing only inside multi-part
         content must each reach the model, not serve page 1's answer."""
-        from pf_core.llm.step import llm_step
+        from pw_core.llm.step import llm_step
 
         def page(name: str) -> list[dict]:
             return [
@@ -225,20 +225,20 @@ class TestCache:
         assert r1.content == "text of https://x/p1.png"
         assert r2.content == "text of https://x/p2.png"
 
-    def test_uncached_run_is_findable_by_the_cache_key(self, pf_tables, pf_connection):
+    def test_uncached_run_is_findable_by_the_cache_key(self, pw_tables, pw_connection):
         """cache=False still stamps the row: the recorded hash must be the one
         compute_input_hash returns, or find_by_hash silently misses."""
-        from pf_core.llm.step import llm_step
-        from pf_core.llm.tracking import compute_input_hash
+        from pw_core.llm.step import llm_step
+        from pw_core.llm.tracking import compute_input_hash
 
         multipart = [{"role": "user", "content": [{"type": "text", "text": "hi"}]}]
         llm_step(client=FakeChat(), agent_type="step_raw", messages=multipart, model="m1")
-        assert _runs(pf_connection)[0]["input_hash"] == compute_input_hash(
+        assert _runs(pw_connection)[0]["input_hash"] == compute_input_hash(
             model="m1", messages=multipart
         )
 
-    def test_validate_none_hit_returns_raw(self, pf_tables, pf_connection, exact_cache):
-        from pf_core.llm.step import llm_step
+    def test_validate_none_hit_returns_raw(self, pw_tables, pw_connection, exact_cache):
+        from pw_core.llm.step import llm_step
 
         client = FakeChat(content='{"a": 2}')
         r1 = llm_step(
@@ -261,8 +261,8 @@ class TestCache:
         assert r2.value == '{"a": 2}'
         assert r2.content == '{"a": 2}'
 
-    def test_no_store_on_validation_failure(self, pf_tables, pf_connection, exact_cache):
-        from pf_core.llm.step import llm_step
+    def test_no_store_on_validation_failure(self, pw_tables, pw_connection, exact_cache):
+        from pw_core.llm.step import llm_step
 
         client = FakeChat(content="not json at all {{{")
         r1 = llm_step(
@@ -296,8 +296,8 @@ class TestTruncation:
     def _cache_rows(self, conn) -> int:
         return conn.execute(text("SELECT count(*) FROM llm_cache_entries")).scalar_one()
 
-    def test_truncated_response_is_not_cached(self, pf_tables, pf_connection, exact_cache):
-        from pf_core.llm.step import llm_step
+    def test_truncated_response_is_not_cached(self, pw_tables, pw_connection, exact_cache):
+        from pw_core.llm.step import llm_step
 
         client = FakeChat(content=self.TRUNCATED, finish_reason="length")
         res = llm_step(
@@ -309,19 +309,19 @@ class TestTruncation:
             validate="object",
         )
         assert res.cache_hit is False
-        assert self._cache_rows(pf_connection) == 0
+        assert self._cache_rows(pw_connection) == 0
 
     def test_truncated_unvalidated_response_is_not_cached(
-        self, pf_tables, pf_connection, exact_cache
+        self, pw_tables, pw_connection, exact_cache
     ):
-        from pf_core.llm.step import llm_step
+        from pw_core.llm.step import llm_step
 
         client = FakeChat(content=self.TRUNCATED, finish_reason="max_tokens")
         llm_step(client=client, agent_type="step_raw", messages=MESSAGES, model="m1", cache=True)
-        assert self._cache_rows(pf_connection) == 0
+        assert self._cache_rows(pw_connection) == 0
 
-    def test_second_call_is_not_served_a_poisoned_hit(self, pf_tables, pf_connection, exact_cache):
-        from pf_core.llm.step import llm_step
+    def test_second_call_is_not_served_a_poisoned_hit(self, pw_tables, pw_connection, exact_cache):
+        from pw_core.llm.step import llm_step
 
         client = FakeChat(content=self.TRUNCATED, finish_reason="length")
         llm_step(
@@ -343,9 +343,9 @@ class TestTruncation:
         assert res.cache_hit is False
         assert len(client.calls) == 2
 
-    def test_unknown_truncation_still_caches(self, pf_tables, pf_connection, exact_cache):
+    def test_unknown_truncation_still_caches(self, pw_tables, pw_connection, exact_cache):
         """A client that reports no finish reason — unknown must not become "truncated"."""
-        from pf_core.llm.step import llm_step
+        from pw_core.llm.step import llm_step
 
         client = FakeChat(content='{"a": 1}')
         llm_step(
@@ -356,10 +356,10 @@ class TestTruncation:
             cache=True,
             validate="object",
         )
-        assert self._cache_rows(pf_connection) == 1
+        assert self._cache_rows(pw_connection) == 1
 
-    def test_default_warns_and_still_returns_the_value(self, pf_tables, pf_connection):
-        from pf_core.llm.step import llm_step
+    def test_default_warns_and_still_returns_the_value(self, pw_tables, pw_connection):
+        from pw_core.llm.step import llm_step
 
         client = FakeChat(content=self.TRUNCATED, finish_reason="length")
         res = llm_step(
@@ -373,8 +373,8 @@ class TestTruncation:
         assert res.validation.ok is True
         assert res.value.a == 1
 
-    def test_on_truncation_fail_returns_a_failing_validation(self, pf_tables, pf_connection):
-        from pf_core.llm.step import llm_step
+    def test_on_truncation_fail_returns_a_failing_validation(self, pw_tables, pw_connection):
+        from pw_core.llm.step import llm_step
 
         client = FakeChat(content=self.TRUNCATED, finish_reason="length")
         res = llm_step(
@@ -390,8 +390,8 @@ class TestTruncation:
         assert res.validation.ok is False
         assert [s.validator for s in res.validation.failures] == ["step_probe_truncated"]
 
-    def test_on_truncation_fail_leaves_a_complete_response_alone(self, pf_tables, pf_connection):
-        from pf_core.llm.step import llm_step
+    def test_on_truncation_fail_leaves_a_complete_response_alone(self, pw_tables, pw_connection):
+        from pw_core.llm.step import llm_step
 
         client = FakeChat(content='{"a": 1}', finish_reason="stop")
         res = llm_step(
@@ -405,9 +405,9 @@ class TestTruncation:
         assert res.validation is not None
         assert res.validation.ok is True
 
-    def test_rejects_unknown_on_truncation(self, pf_tables, pf_connection):
-        from pf_core.exceptions import InvalidInputError
-        from pf_core.llm.step import llm_step
+    def test_rejects_unknown_on_truncation(self, pw_tables, pw_connection):
+        from pw_foundation.exceptions import InvalidInputError
+        from pw_core.llm.step import llm_step
 
         with pytest.raises(InvalidInputError):
             llm_step(
@@ -425,8 +425,8 @@ class TestDryRun:
     def _cache_rows(self, conn) -> int:
         return conn.execute(text("SELECT count(*) FROM llm_cache_entries")).scalar_one()
 
-    def test_miss_returns_empty_and_writes_nothing(self, pf_tables, pf_connection, exact_cache):
-        from pf_core.llm.step import llm_step
+    def test_miss_returns_empty_and_writes_nothing(self, pw_tables, pw_connection, exact_cache):
+        from pw_core.llm.step import llm_step
 
         client = FakeChat()
         res = llm_step(
@@ -438,14 +438,14 @@ class TestDryRun:
         assert res.run_id is None
         assert res.validation is None
         assert client.calls == []
-        assert _runs(pf_connection) == []
-        assert self._cache_rows(pf_connection) == 0
+        assert _runs(pw_connection) == []
+        assert self._cache_rows(pw_connection) == 0
 
-    def test_hit_returns_stored_value_without_spending(self, pf_tables, pf_connection, exact_cache):
-        from pf_core.llm.step import llm_step
+    def test_hit_returns_stored_value_without_spending(self, pw_tables, pw_connection, exact_cache):
+        from pw_core.llm.step import llm_step
 
-        from pf_core.llm.cache import cache_store
-        from pf_core.llm.tracking import LlmRunRepo, compute_input_hash
+        from pw_core.llm.cache import cache_store
+        from pw_core.llm.tracking import LlmRunRepo, compute_input_hash
 
         # Seed the entry directly: dry_run must resolve the same hash llm_step uses.
         rid = LlmRunRepo().record(agent_type="step_raw", model="m1")
@@ -468,18 +468,18 @@ class TestDryRun:
         assert res.run_id is None
         assert client.calls == []
 
-        runs = _runs(pf_connection)
+        runs = _runs(pw_connection)
         assert [r["status"] for r in runs] == ["success"]  # no cache_hit row written
-        hit_count = pf_connection.execute(
+        hit_count = pw_connection.execute(
             text("SELECT hit_count FROM llm_cache_entries")
         ).scalar_one()
         assert hit_count == 0  # no hit-count bump
 
     def test_dry_run_performs_no_budget_check(
-        self, pf_tables, pf_connection, exact_cache, monkeypatch
+        self, pw_tables, pw_connection, exact_cache, monkeypatch
     ):
-        import pf_core.llm.step as step_mod
-        from pf_core.llm.step import BudgetEstimate, llm_step
+        import pw_core.llm.step as step_mod
+        from pw_core.llm.step import BudgetEstimate, llm_step
 
         def _fail_if_consulted(**kwargs):
             raise AssertionError("budget consulted on dry_run")
@@ -498,9 +498,9 @@ class TestDryRun:
 
 
 class TestBudget:
-    def test_block_records_blocked_run_and_raises(self, pf_tables, pf_connection, monkeypatch):
-        import pf_core.llm.step as step_mod
-        from pf_core.llm.step import BudgetEstimate, llm_step
+    def test_block_records_blocked_run_and_raises(self, pw_tables, pw_connection, monkeypatch):
+        import pw_core.llm.step as step_mod
+        from pw_core.llm.step import BudgetEstimate, llm_step
 
         exc = CostBudgetExceeded(
             scope_kind="agent",
@@ -525,13 +525,13 @@ class TestBudget:
                 budget=BudgetEstimate(job_kind="test_pass"),
             )
         assert client.calls == []
-        runs = _runs(pf_connection)
+        runs = _runs(pw_connection)
         assert len(runs) == 1
         assert runs[0]["status"] == "budget_blocked"
 
-    def test_estimates_forwarded_to_project_cost(self, pf_tables, pf_connection, monkeypatch):
-        import pf_core.llm.step as step_mod
-        from pf_core.llm.step import BudgetEstimate, llm_step
+    def test_estimates_forwarded_to_project_cost(self, pw_tables, pw_connection, monkeypatch):
+        import pw_core.llm.step as step_mod
+        from pw_core.llm.step import BudgetEstimate, llm_step
 
         seen: dict[str, Any] = {}
 
@@ -551,9 +551,9 @@ class TestBudget:
         assert seen["estimated_prompt_tokens"] == 42
         assert seen["estimated_completion_tokens"] == 7
 
-    def test_dimensions_forwarded_to_check_budget(self, pf_tables, pf_connection, monkeypatch):
-        import pf_core.llm.step as step_mod
-        from pf_core.llm.step import BudgetEstimate, llm_step
+    def test_dimensions_forwarded_to_check_budget(self, pw_tables, pw_connection, monkeypatch):
+        import pw_core.llm.step as step_mod
+        from pw_core.llm.step import BudgetEstimate, llm_step
 
         seen: dict[str, Any] = {}
 
@@ -571,10 +571,10 @@ class TestBudget:
         assert seen["projected_calls"] == 1
         assert seen["tags"] == ["experiment:opus47"]
 
-    def test_tag_scoped_block_budget_gates_a_tagged_call(self, pf_tables, pf_connection):
-        from pf_core.budget._schema import llm_budgets
-        from pf_core.db.connection import transaction
-        from pf_core.llm.step import BudgetEstimate, llm_step
+    def test_tag_scoped_block_budget_gates_a_tagged_call(self, pw_tables, pw_connection):
+        from pw_core.budget._schema import llm_budgets
+        from pw_core.db.connection import transaction
+        from pw_core.llm.step import BudgetEstimate, llm_step
 
         with transaction() as conn:
             conn.execute(
@@ -599,13 +599,13 @@ class TestBudget:
             )
         assert excinfo.value.scope_kind == "tag"
         assert client.calls == []
-        runs = _runs(pf_connection)
+        runs = _runs(pw_connection)
         assert len(runs) == 1
         assert runs[0]["status"] == "budget_blocked"
 
-    def test_no_budget_kwarg_skips_gate(self, pf_tables, pf_connection, monkeypatch):
-        import pf_core.llm.step as step_mod
-        from pf_core.llm.step import llm_step
+    def test_no_budget_kwarg_skips_gate(self, pw_tables, pw_connection, monkeypatch):
+        import pw_core.llm.step as step_mod
+        from pw_core.llm.step import llm_step
 
         def _fail_if_consulted(**kwargs):
             raise AssertionError("budget consulted without budget=")

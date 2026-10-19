@@ -1,4 +1,4 @@
-"""Tests for pf_core.cli.export — the ``pf-export`` CLI and its mountable sub-app."""
+"""Tests for pw_core.cli.export — the ``pw-export`` CLI and its mountable sub-app."""
 
 from __future__ import annotations
 
@@ -13,11 +13,11 @@ from opentelemetry.proto.collector.trace.v1.trace_service_pb2 import ExportTrace
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from typer.testing import CliRunner
 
-from pf_core.cli.export import app, main
-from pf_core.db import transaction
-from pf_core.jobs._schema import jobs
-from pf_core.llm.tracking import LlmRunRepo, metadata
-from pf_core.llm.tracking import otel as otel_mod
+from pw_core.cli.export import app, main
+from pw_core.db import transaction
+from pw_core.jobs._schema import jobs
+from pw_core.llm.tracking import LlmRunRepo, metadata
+from pw_core.llm.tracking import otel as otel_mod
 
 runner = CliRunner()
 
@@ -32,10 +32,10 @@ _OTEL_VARS = (
 
 
 @pytest.fixture()
-def tracking_db(pf_engine):
-    metadata.create_all(pf_engine)
-    yield pf_engine
-    metadata.drop_all(pf_engine)
+def tracking_db(pw_engine):
+    metadata.create_all(pw_engine)
+    yield pw_engine
+    metadata.drop_all(pw_engine)
 
 
 @pytest.fixture(autouse=True)
@@ -113,7 +113,7 @@ def _pf_export(*args: str) -> int:
 def test_pf_export_is_a_declared_console_script():
     pyproject = Path(__file__).resolve().parents[1] / "pyproject.toml"
     scripts = tomllib.loads(pyproject.read_text())["project"]["scripts"]
-    assert scripts["pf-export"] == "pf_core.cli.export:main"
+    assert scripts["pw-export"] == "pw_core.cli.export:main"
 
 
 def test_mounted_app_exposes_otel_as_a_subcommand():
@@ -155,7 +155,7 @@ def test_options_select_runs_and_bodies(tracking_db, captured):
 
     assert result.exit_code == 0, result.output
     (span,) = captured.get_finished_spans()
-    assert span.attributes["pf_core.run_id"] == keep
+    assert span.attributes["pw_core.run_id"] == keep
     assert "gen_ai.output.messages" in span.attributes
 
 
@@ -172,7 +172,7 @@ def test_job_id_option_filters(tracking_db, captured):
     result = runner.invoke(app, ["otel", "--job-id", str(job)])
 
     assert result.exit_code == 0, result.output
-    assert [s.attributes["pf_core.run_id"] for s in captured.get_finished_spans()] == [in_job]
+    assert [s.attributes["pw_core.run_id"] for s in captured.get_finished_spans()] == [in_job]
 
 
 def test_unparseable_since_is_a_usage_error(tracking_db, captured):
@@ -205,7 +205,7 @@ def test_console_script_posts_otlp_to_the_endpoint_named_in_dotenv(
         for scope in resource_spans.scope_spans
         for span in scope.spans
         for a in span.attributes
-        if a.key == "pf_core.run_id"
+        if a.key == "pw_core.run_id"
     }
     assert exported == run_ids
 

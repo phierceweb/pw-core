@@ -10,19 +10,19 @@ import tomllib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-DOCS = ROOT / "src/pf_core/docs"
+DOCS = ROOT / "src/pw_core/docs"
 
 _BACKTICKED = re.compile(r"`([^`\n]*)`")
-_DOTTED = re.compile(r"pf_core(?:\.[A-Za-z_][A-Za-z0-9_]*)+")
+_DOTTED = re.compile(r"pw_core(?:\.[A-Za-z_][A-Za-z0-9_]*)+")
 
 # Dotted strings that are deliberately not import paths.
 _NON_IMPORT_PATHS = frozenset(
     {
-        "pf_core.X",  # placeholder in a template snippet
-        "pf_core.jobs.jobs.id",  # database column, not an attribute
+        "pw_core.X",  # placeholder in a template snippet
+        "pw_core.jobs.jobs.id",  # database column, not an attribute
         # OpenTelemetry span attributes named in otel.md
         *(
-            f"pf_core.{name}"
+            f"pw_core.{name}"
             for name in (
                 "agent_type",
                 "cache_hit",
@@ -49,11 +49,11 @@ def _resolves(dotted: str) -> bool:
         try:
             obj = importlib.import_module(".".join(parts[:i]))
         except ModuleNotFoundError as exc:
-            if (exc.name or "").split(".")[0] != "pf_core":
+            if (exc.name or "").split(".")[0] != "pw_core":
                 return True  # gated behind an uninstalled extra
             continue
         except ImportError:
-            return True  # pf-core's own friendly extra gate
+            return True  # pw-core's own friendly extra gate
         for attr in parts[i:]:
             if not hasattr(obj, attr):
                 return False
@@ -70,7 +70,7 @@ def test_pf_core_references_in_docs_resolve():
                 if dotted in _NON_IMPORT_PATHS or _resolves(dotted):
                     continue
                 broken.setdefault(dotted, set()).add(path.name)
-    assert not broken, f"docs name pf_core paths that do not exist: {broken}"
+    assert not broken, f"docs name pw_core paths that do not exist: {broken}"
 
 
 # ---------------------------------------------------------------------------
@@ -88,7 +88,7 @@ def _normalize_path(path: str) -> str:
 
 
 def test_admin_paths_in_docs_are_mounted():
-    from pf_core.web.llm_admin import make_admin_router
+    from pw_core.web.llm_admin import make_admin_router
 
     router = make_admin_router(prefix="/admin/llm", allow_unauthenticated=True)
     mounted = {_normalize_path(r.path) for r in router.routes}
@@ -103,7 +103,7 @@ def test_admin_paths_in_docs_are_mounted():
 
 
 def test_llm_run_repo_methods_named_in_docs_exist():
-    from pf_core.llm.tracking import LlmRunRepo
+    from pw_core.llm.tracking import LlmRunRepo
 
     missing: dict[str, set[str]] = {}
     for path in _doc_files():
@@ -114,7 +114,7 @@ def test_llm_run_repo_methods_named_in_docs_exist():
 
 
 def test_track_run_kwargs_in_docs_exist():
-    from pf_core.llm.tracking import track_run
+    from pw_core.llm.tracking import track_run
 
     accepted = set(inspect.signature(track_run).parameters)
     missing: dict[str, set[str]] = {}
@@ -134,14 +134,14 @@ _AUTO_PLUGIN = re.compile(r"auto-(?:discovered|registered)")
 
 
 def test_auto_plugin_fixtures_are_all_documented():
-    from pf_core.testing import fixtures
+    from pw_core.testing import fixtures
 
     names = {
         name
         for name, obj in vars(fixtures).items()
         if hasattr(obj, "_pytestfixturefunction") or hasattr(obj, "_fixture_function")
     }
-    assert names, "no fixtures found in pf_core.testing.fixtures"
+    assert names, "no fixtures found in pw_core.testing.fixtures"
 
     for doc in (DOCS / "testing.md", DOCS / "INSTALLATION.md"):
         claims = [ln for ln in doc.read_text().splitlines() if _AUTO_PLUGIN.search(ln)]
@@ -177,7 +177,7 @@ def _prohibition_blocks(text: str) -> list[str]:
 def _ships_route_handlers() -> bool:
     return any(
         re.search(r"@router\.(get|post|put|patch|delete)\(", p.read_text())
-        for p in (ROOT / "src/pf_core/web").rglob("*.py")
+        for p in (ROOT / "src/pw_core/web").rglob("*.py")
     )
 
 
@@ -209,7 +209,7 @@ def test_scope_prose_does_not_forbid_shipped_surface():
 
 def test_bin_test_wrapper_matches_scaffolded_projects():
     wrapper = ROOT / "bin/test"
-    assert wrapper.is_file(), "pf-core scaffolds bin/test but does not ship one"
+    assert wrapper.is_file(), "pw-core scaffolds bin/test but does not ship one"
     assert os.access(wrapper, os.X_OK), "bin/test is not executable"
 
     body = wrapper.read_text()

@@ -1,4 +1,4 @@
-"""Tests for pf_core.web.llm_admin — mountable admin sub-app."""
+"""Tests for pw_core.web.llm_admin — mountable admin sub-app."""
 
 from __future__ import annotations
 
@@ -8,17 +8,17 @@ import pytest
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
-from pf_core.budget._schema import llm_budgets
-from pf_core.budget.repo import BudgetSnapshotRepo
-from pf_core.db.connection import transaction
-from pf_core.jobs._schema import job_events, jobs
-from pf_core.llm.cache import cache_store
-from pf_core.llm.tracking import (
+from pw_core.budget._schema import llm_budgets
+from pw_core.budget.repo import BudgetSnapshotRepo
+from pw_core.db.connection import transaction
+from pw_core.jobs._schema import job_events, jobs
+from pw_core.llm.cache import cache_store
+from pw_core.llm.tracking import (
     LlmRunRepo,
     clear_resolver_caches,
     metadata,
 )
-from pf_core.web.llm_admin import make_admin_router
+from pw_core.web.llm_admin import make_admin_router
 
 
 # ---------------------------------------------------------------------------
@@ -34,10 +34,10 @@ def _reset():
 
 
 @pytest.fixture()
-def admin_db(pf_engine):
-    metadata.create_all(pf_engine)
-    yield pf_engine
-    metadata.drop_all(pf_engine)
+def admin_db(pw_engine):
+    metadata.create_all(pw_engine)
+    yield pw_engine
+    metadata.drop_all(pw_engine)
 
 
 def _seed(with_jobs: bool = True, with_budgets: bool = True, with_cache: bool = True):
@@ -132,7 +132,7 @@ def _make_client(admin_db, **kwargs):
 
 
 def test_refuses_unauthenticated_by_default():
-    from pf_core.exceptions import ConfigurationError
+    from pw_foundation.exceptions import ConfigurationError
 
     with pytest.raises(ConfigurationError):
         make_admin_router()
@@ -324,7 +324,7 @@ def _insert_budget(
 
 
 def test_budget_spend_counts_unsnapshotted_runs(admin_db):
-    from pf_core.web.llm_admin.queries import list_budgets_with_spend
+    from pw_core.web.llm_admin.queries import list_budgets_with_spend
 
     _insert_budget(limit_usd=10.0)
     LlmRunRepo().record(
@@ -343,8 +343,8 @@ def test_budget_spend_counts_unsnapshotted_runs(admin_db):
 def test_budget_period_start_is_utc_not_host_local(admin_db, monkeypatch):
     import time
 
-    from pf_core.budget import compute_period_start
-    from pf_core.web.llm_admin.queries import list_budgets_with_spend
+    from pw_core.budget import compute_period_start
+    from pw_core.web.llm_admin.queries import list_budgets_with_spend
 
     utc_now = dt.datetime.now(dt.timezone.utc)
     # A zone whose local date is guaranteed to differ from UTC's right now.
@@ -369,7 +369,7 @@ def test_budget_period_start_is_utc_not_host_local(admin_db, monkeypatch):
 
 
 def test_budget_spend_exposes_all_dimensions(admin_db):
-    from pf_core.web.llm_admin.queries import list_budgets_with_spend
+    from pw_core.web.llm_admin.queries import list_budgets_with_spend
 
     _insert_budget(limit_usd=10.0, limit_tokens=1000)
     LlmRunRepo().record(
@@ -425,7 +425,7 @@ def _seed_cancellable_job(*, status: str = "running") -> int:
     """Register a kind with the default state machine and insert one job
     in ``status`` (default ``running`` so cancel is allowed).
     """
-    from pf_core.jobs import register_kind
+    from pw_core.jobs import register_kind
 
     register_kind(kind="cancel_test_kind")
     with transaction() as conn:
@@ -631,7 +631,7 @@ def test_cache_json_carries_the_same_stats_as_the_html_page(admin_db):
 def test_zero_limit_budget_does_not_render_as_unused(admin_db):
     """A zero limit admits nothing, so any usage against it is fully consumed —
     rendering 0% would show an exhausted budget as healthy."""
-    from pf_core.web.llm_admin._queries_spend import list_budgets_with_spend
+    from pw_core.web.llm_admin._queries_spend import list_budgets_with_spend
 
     _insert_budget(limit_usd=0.0)
     LlmRunRepo().record(

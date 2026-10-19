@@ -1,11 +1,11 @@
-"""Tests for pf_core.llm.parse."""
+"""Tests for pw_core.llm.parse."""
 
 from __future__ import annotations
 
 import pytest
 
-from pf_core.exceptions import InvalidInputError
-from pf_core.llm.parse import parse_llm_json
+from pw_foundation.exceptions import InvalidInputError
+from pw_core.llm.parse import parse_llm_json
 
 
 class TestParseLlmJson:
@@ -55,7 +55,7 @@ class TestParseLlmJson:
         import logging
 
         raw = '[{"a":1},{"b":2},{"c":3'
-        with caplog.at_level(logging.WARNING, logger="pf_core.llm.parse"):
+        with caplog.at_level(logging.WARNING, logger="pw_core.llm.parse"):
             parse_llm_json(raw, recover=True, expect="array")
         assert any("parse_llm_json_recovered_truncated" in r.getMessage() for r in caplog.records)
 
@@ -205,7 +205,7 @@ class TestParseLlmJson:
         import logging
 
         raw = '[{"id": 1, "tags": ["a","b"]}, {"id": 2, "tags": ["c"'
-        with caplog.at_level(logging.WARNING, logger="pf_core.llm.parse"):
+        with caplog.at_level(logging.WARNING, logger="pw_core.llm.parse"):
             result = parse_llm_json(raw, expect="array")
         assert result == [{"id": 1, "tags": ["a", "b"]}]
         assert any("parse_llm_json_recovered_truncated" in r.getMessage() for r in caplog.records)

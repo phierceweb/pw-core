@@ -1,4 +1,4 @@
-"""Tests for pf_core.pipeline.baseline_diff."""
+"""Tests for pw_core.pipeline.baseline_diff."""
 
 from __future__ import annotations
 
@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from pf_core.pipeline.baseline import save_baseline
-from pf_core.pipeline.baseline_diff import (
+from pw_core.pipeline.baseline import save_baseline
+from pw_core.pipeline.baseline_diff import (
     DiffReport,
     LineCountDelta,
     RunRecordDelta,

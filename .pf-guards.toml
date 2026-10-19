@@ -1,7 +1,0 @@
-# pf-core's own structural-gate config — read by default by
-# `python -m pf_core.guards`. Every repo — pf-core and consumers alike —
-# keeps gate config in this dedicated file; pyproject.toml is never read.
-[tool.pf_guards]
-root = "src/pf_core"
-
-# No baseline: pf-core passes its own gate with zero exceptions.

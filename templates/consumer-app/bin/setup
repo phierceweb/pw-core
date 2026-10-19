@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Bootstrap __NAME__: venv (Python 3.12+), editable install, .env, rule symlinks.
-# Self-contained — works whether pf-core is pip-installed or a sibling checkout.
+# Bootstrap __NAME__: venv (Python 3.12+), editable install, .env, framework wiring (pw-setup).
+# A sibling checkout of a framework package (../<package>) is preferred when present.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
@@ -34,39 +34,36 @@ else
   ok ".venv exists ($(.venv/bin/python --version | tr -d '\r'))"
 fi
 
-info "Installing (editable, with dev extras) — the pf-core git clone can take ~30s..."
 .venv/bin/python -m pip install --quiet --upgrade pip
-GIT_TERMINAL_PROMPT=0 .venv/bin/python -m pip install -e ".[dev]"
+# A sibling framework checkout wins over PyPI: co-development, or a release not yet published.
+for sib in __SIBLINGS__; do
+  if [[ -f "$ROOT/../$sib/pyproject.toml" ]]; then
+    info "Installing $sib editable from ../$sib"
+    .venv/bin/python -m pip install --quiet -e "$ROOT/../$sib"
+  fi
+done
+info "Installing __NAME__ (editable, with dev extras)"
+.venv/bin/python -m pip install --quiet -e ".[dev]"
 ok "dependencies installed"
+
+# pw-setup (pw-foundation) links the framework docs under docs/, installs the starter
+# rules into .ai/rules/ and points .claude/ and .cursor/ at .ai/. It owns that wiring.
+if [[ ! -x .venv/bin/pw-setup ]]; then
+  echo "pw-setup not found in .venv/bin — pw-foundation is missing from the install" >&2
+  exit 1
+fi
+.venv/bin/pw-setup
+ok "pw-setup ran"
 
 if [[ -f .env.example && ! -f .env ]]; then
   cp .env.example .env
   ok "copied .env.example -> .env"
 fi
 
-for tool in .claude .cursor; do
-  mkdir -p "$tool"
-  for d in rules skills; do
-    [[ -e "$ROOT/.ai/$d" ]] || continue
-    rm -rf "${tool:?}/$d"
-    ln -s "../.ai/$d" "$tool/$d"
-    ok "$tool/$d -> ../.ai/$d"
-  done
-done
-
-# Link pf-core's module docs where assistants look. Re-resolves every run, so
-# venv rebuilds and editable-vs-wheel installs both stay correct.
-PF_DOCS="$(.venv/bin/python -c 'import pf_core, pathlib; print(pathlib.Path(pf_core.__file__).parent / "docs")' 2>/dev/null || true)"
-if [[ -n "$PF_DOCS" && -d "$PF_DOCS" ]]; then
-  mkdir -p docs
-  ln -sfn "$PF_DOCS" docs/pf-core
-  ok "docs/pf-core -> $PF_DOCS"
-fi
-
 # Ensure the structural-gate config exists (stamped by the scaffold; self-heals).
-if [[ ! -f .pf-guards.toml ]]; then
-  printf '[tool.pf_guards]\nroot = "app"\n' > .pf-guards.toml
-  ok "created .pf-guards.toml"
+if [[ ! -f .pw-guards.toml ]]; then
+  printf '[tool.pw_guards]\nroot = "app"\n' > .pw-guards.toml
+  ok "created .pw-guards.toml"
 fi
 
 # Install the commit gates (structural gate + ruff) when this is a git repo.
@@ -79,5 +76,5 @@ fi
 
 echo
 echo "Setup complete."
-echo "  bin/run pf-doctor   # attest the install"
+echo "  bin/run pw-doctor   # attest the install"
 echo "  bin/web             # start the server, then open http://127.0.0.1:8000/"

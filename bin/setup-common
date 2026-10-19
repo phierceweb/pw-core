@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# bin/setup-common — Shared setup functions for pf-core consumer projects.
+# bin/setup-common — Shared setup functions for pw-core consumer projects.
 # Source from your project's bin/setup after cd-ing to the project root
-# (`source "$PF_ROOT/bin/setup-common"`); it never runs anything on its own.
+# (`source "$PW_ROOT/bin/setup-common"`); it never runs anything on its own.
 #
 # Functions:
 #   pf_info, pf_ok, pf_warn, pf_header   — output helpers
@@ -10,8 +10,8 @@
 #   pf_install_deps                       — pip install from requirements.txt
 #   pf_sync_env                           — copy/sync .env from .env.example
 #   pf_ensure_symlinks                    — wire .claude/ and .cursor/ to .ai/
-#   pf_ensure_guards_config               — create .pf-guards.toml if missing
-#   pf_ensure_docs_link                   — link installed pf-core docs at docs/pf-core
+#   pf_ensure_guards_config               — create .pw-guards.toml if missing
+#   pf_ensure_docs_link                   — run pw-setup (docs links, starter rules, editor links)
 
 set -euo pipefail
 
@@ -117,12 +117,12 @@ pf_sync_env() {
 }
 
 # ── Guards config ─────────────────────────────────────────────────────────────
-# Creates .pf-guards.toml when missing, detecting the scan root (app/ layout vs
+# Creates .pw-guards.toml when missing, detecting the scan root (app/ layout vs
 # src/<pkg>). Call from a consumer's bin/setup so the structural gate is
-# configured from day one. `python -m pf_core.guards` reads the file by default.
+# configured from day one. `python -m pw_foundation.guards` reads the file by default.
 pf_ensure_guards_config() {
-  if [[ -f .pf-guards.toml ]]; then
-    pf_ok ".pf-guards.toml present"
+  if [[ -f .pw-guards.toml ]]; then
+    pf_ok ".pw-guards.toml present"
     return 0
   fi
   local root=""
@@ -132,28 +132,23 @@ pf_ensure_guards_config() {
     root="$(find src -mindepth 1 -maxdepth 1 -type d ! -name '*.egg-info' 2>/dev/null | head -1)"
   fi
   if [[ -z "$root" ]]; then
-    pf_warn "no app/ or src/<pkg> found — create .pf-guards.toml manually"
+    pf_warn "no app/ or src/<pkg> found — create .pw-guards.toml manually"
     return 0
   fi
-  printf '# Structural gate config (python -m pf_core.guards reads this file).\n# See docs/pf-core/guards.md.\n[tool.pf_guards]\nroot = "%s"\n' "$root" > .pf-guards.toml
-  pf_ok "created .pf-guards.toml (root = \"$root\")"
+  printf '# Structural gate config (python -m pw_foundation.guards reads this file).\n# See docs/pw-foundation/guards.md.\n[tool.pw_guards]\nroot = "%s"\n' "$root" > .pw-guards.toml
+  pf_ok "created .pw-guards.toml (root = \"$root\")"
 }
 
-# ── Docs link ─────────────────────────────────────────────────────────────────
-# Symlinks the installed pf-core's module docs (shipped in the wheel; the source
-# tree when editable) to docs/pf-core — the project's docs dir, where humans and
-# AI assistants both look. Gitignored (machine-specific target). Re-run after
-# venv rebuilds — it re-resolves.
+# ── Framework wiring ──────────────────────────────────────────────────────────
+# Delegates to pw-setup (pw-foundation): links both packages' bundled docs at
+# docs/pw-foundation and docs/pw-core, installs the starter rules into .ai/rules/
+# and points .claude/ and .cursor/ at .ai/. Idempotent; re-run after venv rebuilds.
 pf_ensure_docs_link() {
-  local docs
-  docs="$(.venv/bin/python -c 'import pf_core, pathlib; print(pathlib.Path(pf_core.__file__).parent / "docs")' 2>/dev/null || true)"
-  if [[ -z "$docs" || ! -d "$docs" ]]; then
-    pf_warn "pf-core docs not resolvable (is pf-core installed?) — skipping docs link"
-    return 0
+  if [[ -x .venv/bin/pw-setup ]]; then
+    .venv/bin/pw-setup
+  else
+    pf_warn "pw-setup not in .venv (pw-foundation not installed?) — skipping docs/rules wiring"
   fi
-  mkdir -p docs
-  ln -sfn "$docs" docs/pf-core
-  pf_ok "docs/pf-core -> $docs"
 }
 
 # ── Symlinks ──────────────────────────────────────────────────────────────────

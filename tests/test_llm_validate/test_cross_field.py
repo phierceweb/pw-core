@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pf_core.llm.validate import (
+from pw_core.llm.validate import (
     ValidationSignal,
     cross_field_validator,
     get_cross_field_validator,

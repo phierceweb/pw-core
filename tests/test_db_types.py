@@ -1,4 +1,4 @@
-"""Tests for pf_core.db.types — public cross-dialect column-type variants."""
+"""Tests for pw_core.db.types — public cross-dialect column-type variants."""
 
 from __future__ import annotations
 
@@ -16,41 +16,41 @@ def _ddl(col_type, dialect_mod) -> str:
 
 class TestTypeVariants:
     def test_pk_int_unsigned_on_mysql_plain_integer_on_sqlite(self):
-        from pf_core.db import types as T
+        from pw_core.db import types as T
 
         assert "UNSIGNED" in _ddl(T.PK_INT, mysql)
         assert "INTEGER" in _ddl(T.PK_INT, sqlite)
 
     def test_timestamp_us_variants(self):
-        from pf_core.db import types as T
+        from pw_core.db import types as T
 
         assert "TIMESTAMP(6)" in _ddl(T.TIMESTAMP_US, mysql)
         assert "TIMESTAMP WITH TIME ZONE" in _ddl(T.TIMESTAMP_US, postgresql)
 
     def test_large_text_is_mediumtext_on_mysql(self):
-        from pf_core.db import types as T
+        from pw_core.db import types as T
 
         assert "MEDIUMTEXT" in _ddl(T.LARGE_TEXT, mysql)
 
     def test_json_is_jsonb_on_postgres(self):
-        from pf_core.db import types as T
+        from pw_core.db import types as T
 
         assert "JSONB" in _ddl(T.JSON_, postgresql)
 
     def test_server_now_compiles_per_dialect(self):
-        from pf_core.db.types import server_now
+        from pw_core.db.types import server_now
 
         assert str(server_now().compile(dialect=mysql.dialect())) == "CURRENT_TIMESTAMP(6)"
         assert str(server_now().compile(dialect=sqlite.dialect())) == "CURRENT_TIMESTAMP"
 
 
 class TestJsonNoneAsNull:
-    def test_none_stores_sql_null(self, pf_engine):
+    def test_none_stores_sql_null(self, pw_engine):
         """Python None must store as SQL NULL, not JSON 'null' — otherwise
         ``IS NULL`` predicates and raw SELECTs (truthy ``'null'`` text) lie."""
         from sqlalchemy import text
 
-        from pf_core.db import types as T
+        from pw_core.db import types as T
 
         md = MetaData()
         t = Table(
@@ -59,9 +59,9 @@ class TestJsonNoneAsNull:
             Column("id", T.PK_INT, primary_key=True),
             Column("payload", T.JSON_, nullable=True),
         )
-        md.create_all(pf_engine)
+        md.create_all(pw_engine)
         try:
-            with pf_engine.begin() as conn:
+            with pw_engine.begin() as conn:
                 conn.execute(t.insert().values(id=1, payload=None))
                 conn.execute(t.insert().values(id=2, payload={"k": 1}))
                 n_null = conn.execute(
@@ -71,14 +71,14 @@ class TestJsonNoneAsNull:
             assert n_null == 1
             assert stored["payload"] == {"k": 1}
         finally:
-            md.drop_all(pf_engine)
+            md.drop_all(pw_engine)
 
 
 class TestSchemaSharesObjects:
     def test_tracking_schema_uses_the_public_objects(self):
         # The underscored names that remain are the same objects — one definition, public home.
-        from pf_core.db import types as T
-        from pf_core.llm.tracking import schema as s
+        from pw_core.db import types as T
+        from pw_core.llm.tracking import schema as s
 
         assert s._PK_SMALL is T.PK_SMALL
         assert s._PK_BIG is T.PK_BIG
@@ -90,6 +90,6 @@ class TestSchemaSharesObjects:
 
     @pytest.mark.parametrize("name", ["_TIMESTAMP_US", "_PK_INT", "_FK_INT"])
     def test_removed_aliases_are_gone(self, name):
-        from pf_core.llm.tracking import schema as s
+        from pw_core.llm.tracking import schema as s
 
         assert not hasattr(s, name)

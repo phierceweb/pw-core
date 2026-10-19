@@ -1,4 +1,4 @@
-"""Tests for pf_core.db.dialect — conn-taking runtime SQL fragments."""
+"""Tests for pw_core.db.dialect — conn-taking runtime SQL fragments."""
 
 from __future__ import annotations
 
@@ -8,14 +8,14 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from sqlalchemy import DateTime, bindparam, create_engine, text
 
-from pf_core.db.dialect import (
+from pw_core.db.dialect import (
     insert_ignore_prefix,
     insert_ignore_suffix,
     now_sql,
     row_lock_suffix,
     utc_cutoff,
 )
-from pf_core.exceptions import InvalidInputError
+from pw_foundation.exceptions import InvalidInputError
 
 
 class _FakeDialect:
@@ -76,7 +76,7 @@ def test_now_sql_sqlite_stamp_matches_its_own_round_trip(tmp_path):
     Clock-independent — the bind comes from the row."""
     from sqlalchemy import Column, Integer, MetaData, Table, select
 
-    from pf_core.db.types import TIMESTAMP_US
+    from pw_core.db.types import TIMESTAMP_US
 
     md = MetaData()
     jobs = Table("jobs", md, Column("id", Integer, primary_key=True), Column("ts", TIMESTAMP_US))
@@ -113,7 +113,7 @@ def test_now_sql_sqlite_renders_six_fractional_digits(tmp_path):
 
 
 def test_mariadb_normalizes_to_mysql_for_all_helpers():
-    """SQLAlchemy reports ``mariadb`` for mariadb:// URLs; pf-core treats
+    """SQLAlchemy reports ``mariadb`` for mariadb:// URLs; pw-core treats
     MariaDB as the MySQL family everywhere."""
     for name in ("mariadb", "mysql+pymysql", "MariaDB"):
         conn = _FakeConn(name)
@@ -277,7 +277,7 @@ def test_utc_cutoff_zero_is_honored_not_treated_as_missing():
 
 
 def test_exported_from_pf_core_db():
-    import pf_core.db as db
+    import pw_core.db as db
 
     for name in (
         "now_sql",
@@ -286,8 +286,8 @@ def test_exported_from_pf_core_db():
         "row_lock_suffix",
         "utc_cutoff",
     ):
-        assert hasattr(db, name), f"{name} missing from pf_core.db"
-        assert name in db.__all__, f"{name} missing from pf_core.db.__all__"
+        assert hasattr(db, name), f"{name} missing from pw_core.db"
+        assert name in db.__all__, f"{name} missing from pw_core.db.__all__"
 
 
 # ---------------------------------------------------------------------------
@@ -298,7 +298,7 @@ def test_exported_from_pf_core_db():
 def test_now_sql_and_now_expr_agree_for_every_dialect():
     """``now_sql`` is ``now_expr`` resolved from a connection, so this holds by
     construction; it is asserted to keep that wiring, not to catch drift."""
-    from pf_core.db.json_compat import now_expr
+    from pw_core.db.json_compat import now_expr
 
     for name in ("sqlite", "mysql", "postgresql"):
         assert now_sql(_FakeConn(name)) == now_expr(name)
@@ -312,7 +312,7 @@ def test_now_expr_sqlite_matches_sqlalchemy_bound_rendering():
 
     from sqlalchemy.dialects import sqlite as sqlite_dialect
 
-    from pf_core.db.json_compat import now_expr
+    from pw_core.db.json_compat import now_expr
 
     rendered = (
         DateTime()
@@ -327,7 +327,7 @@ def test_now_expr_sqlite_matches_sqlalchemy_bound_rendering():
 
 
 def test_now_expr_stamped_row_is_visible_to_a_utc_cutoff_bind(tmp_path):
-    from pf_core.db.json_compat import now_expr
+    from pw_core.db.json_compat import now_expr
 
     eng = create_engine(f"sqlite:///{tmp_path}/t.db")
     with eng.begin() as conn:
@@ -370,7 +370,7 @@ def test_dialect_name_rejects_a_non_string_dialect_name():
 def test_reexported_insert_ignore_prefix_rejects_unsupported_dialect():
     """The re-export resolves through the dialect wrapper, so an unsupported
     dialect raises a FlowException, not ValueError."""
-    from pf_core.db import insert_ignore_prefix as reexported
+    from pw_core.db import insert_ignore_prefix as reexported
 
     with pytest.raises(InvalidInputError):
         reexported("oracle")

@@ -1,10 +1,10 @@
-"""Tests for pf_core.web.markdown."""
+"""Tests for pw_core.web.markdown."""
 
 from __future__ import annotations
 
 from markupsafe import Markup
 
-from pf_core.web.markdown import safe_markdown, setup_markdown_filter
+from pw_core.web.markdown import safe_markdown, setup_markdown_filter
 
 
 class TestSafeMarkdown:

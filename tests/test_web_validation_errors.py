@@ -1,4 +1,4 @@
-"""pf_core.web._validation_errors — a validation error that wraps a validator's InvalidInputError
+"""pw_core.web._validation_errors — a validation error that wraps a validator's InvalidInputError
 is answered as that InvalidInputError; any other is answered by whatever answered it before."""
 
 from typing import Annotated
@@ -12,8 +12,8 @@ from pydantic import AfterValidator, BaseModel, ValidationError
 from starlette.testclient import WebSocketDenialResponse
 from starlette.websockets import WebSocketDisconnect
 
-from pf_core.exceptions import InvalidInputError
-from pf_core.web.app_factory import create_app
+from pw_foundation.exceptions import InvalidInputError
+from pw_core.web.app_factory import create_app
 
 JSON = {"accept": "application/json"}
 

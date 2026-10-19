@@ -1,4 +1,4 @@
-"""Tests for pf_core.export — incremental markdown export + YAML frontmatter."""
+"""Tests for pw_core.export — incremental markdown export + YAML frontmatter."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from pf_core.export import ExportResult, MarkdownExporter, yaml_frontmatter
+from pw_core.export import ExportResult, MarkdownExporter, yaml_frontmatter
 
 
 class _FakeExporter(MarkdownExporter):

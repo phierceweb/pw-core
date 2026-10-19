@@ -45,8 +45,8 @@ class FakeChat:
 
 
 @pytest.fixture
-def pf_schema():
-    from pf_core.testing.db_fixtures import framework_ddl
+def pw_schema():
+    from pw_core.testing.db_fixtures import framework_ddl
 
     return framework_ddl()
 
@@ -67,8 +67,8 @@ def _one_run(conn) -> dict:
 
 
 class TestSuccessPath:
-    def test_records_row_and_returns_triple(self, pf_tables, pf_connection):
-        from pf_core.llm.tracked import tracked_messages_call
+    def test_records_row_and_returns_triple(self, pw_tables, pw_connection):
+        from pw_core.llm.tracked import tracked_messages_call
 
         client = FakeChat()
         content, usage, run_id = tracked_messages_call(
@@ -83,7 +83,7 @@ class TestSuccessPath:
         assert usage["cost_usd"] == 0.001
         assert isinstance(run_id, int)
 
-        run = _one_run(pf_connection)
+        run = _one_run(pw_connection)
         assert run["status"] == "success"
         assert run["provider"] == "openrouter"
         assert run["temperature"] == 0.2
@@ -91,15 +91,15 @@ class TestSuccessPath:
         assert run["model_fingerprint"] == "fp_x"
         assert run["duration_ms"] == 321
 
-        payload = pf_connection.execute(
+        payload = pw_connection.execute(
             text("SELECT rendered_system, rendered_user, raw_response FROM llm_run_payloads")
         ).fetchone()
         assert payload[0] == "You are a summarizer."
         assert payload[1] == "Summarize this text."
         assert payload[2] == "summarized!"
 
-    def test_chat_kwargs_forwarded_but_not_recorded_as_sampling(self, pf_tables, pf_connection):
-        from pf_core.llm.tracked import tracked_messages_call
+    def test_chat_kwargs_forwarded_but_not_recorded_as_sampling(self, pw_tables, pw_connection):
+        from pw_core.llm.tracked import tracked_messages_call
 
         client = FakeChat()
         tracked_messages_call(
@@ -114,10 +114,10 @@ class TestSuccessPath:
         assert call["response_format"] == {"type": "json_object"}
         assert call["timeout"] == 5
         assert call["temperature"] == 0.1
-        assert _one_run(pf_connection)["temperature"] == 0.1
+        assert _one_run(pw_connection)["temperature"] == 0.1
 
-    def test_spec_registers_system_and_user_prompt_ids(self, pf_tables, pf_connection):
-        from pf_core.llm.tracked import tracked_messages_call
+    def test_spec_registers_system_and_user_prompt_ids(self, pw_tables, pw_connection):
+        from pw_core.llm.tracked import tracked_messages_call
 
         tracked_messages_call(
             client=FakeChat(),
@@ -126,16 +126,16 @@ class TestSuccessPath:
             model="test-model",
             spec=SPEC,
         )
-        run = _one_run(pf_connection)
+        run = _one_run(pw_connection)
         prompts = {
             r[0]: (r[1], r[2])
-            for r in pf_connection.execute(text("SELECT part, id, version FROM llm_prompts"))
+            for r in pw_connection.execute(text("SELECT part, id, version FROM llm_prompts"))
         }
         assert prompts["system"] == (run["system_prompt_id"], 4)
         assert prompts["user"] == (run["user_prompt_id"], 4)
 
-    def test_minimal_spec_without_user_part(self, pf_tables, pf_connection):
-        from pf_core.llm.tracked import tracked_messages_call
+    def test_minimal_spec_without_user_part(self, pw_tables, pw_connection):
+        from pw_core.llm.tracked import tracked_messages_call
 
         tracked_messages_call(
             client=FakeChat(),
@@ -144,18 +144,18 @@ class TestSuccessPath:
             model="test-model",
             spec={"version": 2, "system": "canonical system text"},
         )
-        run = _one_run(pf_connection)
+        run = _one_run(pw_connection)
         assert run["system_prompt_id"] is not None
         assert run["user_prompt_id"] is None
-        parts = [r[0] for r in pf_connection.execute(text("SELECT part FROM llm_prompts"))]
+        parts = [r[0] for r in pw_connection.execute(text("SELECT part FROM llm_prompts"))]
         assert parts == ["system"]
 
-    def test_omitted_input_hash_keys_off_multipart_messages(self, pf_tables, pf_connection):
+    def test_omitted_input_hash_keys_off_multipart_messages(self, pw_tables, pw_connection):
         """With no input_hash the row must still carry the messages-derived key:
         record()'s rendered-prompt fallback cannot see multipart content, so
         every vision call would otherwise land on one colliding hash."""
-        from pf_core.llm.tracked import tracked_messages_call
-        from pf_core.llm.tracking import compute_input_hash
+        from pw_core.llm.tracked import tracked_messages_call
+        from pw_core.llm.tracking import compute_input_hash
 
         multipart = [
             {
@@ -174,17 +174,17 @@ class TestSuccessPath:
             sampling={"temperature": 0.2},
             configs={"report_config": 7},
         )
-        assert _one_run(pf_connection)["input_hash"] == compute_input_hash(
+        assert _one_run(pw_connection)["input_hash"] == compute_input_hash(
             model="test-model",
             messages=multipart,
             sampling={"temperature": 0.2},
             configs={"report_config": 7},
         )
 
-    def test_omitted_input_hash_unchanged_for_string_messages(self, pf_tables, pf_connection):
+    def test_omitted_input_hash_unchanged_for_string_messages(self, pw_tables, pw_connection):
         """Golden-value pin: the string-message path must keep writing the
         historical key so existing cache entries stay reachable."""
-        from pf_core.llm.tracked import tracked_messages_call
+        from pw_core.llm.tracked import tracked_messages_call
 
         tracked_messages_call(
             client=FakeChat(),
@@ -198,12 +198,12 @@ class TestSuccessPath:
             configs={"report_config": 7},
         )
         assert (
-            _one_run(pf_connection)["input_hash"]
+            _one_run(pw_connection)["input_hash"]
             == "37e1fb656f1b92c993a4de63cf71d9f13410b40e4dc41e0b1b83259929c8c0d1"
         )
 
-    def test_input_hash_configs_tags_metrics_items_out(self, pf_tables, pf_connection):
-        from pf_core.llm.tracked import tracked_messages_call
+    def test_input_hash_configs_tags_metrics_items_out(self, pw_tables, pw_connection):
+        from pw_core.llm.tracked import tracked_messages_call
 
         tracked_messages_call(
             client=FakeChat(),
@@ -216,18 +216,18 @@ class TestSuccessPath:
             metrics={"pages": 3.0},
             items_out=1,
         )
-        run = _one_run(pf_connection)
+        run = _one_run(pw_connection)
         assert run["input_hash"] == "a" * 64
         assert run["items_out"] == 1
-        cfg = pf_connection.execute(
+        cfg = pw_connection.execute(
             text("SELECT config_kind, config_id FROM llm_run_configs")
         ).fetchone()
         assert tuple(cfg) == ("report_config", 7)
         assert (
-            pf_connection.execute(text("SELECT tag FROM llm_run_tags")).fetchone()[0] == "env:test"
+            pw_connection.execute(text("SELECT tag FROM llm_run_tags")).fetchone()[0] == "env:test"
         )
         assert (
-            pf_connection.execute(
+            pw_connection.execute(
                 text("SELECT metric_name, metric_value FROM llm_run_metrics")
             ).fetchone()[1]
             == 3.0
@@ -235,8 +235,8 @@ class TestSuccessPath:
 
 
 class TestFailurePath:
-    def test_client_error_records_failed_row_and_reraises(self, pf_tables, pf_connection):
-        from pf_core.llm.tracked import tracked_messages_call
+    def test_client_error_records_failed_row_and_reraises(self, pw_tables, pw_connection):
+        from pw_core.llm.tracked import tracked_messages_call
 
         with pytest.raises(RuntimeError, match="boom"):
             tracked_messages_call(
@@ -246,13 +246,13 @@ class TestFailurePath:
                 model="test-model",
                 provider="openrouter",
             )
-        run = _one_run(pf_connection)
+        run = _one_run(pw_connection)
         assert run["status"] == "failed"
         assert run["error_class"] == "RuntimeError"
         assert run["duration_ms"] is not None
 
-    def test_on_record_error_warn_returns_none_run_id(self, pf_tables):
-        from pf_core.llm.tracked import tracked_messages_call
+    def test_on_record_error_warn_returns_none_run_id(self, pw_tables):
+        from pw_core.llm.tracked import tracked_messages_call
 
         class BrokenRepo:
             def record(self, **kwargs):
@@ -269,8 +269,8 @@ class TestFailurePath:
         assert content == "summarized!"
         assert run_id is None
 
-    def test_on_record_error_raise_is_default(self, pf_tables):
-        from pf_core.llm.tracked import tracked_messages_call
+    def test_on_record_error_raise_is_default(self, pw_tables):
+        from pw_core.llm.tracked import tracked_messages_call
 
         class BrokenRepo:
             def record(self, **kwargs):
@@ -287,8 +287,8 @@ class TestFailurePath:
 
 
 class TestMetadataAndWindow:
-    def test_metadata_splits_into_tags_and_metrics(self, pf_tables, pf_connection):
-        from pf_core.llm.tracked import tracked_messages_call
+    def test_metadata_splits_into_tags_and_metrics(self, pw_tables, pw_connection):
+        from pw_core.llm.tracked import tracked_messages_call
 
         tracked_messages_call(
             client=FakeChat(),
@@ -297,19 +297,19 @@ class TestMetadataAndWindow:
             model="test-model",
             metadata={"source_name": "report.pdf", "verified": True, "pages": 3},
         )
-        tags = {r[0] for r in pf_connection.execute(text("SELECT tag FROM llm_run_tags"))}
+        tags = {r[0] for r in pw_connection.execute(text("SELECT tag FROM llm_run_tags"))}
         assert tags == {"source_name:report.pdf", "verified:true"}
         metrics = {
             r[0]: r[1]
-            for r in pf_connection.execute(
+            for r in pw_connection.execute(
                 text("SELECT metric_name, metric_value FROM llm_run_metrics")
             )
         }
         assert metrics == {"pages": 3.0}
 
-    def test_session_metadata_merges_call_wins(self, pf_tables, pf_connection):
-        from pf_core.llm.recording import begin_call_recording, end_call_recording
-        from pf_core.llm.tracked import tracked_messages_call
+    def test_session_metadata_merges_call_wins(self, pw_tables, pw_connection):
+        from pw_core.llm.recording import begin_call_recording, end_call_recording
+        from pw_core.llm.tracked import tracked_messages_call
 
         begin_call_recording(session_metadata={"source_name": "session.pdf", "batch": "b1"})
         try:
@@ -322,11 +322,11 @@ class TestMetadataAndWindow:
             )
         finally:
             end_call_recording()
-        tags = {r[0] for r in pf_connection.execute(text("SELECT tag FROM llm_run_tags"))}
+        tags = {r[0] for r in pw_connection.execute(text("SELECT tag FROM llm_run_tags"))}
         assert tags == {"source_name:call.pdf", "batch:b1"}
 
-    def test_explicit_tags_metrics_merge_with_metadata(self, pf_tables, pf_connection):
-        from pf_core.llm.tracked import tracked_messages_call
+    def test_explicit_tags_metrics_merge_with_metadata(self, pw_tables, pw_connection):
+        from pw_core.llm.tracked import tracked_messages_call
 
         tracked_messages_call(
             client=FakeChat(),
@@ -337,19 +337,19 @@ class TestMetadataAndWindow:
             tags=["env:test", "extra:tag"],
             metrics={"pages": 9.0},
         )
-        tags = [r[0] for r in pf_connection.execute(text("SELECT tag FROM llm_run_tags"))]
+        tags = [r[0] for r in pw_connection.execute(text("SELECT tag FROM llm_run_tags"))]
         assert sorted(tags) == ["env:test", "extra:tag"]
         metrics = {
             r[0]: r[1]
-            for r in pf_connection.execute(
+            for r in pw_connection.execute(
                 text("SELECT metric_name, metric_value FROM llm_run_metrics")
             )
         }
         assert metrics == {"pages": 9.0}
 
-    def test_job_id_explicit_beats_ambient(self, pf_tables, pf_connection):
-        from pf_core.jobs import Job, JobRepo, register_kind
-        from pf_core.llm.tracked import tracked_messages_call
+    def test_job_id_explicit_beats_ambient(self, pw_tables, pw_connection):
+        from pw_core.jobs import Job, JobRepo, register_kind
+        from pw_core.llm.tracked import tracked_messages_call
 
         register_kind(kind="batch")
         ambient_id = JobRepo().create(kind="batch", inputs={}, created_by="test")
@@ -362,12 +362,12 @@ class TestMetadataAndWindow:
                 model="test-model",
                 job_id=explicit_id,
             )
-        row = pf_connection.execute(text("SELECT job_id FROM llm_runs")).fetchone()
+        row = pw_connection.execute(text("SELECT job_id FROM llm_runs")).fetchone()
         assert row[0] == explicit_id
 
-    def test_summary_appended_on_success(self, pf_tables, pf_connection):
-        from pf_core.llm.recording import begin_call_recording, end_call_recording
-        from pf_core.llm.tracked import tracked_messages_call
+    def test_summary_appended_on_success(self, pw_tables, pw_connection):
+        from pw_core.llm.recording import begin_call_recording, end_call_recording
+        from pw_core.llm.tracked import tracked_messages_call
 
         begin_call_recording()
         try:
@@ -396,9 +396,9 @@ class TestMetadataAndWindow:
             }
         ]
 
-    def test_summary_appended_on_failure(self, pf_tables, pf_connection):
-        from pf_core.llm.recording import begin_call_recording, end_call_recording
-        from pf_core.llm.tracked import tracked_messages_call
+    def test_summary_appended_on_failure(self, pw_tables, pw_connection):
+        from pw_core.llm.recording import begin_call_recording, end_call_recording
+        from pw_core.llm.tracked import tracked_messages_call
 
         begin_call_recording()
         try:
@@ -419,8 +419,8 @@ class TestMetadataAndWindow:
         assert rec["prompt_version"] is None
         assert isinstance(rec["run_id"], int)
 
-    def test_failed_row_carries_tags_and_metrics(self, pf_tables, pf_connection):
-        from pf_core.llm.tracked import tracked_messages_call
+    def test_failed_row_carries_tags_and_metrics(self, pw_tables, pw_connection):
+        from pw_core.llm.tracked import tracked_messages_call
 
         with pytest.raises(RuntimeError):
             tracked_messages_call(
@@ -430,14 +430,14 @@ class TestMetadataAndWindow:
                 model="test-model",
                 metadata={"source_name": "report.pdf", "pages": 3},
             )
-        tag = pf_connection.execute(text("SELECT tag FROM llm_run_tags")).fetchone()
+        tag = pw_connection.execute(text("SELECT tag FROM llm_run_tags")).fetchone()
         assert tag[0] == "source_name:report.pdf"
-        metric = pf_connection.execute(text("SELECT metric_name FROM llm_run_metrics")).fetchone()
+        metric = pw_connection.execute(text("SELECT metric_name FROM llm_run_metrics")).fetchone()
         assert metric[0] == "pages"
 
-    def test_no_window_no_metadata_appends_nothing(self, pf_tables, pf_connection):
-        from pf_core.llm.recording import end_call_recording
-        from pf_core.llm.tracked import tracked_messages_call
+    def test_no_window_no_metadata_appends_nothing(self, pw_tables, pw_connection):
+        from pw_core.llm.recording import end_call_recording
+        from pw_core.llm.tracked import tracked_messages_call
 
         tracked_messages_call(
             client=FakeChat(),

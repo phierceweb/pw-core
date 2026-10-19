@@ -1,4 +1,4 @@
-"""Tests for pf_core.pipeline.run_record."""
+"""Tests for pw_core.pipeline.run_record."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import contextlib
 import json
 from pathlib import Path
 
-from pf_core.pipeline.run_record import (
+from pw_core.pipeline.run_record import (
     DEFAULT_FILENAME,
     RunRecord,
     file_sha256,
@@ -164,7 +164,7 @@ def test_failed_rewrite_leaves_previous_record_intact(tmp_path: Path, monkeypatc
     def boom(*args, **kwargs):
         raise OSError("simulated write failure")
 
-    monkeypatch.setattr("pf_core.utils.io.os.replace", boom)
+    monkeypatch.setattr("pw_foundation.utils.io.os.replace", boom)
     with contextlib.suppress(OSError):
         write_run_record(out, version="2.0.0", **common)  # type: ignore[arg-type]
 

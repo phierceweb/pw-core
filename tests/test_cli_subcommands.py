@@ -1,4 +1,4 @@
-"""Tests for pf_core.cli.subcommands — Typer subcommand factories."""
+"""Tests for pw_core.cli.subcommands — Typer subcommand factories."""
 
 from __future__ import annotations
 
@@ -10,12 +10,12 @@ import pytest
 import typer
 from typer.testing import CliRunner
 
-from pf_core.cli.subcommands import (
+from pw_core.cli.subcommands import (
     make_baseline_subcommand_group,
     make_invalidate_subcommand,
 )
-from pf_core.pipeline.baseline import BaselineConfig
-from pf_core.pipeline.cache import StageDefinition, StageRegistry
+from pw_core.pipeline.baseline import BaselineConfig
+from pw_core.pipeline.cache import StageDefinition, StageRegistry
 
 runner = CliRunner()
 

@@ -1,4 +1,4 @@
-"""Tests for pf_core.utils.url_safety (SSRF guard)."""
+"""Tests for pw_core.utils.url_safety (SSRF guard)."""
 
 from __future__ import annotations
 
@@ -7,12 +7,12 @@ from pathlib import Path
 
 import pytest
 
-import pf_core
-from pf_core.exceptions import InvalidInputError
-from pf_core.utils import url_safety
-from pf_core.utils.url_safety import assert_public_url, guarded_get
+import pw_core
+from pw_foundation.exceptions import InvalidInputError
+from pw_core.utils import url_safety
+from pw_core.utils.url_safety import assert_public_url, guarded_get
 
-_URLS_DOC = Path(pf_core.__file__).resolve().parent / "docs" / "urls.md"
+_URLS_DOC = Path(pw_core.__file__).resolve().parent / "docs" / "urls.md"
 
 
 class TestAssertPublicUrl:

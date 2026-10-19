@@ -1,6 +1,6 @@
-"""Tests for pf_core.db.versioned_config — append-only latest-version-wins config.
+"""Tests for pw_core.db.versioned_config — append-only latest-version-wins config.
 
-Runtime behaviour is exercised against the SQLite ``pf_engine`` fixture; a scratch
+Runtime behaviour is exercised against the SQLite ``pw_engine`` fixture; a scratch
 ``report_config`` table stands in for a consumer's versioned-config table.
 """
 
@@ -9,16 +9,16 @@ from __future__ import annotations
 import pytest
 from sqlalchemy import Column, Integer, MetaData, Table, Text
 
-from pf_core.db import transaction
-from pf_core.db.versioned_config import (
+from pw_core.db import transaction
+from pw_core.db.versioned_config import (
     append_version,
     get_latest,
     get_latest_with_fallback,
     latest_version,
 )
-from pf_core.exceptions import InvalidInputError
+from pw_foundation.exceptions import InvalidInputError
 
-pytest_plugins = ["pf_core.testing.db_fixtures"]
+pytest_plugins = ["pw_core.testing.db_fixtures"]
 
 _md = MetaData()
 _report_config = Table(
@@ -33,8 +33,8 @@ _report_config = Table(
 
 
 @pytest.fixture()
-def report_config(pf_engine):
-    _md.create_all(pf_engine)
+def report_config(pw_engine):
+    _md.create_all(pw_engine)
     return _report_config
 
 

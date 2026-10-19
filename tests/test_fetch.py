@@ -1,4 +1,4 @@
-"""Tests for pf_core.fetch — polite stdlib fetch core.
+"""Tests for pw_core.fetch — polite stdlib fetch core.
 
 Hermetic: every request goes through the patched ``Fetcher._open`` seam and
 DNS resolution is faked at ``socket.getaddrinfo``, so the SSRF guard runs
@@ -19,8 +19,8 @@ from email.message import Message
 
 import pytest
 
-from pf_core.exceptions import ClientError, InvalidInputError
-from pf_core.fetch import (
+from pw_foundation.exceptions import ClientError, InvalidInputError
+from pw_core.fetch import (
     Fetcher,
     browser_headers,
     fetch_bytes,
@@ -567,7 +567,7 @@ class TestPostForm:
         assert "content-type" not in _sent_headers(calls[1][0])
 
     def test_module_post_form_passes_timeout_and_retries(self, monkeypatch, sleeps):
-        from pf_core.fetch import post_form
+        from pw_core.fetch import post_form
 
         calls = _script_open(monkeypatch, [_http_error(503)])
         with pytest.raises(urllib.error.HTTPError):
@@ -686,24 +686,24 @@ class TestThrottle:
 
 class TestUserAgent:
     def test_kwarg_beats_env(self, monkeypatch):
-        monkeypatch.setenv("PF_FETCH_UA", "env-agent/2.0")
+        monkeypatch.setenv("PW_FETCH_UA", "env-agent/2.0")
         calls = _script_open(monkeypatch, [_Resp(b"ok")])
         Fetcher(user_agent="kwarg-agent/1.0").get_bytes(URL)
         assert _sent_headers(calls[0][0])["user-agent"] == "kwarg-agent/1.0"
 
     def test_env_beats_default(self, monkeypatch):
-        monkeypatch.setenv("PF_FETCH_UA", "env-agent/2.0")
+        monkeypatch.setenv("PW_FETCH_UA", "env-agent/2.0")
         calls = _script_open(monkeypatch, [_Resp(b"ok")])
         Fetcher().get_bytes(URL)
         assert _sent_headers(calls[0][0])["user-agent"] == "env-agent/2.0"
 
     def test_default_identifies_pf_core(self, monkeypatch):
-        monkeypatch.delenv("PF_FETCH_UA", raising=False)
+        monkeypatch.delenv("PW_FETCH_UA", raising=False)
         calls = _script_open(monkeypatch, [_Resp(b"ok")])
         Fetcher().get_bytes(URL)
         user_agent = _sent_headers(calls[0][0])["user-agent"]
-        assert user_agent.startswith("pf-core-fetch/")
-        assert "+https://github.com/phierceweb/pf-core" in user_agent
+        assert user_agent.startswith("pw-core-fetch/")
+        assert "+https://github.com/phierceweb/pw-core" in user_agent
 
 
 class TestHeaders:
@@ -791,21 +791,21 @@ class TestTlsVerification:
         assert self._verify_mode(Fetcher(verify_tls=False)) == ssl.CERT_NONE
         assert self._verify_mode(Fetcher()) == ssl.CERT_REQUIRED
 
-    @pytest.mark.parametrize("var", ["PF_VERIFY_TLS", "URL_CHECK_VERIFY_TLS"])
+    @pytest.mark.parametrize("var", ["PW_VERIFY_TLS", "URL_CHECK_VERIFY_TLS"])
     def test_env_disables(self, monkeypatch, var):
         monkeypatch.setenv(var, "0")
         assert self._verify_mode(Fetcher()) == ssl.CERT_NONE
 
     def test_kwarg_beats_env(self, monkeypatch):
-        monkeypatch.setenv("PF_VERIFY_TLS", "0")
+        monkeypatch.setenv("PW_VERIFY_TLS", "0")
         assert self._verify_mode(Fetcher(verify_tls=True)) == ssl.CERT_REQUIRED
 
     def test_new_name_beats_legacy(self, monkeypatch):
         monkeypatch.setenv("URL_CHECK_VERIFY_TLS", "0")
-        monkeypatch.setenv("PF_VERIFY_TLS", "1")
+        monkeypatch.setenv("PW_VERIFY_TLS", "1")
         assert self._verify_mode(Fetcher()) == ssl.CERT_REQUIRED
 
-    @pytest.mark.parametrize("var", ["PF_VERIFY_TLS", "URL_CHECK_VERIFY_TLS"])
+    @pytest.mark.parametrize("var", ["PW_VERIFY_TLS", "URL_CHECK_VERIFY_TLS"])
     def test_unrecognized_value_fails_safe(self, monkeypatch, var):
         monkeypatch.setenv(var, "maybe")
         assert self._verify_mode(Fetcher()) == ssl.CERT_REQUIRED

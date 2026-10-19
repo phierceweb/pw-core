@@ -1,4 +1,4 @@
-"""Tests for pf_core.utils.article_fetch.
+"""Tests for pw_core.utils.article_fetch.
 
 Tests that don't require the ``articles`` extra (trafilatura/htmldate)
 run unconditionally. Tests that exercise the live fetch + extract are
@@ -11,8 +11,8 @@ import datetime
 
 import pytest
 
-from pf_core.utils import article_fetch as af
-from pf_core.utils.article_fetch import (
+from pw_core.utils import article_fetch as af
+from pw_core.utils.article_fetch import (
     FETCHER_VERSION,
     _live_fetch_with_retry,
     _looks_paywalled,
@@ -136,13 +136,13 @@ class TestImportError:
 
     def test_module_imports_without_deps(self):
         # If we got here, the module imported. That's the test.
-        from pf_core.utils import article_fetch
+        from pw_core.utils import article_fetch
 
         assert article_fetch.fetch_article is not None
 
     def test_helpful_error_when_deps_missing(self, monkeypatch):
         # Force the dep gate off and check the error message.
-        from pf_core.utils import article_fetch
+        from pw_core.utils import article_fetch
 
         monkeypatch.setattr(article_fetch, "_HAS_DEPS", False)
         with pytest.raises(ImportError, match="articles"):
@@ -160,7 +160,7 @@ class TestLiveFetchWithRetry:
     """Maps `fetch_url_content` outcomes to (fetch_status, body) pairs.
 
     Doesn't need the ``articles`` extra — the retry helper only uses
-    `pf_core.utils.urls.fetch_url_content`, which we mock.
+    `pw_core.utils.urls.fetch_url_content`, which we mock.
     """
 
     def test_2xx_with_body_returns_ok(self, monkeypatch):
@@ -296,7 +296,7 @@ class TestFetchArticleWaybackFlag:
 
     def test_kwarg_overrides_env(self, monkeypatch):
         # An explicit True kwarg must beat the disabling env var.
-        monkeypatch.setenv("PF_ARTICLE_WAYBACK_FALLBACK", "0")
+        monkeypatch.setenv("PW_ARTICLE_WAYBACK_FALLBACK", "0")
         wb_calls = []
 
         def fake_wb(url, *, at=None, **kw):
@@ -314,7 +314,7 @@ class TestFetchArticleWaybackFlag:
         assert len(wb_calls) == 1
 
     def test_env_disables_wayback(self, monkeypatch):
-        monkeypatch.setenv("PF_ARTICLE_WAYBACK_FALLBACK", "0")
+        monkeypatch.setenv("PW_ARTICLE_WAYBACK_FALLBACK", "0")
         wb_calls = []
         monkeypatch.setattr(
             af,
@@ -444,7 +444,7 @@ class TestBinaryDetectionOverRealTransport:
     def test_signature_survives_the_real_fetch_path(self, monkeypatch, raw, label):
         import httpx
 
-        from pf_core.utils import urls as urls_mod
+        from pw_core.utils import urls as urls_mod
 
         def handler(request):
             return httpx.Response(200, content=raw)
@@ -643,7 +643,7 @@ class TestExtractorLoggersQuieted:
     def test_trafilatura_and_htmldate_are_capped(self):
         import logging
 
-        from pf_core.utils import _article_extract
+        from pw_core.utils import _article_extract
 
         if not _article_extract._HAS_DEPS:
             pytest.skip("requires the 'articles' extra")
@@ -653,14 +653,14 @@ class TestExtractorLoggersQuieted:
     def test_env_var_overrides_level(self, monkeypatch):
         import logging
 
-        from pf_core.utils import _article_extract
+        from pw_core.utils import _article_extract
 
-        monkeypatch.setenv("PF_ARTICLE_EXTRACTOR_LOG_LEVEL", "DEBUG")
+        monkeypatch.setenv("PW_ARTICLE_EXTRACTOR_LOG_LEVEL", "DEBUG")
         try:
             _article_extract._quiet_extractor_loggers()
             assert logging.getLogger("trafilatura").level == logging.DEBUG
         finally:
-            monkeypatch.delenv("PF_ARTICLE_EXTRACTOR_LOG_LEVEL", raising=False)
+            monkeypatch.delenv("PW_ARTICLE_EXTRACTOR_LOG_LEVEL", raising=False)
             _article_extract._quiet_extractor_loggers()
 
     @pytest.mark.parametrize("bogus", ["nonsense", "BASIC_FORMAT", ""])
@@ -671,14 +671,14 @@ class TestExtractorLoggersQuieted:
     ):
         import logging
 
-        from pf_core.utils import _article_extract
+        from pw_core.utils import _article_extract
 
-        monkeypatch.setenv("PF_ARTICLE_EXTRACTOR_LOG_LEVEL", bogus)
+        monkeypatch.setenv("PW_ARTICLE_EXTRACTOR_LOG_LEVEL", bogus)
         try:
             _article_extract._quiet_extractor_loggers()
             assert logging.getLogger("trafilatura").level == logging.CRITICAL
         finally:
-            monkeypatch.delenv("PF_ARTICLE_EXTRACTOR_LOG_LEVEL", raising=False)
+            monkeypatch.delenv("PW_ARTICLE_EXTRACTOR_LOG_LEVEL", raising=False)
             _article_extract._quiet_extractor_loggers()
 
 
@@ -691,26 +691,25 @@ def test_fetch_article_never_raises_for_a_non_string_url(bad):
     assert art.url == ""
 
 
-def test_wayback_fallback_env_honours_conventional_falsy_spellings(monkeypatch):
-    """Every conventional falsy spelling must switch the fallback off, not
-    just a literal "0"."""
-    from pf_core.utils.env import resolve_bool
+def test_wayback_fallback_env_is_read_through_resolve_bool(monkeypatch):
+    """The knob goes through pw-foundation's resolve_bool (its spelling table is tested there)."""
+    from pw_foundation.utils.env import resolve_bool
 
-    for spelling in ("0", "false", "False", "off", "no", "FALSE"):
-        monkeypatch.setenv("PF_ARTICLE_WAYBACK_FALLBACK", spelling)
-        assert resolve_bool(None, "PF_ARTICLE_WAYBACK_FALLBACK", default=True) is False, spelling
-    for spelling in ("1", "true", "on", "yes", " 1 "):
-        monkeypatch.setenv("PF_ARTICLE_WAYBACK_FALLBACK", spelling)
-        assert resolve_bool(None, "PF_ARTICLE_WAYBACK_FALLBACK", default=True) is True, spelling
-    monkeypatch.delenv("PF_ARTICLE_WAYBACK_FALLBACK")
-    assert resolve_bool(None, "PF_ARTICLE_WAYBACK_FALLBACK", default=True) is True
+    for spelling in ("off",):
+        monkeypatch.setenv("PW_ARTICLE_WAYBACK_FALLBACK", spelling)
+        assert resolve_bool(None, "PW_ARTICLE_WAYBACK_FALLBACK", default=True) is False, spelling
+    for spelling in ("yes",):
+        monkeypatch.setenv("PW_ARTICLE_WAYBACK_FALLBACK", spelling)
+        assert resolve_bool(None, "PW_ARTICLE_WAYBACK_FALLBACK", default=True) is True, spelling
+    monkeypatch.delenv("PW_ARTICLE_WAYBACK_FALLBACK")
+    assert resolve_bool(None, "PW_ARTICLE_WAYBACK_FALLBACK", default=True) is True
 
 
 def test_wayback_fallback_kwarg_overrides_env(monkeypatch):
-    from pf_core.utils.env import resolve_bool
+    from pw_foundation.utils.env import resolve_bool
 
-    monkeypatch.setenv("PF_ARTICLE_WAYBACK_FALLBACK", "0")
-    assert resolve_bool(True, "PF_ARTICLE_WAYBACK_FALLBACK", default=True) is True
+    monkeypatch.setenv("PW_ARTICLE_WAYBACK_FALLBACK", "0")
+    assert resolve_bool(True, "PW_ARTICLE_WAYBACK_FALLBACK", default=True) is True
 
 
 @pytest.mark.skipif(not HAS_DEPS, reason="requires the 'articles' extra")
@@ -718,7 +717,7 @@ class TestTrafilaturaExtract:
     def test_extracts_a_dict_without_deprecation_warnings(self):
         import warnings
 
-        from pf_core.utils import _article_extract
+        from pw_core.utils import _article_extract
 
         html = (
             "<html><head><title>Headline</title></head><body><article><p>"

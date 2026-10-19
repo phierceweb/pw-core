@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from pf_core.exceptions import ConfigurationError
-from pf_core.llm.validate import JsonSchemaValidator, PydanticValidator
+from pw_foundation.exceptions import ConfigurationError
+from pw_core.llm.validate import JsonSchemaValidator, PydanticValidator
 
 from .conftest import PydForbid, PydOk
 
@@ -48,7 +48,7 @@ def test_pydantic_validator_lets_a_validators_invalid_input_error_escape():
     """It escaped validate_shape before pydantic wrapped it, rather than failing the shape."""
     from pydantic import BaseModel, field_validator
 
-    from pf_core.exceptions import InvalidInputError
+    from pw_foundation.exceptions import InvalidInputError
 
     class Scored(BaseModel):
         score: int
@@ -73,5 +73,5 @@ def test_jsonschema_validator_raises_without_extra(monkeypatch):
     import sys
 
     monkeypatch.setitem(sys.modules, "jsonschema", None)
-    with pytest.raises(ConfigurationError, match=r"pip install pf-core\[jsonschema\]"):
+    with pytest.raises(ConfigurationError, match=r"pip install pw-core\[jsonschema\]"):
         JsonSchemaValidator({"type": "object"})

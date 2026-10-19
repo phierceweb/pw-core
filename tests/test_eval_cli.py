@@ -1,4 +1,4 @@
-"""Tests for the pf-eval console script: exit codes a CI gate can trust."""
+"""Tests for the pw-eval console script: exit codes a CI gate can trust."""
 
 from __future__ import annotations
 
@@ -10,8 +10,8 @@ from pathlib import Path
 
 import pytest
 
-from pf_core.eval._config import clear_config_cache
-from pf_core.llm.tracking import clear_resolver_caches, metadata
+from pw_core.eval._config import clear_config_cache
+from pw_core.llm.tracking import clear_resolver_caches, metadata
 
 AGENT = "summarizer"
 VERSION = "golden_v1"
@@ -31,10 +31,10 @@ def _reset():
 
 
 @pytest.fixture
-def tracking_db(pf_engine):
-    metadata.create_all(pf_engine)
-    yield pf_engine
-    metadata.drop_all(pf_engine)
+def tracking_db(pw_engine):
+    metadata.create_all(pw_engine)
+    yield pw_engine
+    metadata.drop_all(pw_engine)
 
 
 @pytest.fixture
@@ -48,8 +48,8 @@ def project(tmp_path, monkeypatch):
 
 
 def _golden(prompt: str, output: dict) -> int:
-    from pf_core.eval import GoldenSetRepo
-    from pf_core.llm.tracking import LlmRunRepo
+    from pw_core.eval import GoldenSetRepo
+    from pw_core.llm.tracking import LlmRunRepo
 
     run_id = LlmRunRepo().record(
         agent_type=AGENT,
@@ -84,19 +84,19 @@ def _replay_with(monkeypatch, answers: dict[str, dict | Exception]) -> list[str]
     def _resolve(slug, *, backend=None, model_override=None):
         return _Client(answers, calls), {"model": "fake-model"}, "fake"
 
-    monkeypatch.setattr("pf_core.eval._runner.resolve_agent", _resolve)
+    monkeypatch.setattr("pw_core.eval._runner.resolve_agent", _resolve)
     return calls
 
 
 def _no_router(project, monkeypatch) -> None:
-    from pf_core.llm.router import clear_cache
+    from pw_core.llm.router import clear_cache
 
     monkeypatch.setenv("MODEL_ROUTER_CONFIG", str(project / "config" / "absent_router.yaml"))
     clear_cache()
 
 
 def _route(project, monkeypatch, text: str) -> None:
-    from pf_core.llm.router import clear_cache
+    from pw_core.llm.router import clear_cache
 
     path = project / "config" / "model_router.yaml"
     path.write_text(text)
@@ -108,7 +108,7 @@ def _route(project, monkeypatch, text: str) -> None:
 def _openrouter_answers(monkeypatch, answers: dict[str, dict | Exception]) -> list[str]:
     calls: list[str] = []
     monkeypatch.setattr(
-        "pf_core.clients.openrouter.get_client", lambda *a, **k: _Client(answers, calls)
+        "pw_core.clients.openrouter.get_client", lambda *a, **k: _Client(answers, calls)
     )
     return calls
 
@@ -130,13 +130,13 @@ def _judge_scores(monkeypatch, verdicts: dict[str, float | Exception]) -> None:
             return json.dumps({"score": verdict, "rationale": "-"}), {}
 
     monkeypatch.setattr(
-        "pf_core.eval._judge.resolve_agent",
+        "pw_core.eval._judge.resolve_agent",
         lambda slug, **kwargs: (_Judge(), {"model": "judge-model"}, "fake"),
     )
 
 
 def _pf_eval(*args: str) -> int:
-    from pf_core.eval.cli import main
+    from pw_core.eval.cli import main
 
     try:
         main(list(args))
@@ -158,7 +158,7 @@ def _compare(baseline: str, candidate: str) -> int:
 def test_pf_eval_is_a_declared_console_script():
     pyproject = Path(__file__).resolve().parents[1] / "pyproject.toml"
     scripts = tomllib.loads(pyproject.read_text())["project"]["scripts"]
-    assert scripts["pf-eval"] == "pf_core.eval.cli:main"
+    assert scripts["pw-eval"] == "pw_core.eval.cli:main"
 
 
 # ---------------------------------------------------------------------------
@@ -201,7 +201,7 @@ def test_run_exits_2_before_replaying_when_the_report_cannot_be_rendered(
 
 
 def test_run_exits_2_when_writing_the_report_fails(tracking_db, project, monkeypatch):
-    from pf_core.eval import EvalReport
+    from pw_core.eval import EvalReport
 
     def _disk_full(self, path):
         raise OSError(28, "No space left on device")
@@ -239,7 +239,7 @@ def test_run_exits_2_for_an_unknown_backend(tracking_db, project, monkeypatch):
 def test_an_agent_absent_from_the_router_replays_on_the_named_backend(
     tracking_db, project, monkeypatch
 ):
-    from pf_core.clients import routing
+    from pw_core.clients import routing
 
     _no_router(project, monkeypatch)
     _golden("Q1", {"answer": 1})
@@ -278,7 +278,7 @@ def test_run_exits_2_when_the_backend_client_cannot_be_built(tracking_db, projec
         monkeypatch,
         f"agents:\n  {AGENT}:\n    backends:\n      openrouter: {{model: m}}\n",
     )
-    monkeypatch.setattr("pf_core.clients.openrouter._client", None)
+    monkeypatch.setattr("pw_core.clients.openrouter._client", None)
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     _golden("Q1", {"answer": 1})
     assert _run() == 2
@@ -343,7 +343,7 @@ def test_run_exits_2_before_replaying_for_a_target_it_cannot_apply(
 
 
 def test_run_replays_every_golden_past_the_listing_default(tracking_db, project, monkeypatch):
-    from pf_core.eval import GoldenSetRepo
+    from pw_core.eval import GoldenSetRepo
 
     n = inspect.signature(GoldenSetRepo.list).parameters["limit"].default + 1
     for i in range(n):
@@ -367,7 +367,7 @@ def test_run_exits_2_for_a_bad_key_in_another_agents_block(tracking_db, project,
     "tag", ["eval:golden_v1", "EVAL:golden_v1", "eval:replay:golden_v1", f"agent:{AGENT}"]
 )
 def test_run_exits_2_for_a_tag_in_the_eval_namespace(tracking_db, project, monkeypatch, tag):
-    from pf_core.eval import GoldenSetRepo
+    from pw_core.eval import GoldenSetRepo
 
     _golden("Q1", {"answer": 1})
     calls = _replay_with(monkeypatch, {"Q1": {"answer": 1}})
@@ -421,7 +421,7 @@ def test_run_exits_2_before_replaying_when_eval_yaml_has_no_block_for_the_agent(
 
 
 def test_run_exits_1_when_a_comparator_scores_outside_0_to_1(tracking_db, project, monkeypatch):
-    from pf_core.eval import _compare
+    from pw_core.eval import _compare
 
     monkeypatch.setattr(_compare, "_registry", dict(_compare._registry))
     _compare.register_comparator("evalproj_percent")(
@@ -441,7 +441,7 @@ def test_run_exits_1_when_a_comparator_scores_outside_0_to_1(tracking_db, projec
 def test_run_exits_2_when_the_database_fails(tracking_db, project, monkeypatch):
     from sqlalchemy.exc import OperationalError
 
-    from pf_core.eval import GoldenSetRepo
+    from pw_core.eval import GoldenSetRepo
 
     def _down(self, **kwargs):
         raise OperationalError("SELECT 1", {}, ConnectionRefusedError("connection refused"))
@@ -595,5 +595,5 @@ def test_compare_exits_2_when_the_database_fails(tracking_db, project, monkeypat
     def _down(*args, **kwargs):
         raise OperationalError("SELECT 1", {}, ConnectionRefusedError("connection refused"))
 
-    monkeypatch.setattr("pf_core.eval._experiments._tag_replays", _down)
+    monkeypatch.setattr("pw_core.eval._experiments._tag_replays", _down)
     assert _compare("experiment:base", "experiment:cand") == 2

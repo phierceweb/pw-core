@@ -1,4 +1,4 @@
-"""Tests for how pf_core.clients.claude_code sends tools and the system prompt."""
+"""Tests for how pw_core.clients.claude_code sends tools and the system prompt."""
 
 from __future__ import annotations
 
@@ -10,8 +10,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from pf_core.clients import routing
-from pf_core.clients._claude_code_wire import (
+from pw_core.clients import routing
+from pw_core.clients._claude_code_wire import (
     APPEND_SYSTEM_PROMPT_FILE_FLAG,
     SYSTEM_PROMPT_FILE_FLAG,
     checked_tools,
@@ -21,14 +21,14 @@ from pf_core.clients._claude_code_wire import (
     system_prompt_file,
     tool_args,
 )
-from pf_core.clients.claude_code import (
+from pw_core.clients.claude_code import (
     ClaudeCodeClient,
     ClaudeCodeError,
     get_client,
     new_client,
     reset_client,
 )
-from pf_core.exceptions import ConfigurationError
+from pw_foundation.exceptions import ConfigurationError
 
 SYSTEM_AND_USER = [
     {"role": "system", "content": "be brief"},
@@ -38,7 +38,7 @@ SYSTEM_AND_USER = [
 
 @pytest.fixture(autouse=True)
 def _reset(monkeypatch):
-    monkeypatch.delenv("PF_CORE_CLAUDE_CODE_MODEL", raising=False)
+    monkeypatch.delenv("PW_CORE_CLAUDE_CODE_MODEL", raising=False)
     reset_client()
     routing.clear_client_cache()
     yield
@@ -83,9 +83,9 @@ class _Recorder:
 
 def _chat(recorder: _Recorder, messages=SYSTEM_AND_USER, **client_kwargs):
     with (
-        patch("pf_core.clients.claude_code.shutil.which", return_value="/usr/bin/claude"),
-        patch("pf_core.clients.claude_code.subprocess.run", side_effect=recorder),
-        patch("pf_core.clients.claude_code.time.sleep"),
+        patch("pw_core.clients.claude_code.shutil.which", return_value="/usr/bin/claude"),
+        patch("pw_core.clients.claude_code.subprocess.run", side_effect=recorder),
+        patch("pw_core.clients.claude_code.time.sleep"),
     ):
         return ClaudeCodeClient(**client_kwargs).chat(messages=messages)
 
@@ -405,8 +405,8 @@ class TestFileLifecycle:
 
     def test_no_file_created_when_messages_are_rejected(self):
         with (
-            patch("pf_core.clients.claude_code.shutil.which", return_value="/usr/bin/claude"),
-            patch("pf_core.clients.claude_code.system_prompt_file") as spf,
+            patch("pw_core.clients.claude_code.shutil.which", return_value="/usr/bin/claude"),
+            patch("pw_core.clients.claude_code.system_prompt_file") as spf,
             pytest.raises(ClaudeCodeError, match="no usable user content"),
         ):
             ClaudeCodeClient().chat(messages=[{"role": "system", "content": "only"}])
@@ -449,8 +449,8 @@ class TestConstruction:
     def test_preflight_runs_as_a_plain_completion(self):
         rec = _Recorder()
         with (
-            patch("pf_core.clients.claude_code.shutil.which", return_value="/usr/bin/claude"),
-            patch("pf_core.clients.claude_code.subprocess.run", side_effect=rec),
+            patch("pw_core.clients.claude_code.shutil.which", return_value="/usr/bin/claude"),
+            patch("pw_core.clients.claude_code.subprocess.run", side_effect=rec),
         ):
             ClaudeCodeClient().preflight()
         cmd = rec.calls[0]["cmd"]

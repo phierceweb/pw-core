@@ -1,6 +1,6 @@
-"""Tests for pf_core.llm.router.resolve_agent — YAML-routed client acquisition.
+"""Tests for pw_core.llm.router.resolve_agent — YAML-routed client acquisition.
 
-Uses fake backends registered through pf_core.clients.routing.register_client
+Uses fake backends registered through pw_core.clients.routing.register_client
 so no real transport (or API key) is involved.
 """
 
@@ -8,9 +8,9 @@ from __future__ import annotations
 
 import pytest
 
-from pf_core.clients.routing import register_client, unregister_client
-from pf_core.exceptions import ConfigurationError
-from pf_core.llm.router import (
+from pw_core.clients.routing import register_client, unregister_client
+from pw_foundation.exceptions import ConfigurationError
+from pw_core.llm.router import (
     ResolvedAgent,
     call_with_fallback,
     clear_cache,

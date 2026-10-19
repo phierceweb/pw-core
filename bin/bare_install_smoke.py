@@ -1,5 +1,5 @@
 """Bare-install smoke check — run INSIDE a venv that has only `pip install .`
-(no extras) of pf-core. Proves the foundation install is dependency-light and
+(no extras) of pw-core. Proves the foundation install is dependency-light and
 that LLM/HTTP-gated modules raise a friendly ImportError naming their extra.
 
 Invoked by `bin/verify-bare-install`. Not a pytest test (it must run in the
@@ -27,26 +27,20 @@ def check(desc, fn):
 
 # 1. Foundation modules import cleanly with only base deps installed.
 foundation = [
-    "pf_core",
-    "pf_core.exceptions",
-    "pf_core.log",
-    "pf_core.config",
-    "pf_core.output",
-    "pf_core.parallel",
-    "pf_core.services",
-    "pf_core.services.base",
-    "pf_core.utils",
-    "pf_core.utils.env",
-    "pf_core.utils.dates",
-    "pf_core.utils.ids",
-    "pf_core.utils.json",
-    "pf_core.utils.similarity",
-    "pf_core.utils.vocab",
-    # generic JSON-from-messy-text recovery (lives outside pf_core.llm).
-    "pf_core.utils.json_recovery",
+    "pw_foundation",  # the hard dependency, with its five small deps
+    "pw_core",
+    "pw_core.config",
+    "pw_core.doctor",
+    "pw_core.guards_rules",
+    "pw_core.utils",
+    "pw_core.utils.similarity",
+    "pw_core.utils.vocab",
+    "pw_core.utils.relative_dates",
+    # generic JSON-from-messy-text recovery (lives outside pw_core.llm).
+    "pw_core.utils.json_recovery",
     # pure URL parsing / HTML metadata — no httpx.
-    "pf_core.utils.url_parse",
-    "pf_core.utils.url_html",
+    "pw_core.utils.url_parse",
+    "pw_core.utils.url_html",
 ]
 for mod in foundation:
     check(f"import {mod}", lambda m=mod: importlib.import_module(m))
@@ -70,45 +64,45 @@ def _friendly(mod, needle):
         importlib.import_module(mod)
     except ImportError as e:
         msg = str(e)
-        assert "pip install pf-core[" in msg, f"no install hint in: {msg!r}"
+        assert "pip install pw-core[" in msg, f"no install hint in: {msg!r}"
         assert needle in msg, f"expected {needle!r} in: {msg!r}"
         return
     raise AssertionError(f"{mod} imported but should have raised")
 
 
 check(
-    "pf_core.llm.parse -> friendly [validate] error",
-    lambda: _friendly("pf_core.llm.parse", "pf-core[validate]"),
+    "pw_core.llm.parse -> friendly [validate] error",
+    lambda: _friendly("pw_core.llm.parse", "pw-core[validate]"),
 )
 check(
-    "pf_core.llm.validate -> friendly [validate] error",
-    lambda: _friendly("pf_core.llm.validate", "pf-core[validate]"),
+    "pw_core.llm.validate -> friendly [validate] error",
+    lambda: _friendly("pw_core.llm.validate", "pw-core[validate]"),
 )
 check(
-    "pf_core.clients.openrouter -> friendly [llm] error",
-    lambda: _friendly("pf_core.clients.openrouter", "pf-core[llm]"),
+    "pw_core.clients.openrouter -> friendly [llm] error",
+    lambda: _friendly("pw_core.clients.openrouter", "pw-core[llm]"),
 )
 
 
 # 4. Lazy util re-export raises a friendly [http] error on attribute access.
 def _lazy_http():
-    import pf_core.utils as u
+    import pw_core.utils as u
 
     try:
         u.check_url  # noqa: B018
     except ImportError as e:
-        assert "pf-core[http]" in str(e), str(e)
+        assert "pw-core[http]" in str(e), str(e)
         return
-    raise AssertionError("pf_core.utils.check_url did not raise")
+    raise AssertionError("pw_core.utils.check_url did not raise")
 
 
-check("pf_core.utils.check_url -> friendly [http] error", _lazy_http)
+check("pw_core.utils.check_url -> friendly [http] error", _lazy_http)
 
 
 # 5. The stdlib-only helpers must resolve off the same facade with no extra —
 # the negative check above passes just as well when everything is gated.
 def _ungated_utils():
-    import pf_core.utils as u
+    import pw_core.utils as u
 
     assert u.domain_of("https://www.example.com/p") == "example.com"
     assert u.archive_timestamp_is_round("https://example.com") is False
@@ -117,7 +111,7 @@ def _ungated_utils():
     assert callable(u.extract_article_metadata)
 
 
-check("pf_core.utils pure helpers resolve without [http]", _ungated_utils)
+check("pw_core.utils pure helpers resolve without [http]", _ungated_utils)
 
 print()
 if failures:

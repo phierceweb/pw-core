@@ -1,4 +1,4 @@
-"""Tests for pf_core.clients.anthropic — Anthropic API client.
+"""Tests for pw_core.clients.anthropic — Anthropic API client.
 
 Mocks the official ``anthropic.Anthropic`` SDK class at the module
 boundary; no real API calls. Verifies constructor validation, the
@@ -11,13 +11,13 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 import pytest
-from pf_core.clients.anthropic import (
+from pw_core.clients.anthropic import (
     AnthropicClient,
     AnthropicError,
     get_client,
     reset_client,
 )
-from pf_core.exceptions import ClientError
+from pw_foundation.exceptions import ClientError
 
 
 @pytest.fixture(autouse=True)
@@ -64,7 +64,7 @@ class TestAnthropicClientInit:
         with pytest.raises(AnthropicError, match="api_key"):
             AnthropicClient(api_key="")
 
-    @patch("pf_core.clients.anthropic.AnthropicClient.__init__", autospec=False)
+    @patch("pw_core.clients.anthropic.AnthropicClient.__init__", autospec=False)
     def test_is_client_error(self, _):
         # Subclass check doesn't require instantiation.
         assert issubclass(AnthropicError, ClientError)
@@ -92,7 +92,7 @@ class TestAnthropicClientInit:
 
         with (
             patch("builtins.__import__", side_effect=fake_import),
-            pytest.raises(ImportError, match=r"pf-core\[anthropic\]"),
+            pytest.raises(ImportError, match=r"pw-core\[anthropic\]"),
         ):
             AnthropicClient(api_key="k")
 
@@ -240,7 +240,7 @@ class TestAnthropicClientChat:
 
     def test_chat_unknown_model_cost_zero_with_one_shot_warning(self):
         """Unmatched model id → cost 0.0, and the warning fires once per id."""
-        from pf_core.pricing import _resolver
+        from pw_core.pricing import _resolver
 
         _resolver._unknown_warned.discard("anthropic:totally-made-up-model")
         with (
@@ -285,7 +285,7 @@ class TestFinishReason:
     def test_truncation_logs_a_warning(self, caplog):
         import logging
 
-        with caplog.at_level(logging.WARNING, logger="pf_core.clients.anthropic"):
+        with caplog.at_level(logging.WARNING, logger="pw_core.clients.anthropic"):
             self._usage_for("max_tokens")
         assert any("anthropic_truncated" in r.getMessage() for r in caplog.records)
 
@@ -334,7 +334,7 @@ class TestResetClient:
 
 class TestRetry:
     """Auto-retry on AnthropicError. Layered on top of the SDK's own
-    internal retries — pf-core retries kick in once the SDK has
+    internal retries — pw-core retries kick in once the SDK has
     exhausted its own. Validation failures (no model specified) raise
     immediately even with retry > 0."""
 

@@ -1,7 +1,7 @@
-"""Retry-safety regressions for pf_core.clients.anthropic.
+"""Retry-safety regressions for pw_core.clients.anthropic.
 
 Covers what the retry loop must NOT do: re-send deterministic 4xx, let the
-SDK's own retries multiply with pf-core's, re-send a read timeout whose
+SDK's own retries multiply with pw-core's, re-send a read timeout whose
 completion may already be billed, or hammer with zero delay.
 """
 
@@ -21,7 +21,7 @@ from anthropic import (
     PermissionDeniedError,
     RateLimitError,
 )
-from pf_core.clients.anthropic import AnthropicClient, AnthropicError, reset_client
+from pw_core.clients.anthropic import AnthropicClient, AnthropicError, reset_client
 
 
 @pytest.fixture(autouse=True)
@@ -33,7 +33,7 @@ def _reset():
 
 @pytest.fixture(autouse=True)
 def _no_sleep():
-    with patch("pf_core.clients.anthropic.time.sleep") as sleep:
+    with patch("pw_core.clients.anthropic.time.sleep") as sleep:
         yield sleep
 
 
@@ -103,7 +103,7 @@ class TestDeterministicErrorsNotRetried:
 
 class TestSdkRetriesDoNotMultiply:
     """The SDK defaults to max_retries=2; left unset it multiplies with the
-    pf-core loop (retry=2 → 3 x 3 = 9 HTTP calls for one logical request)."""
+    pw-core loop (retry=2 → 3 x 3 = 9 HTTP calls for one logical request)."""
 
     def test_constructor_disables_sdk_retries(self):
         with patch("anthropic.Anthropic") as mock_sdk:

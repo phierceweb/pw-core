@@ -1,4 +1,4 @@
-"""Tests for pf_core.utils.urls."""
+"""Tests for pw_core.utils.urls."""
 
 from __future__ import annotations
 
@@ -8,8 +8,8 @@ import datetime
 import httpx
 import pytest
 
-from pf_core.exceptions import InvalidInputError
-from pf_core.utils.urls import (
+from pw_foundation.exceptions import InvalidInputError
+from pw_core.utils.urls import (
     archive_timestamp_is_round,
     canonical_url,
     check_url,
@@ -28,7 +28,7 @@ def _bypass_ssrf_guard(monkeypatch):
     The guard itself is covered in test_url_safety.py; wiring is covered by the
     explicit ``*_blocks_ssrf`` tests below, which re-patch it to raise.
     """
-    monkeypatch.setattr("pf_core.utils.url_safety.assert_public_url", lambda *_a, **_k: None)
+    monkeypatch.setattr("pw_core.utils.url_safety.assert_public_url", lambda *_a, **_k: None)
 
 
 # ---------------------------------------------------------------------------
@@ -464,7 +464,7 @@ class TestCheckUrl:
         def boom(*_a, **_k):
             raise InvalidInputError("blocked")
 
-        monkeypatch.setattr("pf_core.utils.url_safety.assert_public_url", boom)
+        monkeypatch.setattr("pw_core.utils.url_safety.assert_public_url", boom)
         assert check_url("http://169.254.169.254/latest/meta-data/") == (0, "error")
 
 
@@ -859,7 +859,7 @@ class TestFetchUrlContent:
         def guard(url, *_a, **_k):
             seen.append(url)
 
-        monkeypatch.setattr("pf_core.utils.url_safety.assert_public_url", guard)
+        monkeypatch.setattr("pw_core.utils.url_safety.assert_public_url", guard)
 
         class _Redirecting(_ContentClient):
             def __init__(self):
@@ -914,7 +914,7 @@ class TestFetchUrlContent:
         def boom(*_a, **_k):
             raise InvalidInputError("blocked")
 
-        monkeypatch.setattr("pf_core.utils.url_safety.assert_public_url", boom)
+        monkeypatch.setattr("pw_core.utils.url_safety.assert_public_url", boom)
         assert fetch_url_content("http://127.0.0.1/") == (0, "error", "")
 
 
@@ -1009,7 +1009,7 @@ class TestExtractArticleMetadata:
 
 
 class TestReExports:
-    """The pure helpers resolve off ``pf_core.utils`` with no ``[http]`` extra —
+    """The pure helpers resolve off ``pw_core.utils`` with no ``[http]`` extra —
     they are defined in the stdlib-only ``url_parse`` / ``url_html`` modules and
     must not be routed through the httpx-backed ``urls`` facade."""
 
@@ -1023,19 +1023,19 @@ class TestReExports:
         ],
     )
     def test_url_parse_helpers_reexported(self, name):
-        import pf_core.utils as utils
-        from pf_core.utils import url_parse
+        import pw_core.utils as utils
+        from pw_core.utils import url_parse
 
         assert getattr(utils, name) is getattr(url_parse, name)
 
     def test_extract_article_metadata_reexported(self):
-        import pf_core.utils as utils
-        from pf_core.utils import url_html
+        import pw_core.utils as utils
+        from pw_core.utils import url_html
 
         assert utils.extract_article_metadata is url_html.extract_article_metadata
 
     @pytest.mark.parametrize("name", ["check_url", "fetch_url_content", "wayback_exists_at"])
     def test_httpx_backed_helpers_still_lazy(self, name):
-        import pf_core.utils as utils
+        import pw_core.utils as utils
 
-        assert utils._LAZY[name] == "pf_core.utils.urls"
+        assert utils._LAZY[name] == "pw_core.utils.urls"

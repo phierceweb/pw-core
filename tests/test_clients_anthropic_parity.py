@@ -12,7 +12,7 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 import pytest
-from pf_core.clients.anthropic import AnthropicClient, AnthropicError
+from pw_core.clients.anthropic import AnthropicClient, AnthropicError
 
 
 def _mock_sdk_response(
@@ -46,7 +46,7 @@ def _chat_kwargs(mock_sdk):
 
 @pytest.fixture(autouse=True)
 def _clear_response_format_warn_state():
-    from pf_core.clients import anthropic as anthropic_mod
+    from pw_core.clients import anthropic as anthropic_mod
 
     anthropic_mod._response_format_warned.clear()
     yield
@@ -252,7 +252,7 @@ class TestResponseFormatJsonObject:
             assert kw["system"].startswith("Respond with a single valid JSON object")
 
     def test_json_object_warns_once_per_process(self):
-        from pf_core.clients import anthropic as anthropic_mod
+        from pw_core.clients import anthropic as anthropic_mod
 
         with (
             patch("anthropic.Anthropic") as mock_sdk,
@@ -287,7 +287,7 @@ class TestResponseFormatJsonObject:
 
 class TestResponseFormatUnknown:
     def test_unknown_type_ignored_with_one_shot_warning(self):
-        from pf_core.clients import anthropic as anthropic_mod
+        from pw_core.clients import anthropic as anthropic_mod
 
         with (
             patch("anthropic.Anthropic") as mock_sdk,
@@ -309,7 +309,7 @@ class TestResponseFormatUnknown:
 
 class TestCacheAwareCost:
     def test_cache_tokens_passed_to_estimate_cost(self):
-        from pf_core.clients import anthropic as anthropic_mod
+        from pw_core.clients import anthropic as anthropic_mod
 
         with (
             patch("anthropic.Anthropic") as mock_sdk,
@@ -335,7 +335,7 @@ class TestCacheAwareCost:
             assert usage["cost_usd"] == 0.5
 
     def test_cache_ttl_passed_to_estimate_cost(self):
-        from pf_core.clients import anthropic as anthropic_mod
+        from pw_core.clients import anthropic as anthropic_mod
 
         with (
             patch("anthropic.Anthropic") as mock_sdk,

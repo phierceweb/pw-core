@@ -1,5 +1,5 @@
 """[validate]-install smoke check — run INSIDE a venv that has only
-`pip install .[validate]` of pf-core. Proves the anti-slop output guards
+`pip install .[validate]` of pw-core. Proves the anti-slop output guards
 (parse + json-repair, pydantic validation) are usable WITHOUT the client/HTTP
 stack, and that client- and tracking-tier members still guard cleanly.
 
@@ -26,7 +26,7 @@ def check(desc, fn):
 
 
 # 1. Anti-slop guards import with [validate] only (json-repair + pydantic).
-for mod in ["pf_core.llm.parse", "pf_core.llm.validate"]:
+for mod in ["pw_core.llm.parse", "pw_core.llm.validate"]:
     check(f"import {mod} (under [validate])", lambda m=mod: importlib.import_module(m))
 
 # 2. The client/HTTP stack is NOT present — [validate] is guards-only.
@@ -47,7 +47,7 @@ def _friendly(mod, needle):
         importlib.import_module(mod)
     except ImportError as e:
         msg = str(e)
-        assert "pip install pf-core[" in msg, f"no install hint in: {msg!r}"
+        assert "pip install pw-core[" in msg, f"no install hint in: {msg!r}"
         assert needle in msg, f"expected {needle!r} in: {msg!r}"
         return
     raise AssertionError(f"{mod} imported but should have raised")
@@ -55,12 +55,12 @@ def _friendly(mod, needle):
 
 # 3. Clients still need [llm]; tracked still needs [tracking] (DB recording).
 check(
-    "pf_core.clients.openrouter -> friendly [llm] error",
-    lambda: _friendly("pf_core.clients.openrouter", "pf-core[llm]"),
+    "pw_core.clients.openrouter -> friendly [llm] error",
+    lambda: _friendly("pw_core.clients.openrouter", "pw-core[llm]"),
 )
 check(
-    "pf_core.llm.tracked -> friendly [tracking] error",
-    lambda: _friendly("pf_core.llm.tracked", "pf-core[tracking]"),
+    "pw_core.llm.tracked -> friendly [tracking] error",
+    lambda: _friendly("pw_core.llm.tracked", "pw-core[tracking]"),
 )
 
 print()

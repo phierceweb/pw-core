@@ -1,17 +1,17 @@
-"""Tests for pf_core.pricing — shared LLM cost estimation."""
+"""Tests for pw_core.pricing — shared LLM cost estimation."""
 
 from __future__ import annotations
 
 import pytest
 
-from pf_core.pricing import (
+from pw_core.pricing import (
     ModelRates,
     PricingError,
     estimate_cost,
     get_rates,
     register_rates,
 )
-from pf_core.pricing import _resolver
+from pw_core.pricing import _resolver
 
 
 @pytest.fixture(autouse=True)
@@ -97,7 +97,7 @@ def test_unknown_provider_returns_zero():
 
 
 def test_price_call_distinguishes_unknown_from_priced_at_zero():
-    from pf_core.pricing._resolver import price_call
+    from pw_core.pricing._resolver import price_call
 
     assert price_call("anthropic", "mystery-x", prompt_tokens=1000) is None
     register_rates("custom", "free-tier", ModelRates(input=0.0, output=0.0))

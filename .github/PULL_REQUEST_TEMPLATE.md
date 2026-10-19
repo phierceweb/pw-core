@@ -1,4 +1,4 @@
-<!-- Thanks for contributing to pf-core. Keep PRs focused: one feature or fix. -->
+<!-- Thanks for contributing to pw-core. Keep PRs focused: one feature or fix. -->
 
 ## What this does
 
@@ -8,9 +8,9 @@
 
 - [ ] Tests added/updated and the full suite passes (`pytest`)
 - [ ] `ruff check src tests` is clean
-- [ ] Structural gate passes (`python -m pf_core.guards`)
+- [ ] Structural gate passes (`python -m pw_foundation.guards`)
 - [ ] Docs updated if public API changed (see `.ai/rules/docs-sync.md`)
-- [ ] Change stays within pf-core's scope — infrastructure only, no project-specific business logic (see `CONTRIBUTING.md`)
+- [ ] Change stays within pw-core's scope — infrastructure only, no project-specific business logic (see `CONTRIBUTING.md`)
 - [ ] CHANGELOG entry added
 
 ## Notes for reviewers

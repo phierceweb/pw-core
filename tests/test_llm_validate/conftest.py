@@ -7,14 +7,14 @@ import json
 import pytest
 from pydantic import BaseModel, Field
 
-from pf_core.llm.tracking import clear_resolver_caches, metadata
-from pf_core.llm.validate import (
+from pw_core.llm.tracking import clear_resolver_caches, metadata
+from pw_core.llm.validate import (
     clear_cross_field_validators,
     clear_registry,
     register_tier1_domains,
     register_url_hallucination_rules,
 )
-from pf_core.llm.validate import _cross_field, _registry, _semantic
+from pw_core.llm.validate import _cross_field, _registry, _semantic
 
 
 @pytest.fixture(autouse=True)
@@ -43,12 +43,12 @@ def _reset_validate_state():
 
 
 @pytest.fixture()
-def tracking_db(pf_engine):
+def tracking_db(pw_engine):
     """In-memory SQLite engine with all ``llm_*`` tables created."""
     clear_resolver_caches()
-    metadata.create_all(pf_engine)
-    yield pf_engine
-    metadata.drop_all(pf_engine)
+    metadata.create_all(pw_engine)
+    yield pw_engine
+    metadata.drop_all(pw_engine)
     clear_resolver_caches()
 
 

@@ -1,4 +1,4 @@
-"""pf-core's own YAML config loaders refuse a repeated key instead of keeping the last one."""
+"""pw-core's own YAML config loaders refuse a repeated key instead of keeping the last one."""
 
 from __future__ import annotations
 
@@ -6,13 +6,13 @@ import logging
 
 import pytest
 
-from pf_core.exceptions import ConfigurationError
+from pw_foundation.exceptions import ConfigurationError
 
 REPEATED_AGENT = "agents:\n  summarizer:\n    model: model-a\n  summarizer:\n    model: model-b\n"
 
 
 def test_app_config_yaml(tmp_path):
-    from pf_core.config import AppConfig
+    from pw_core.config import AppConfig
 
     path = tmp_path / "app.yaml"
     path.write_text("LOG_LEVEL: INFO\nLOG_LEVEL: DEBUG\n")
@@ -21,7 +21,7 @@ def test_app_config_yaml(tmp_path):
 
 
 def test_model_router(tmp_path, monkeypatch):
-    from pf_core.llm import _router_loader
+    from pw_core.llm import _router_loader
 
     path = tmp_path / "model_router.yaml"
     path.write_text(REPEATED_AGENT)
@@ -35,7 +35,7 @@ def test_model_router(tmp_path, monkeypatch):
 
 
 def test_prompt_file(tmp_path):
-    from pf_core.llm.prompts import load_prompts
+    from pw_core.llm.prompts import load_prompts
 
     path = tmp_path / "prompts.yaml"
     path.write_text("summarizer:\n  system: a\n  user: b\nsummarizer:\n  system: c\n  user: d\n")
@@ -44,7 +44,7 @@ def test_prompt_file(tmp_path):
 
 
 def test_eval_config(tmp_path):
-    from pf_core.eval._config import clear_config_cache, load_eval_config
+    from pw_core.eval._config import clear_config_cache, load_eval_config
 
     path = tmp_path / "eval.yaml"
     path.write_text(
@@ -59,7 +59,7 @@ def test_eval_config(tmp_path):
 
 
 def test_budget_config(tmp_path, monkeypatch):
-    from pf_core.budget.config import clear_config_cache, load_yaml
+    from pw_core.budget.config import clear_config_cache, load_yaml
 
     path = tmp_path / "budgets.yaml"
     path.write_text("agents:\n  summarizer:\n    daily: 10.0\n  summarizer:\n    daily: 50.0\n")
@@ -73,7 +73,7 @@ def test_budget_config(tmp_path, monkeypatch):
 
 
 def test_cache_config_logs_and_turns_caching_off(tmp_path, monkeypatch, caplog):
-    from pf_core.llm.cache.config import clear_config_cache, get_agent_cache_config
+    from pw_core.llm.cache.config import clear_config_cache, get_agent_cache_config
 
     path = tmp_path / "cache.yaml"
     path.write_text(
@@ -83,7 +83,7 @@ def test_cache_config_logs_and_turns_caching_off(tmp_path, monkeypatch, caplog):
     monkeypatch.setenv("CACHE_CONFIG", str(path))
     clear_config_cache()
     try:
-        with caplog.at_level(logging.WARNING, logger="pf_core.llm.cache.config"):
+        with caplog.at_level(logging.WARNING, logger="pw_core.llm.cache.config"):
             cfg = get_agent_cache_config("classifier")
     finally:
         clear_config_cache()

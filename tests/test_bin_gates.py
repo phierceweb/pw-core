@@ -48,4 +48,4 @@ def test_mypy_scripts_are_modules_is_on():
 
 def test_the_gate_finds_the_known_scripts():
     """Guards the detector itself: a broken scan would make the gates vacuous."""
-    assert _python_scripts_without_suffix() >= {"bin/pf-eval", "bin/pf-jobs"}
+    assert _python_scripts_without_suffix() >= {"bin/pw-eval", "bin/pw-jobs"}

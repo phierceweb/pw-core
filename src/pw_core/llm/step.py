@@ -1,0 +1,260 @@
+"""The guarded, cached, tracked, validated LLM call — one composition.
+
+``llm_step`` runs the per-item hot path of a batch LLM pass: input-hash →
+cache lookup (hit: record and return, budget skipped) → budget gate →
+:func:`~pw_core.llm.tracked.tracked_messages_call` → parse/validate →
+cache store. The batch shell around it — Job/steps, ``run_parallel``,
+persistence — stays in the caller (see ``docs/recipes/batch-llm-service.md``).
+
+A failed validation *returns* (``result.validation.ok`` False); a blocked
+budget records the blocked run and *raises* ``CostBudgetExceeded``; a client
+error records a failed run and re-raises — each mirroring the underlying
+primitive's contract.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Any, Literal, NamedTuple
+
+from pw_core.budget import (
+    CostBudgetExceeded,
+    check_budget,
+    project_cost,
+    record_blocked_run,
+)
+from pw_foundation.exceptions import InvalidInputError
+
+try:
+    from pw_core.llm.cache import cache_lookup, cache_store, record_cache_hit
+    from pw_core.llm.parse import truncated_from_usage
+    from pw_core.llm.tracked import tracked_messages_call
+    from pw_core.llm.tracking import compute_input_hash
+    from pw_core.llm.validate import ValidationResult, parse_and_validate
+except ModuleNotFoundError as e:  # pragma: no cover - exercised by the extra matrix
+    # Only raw third-party absence is wrapped; a nested gate's own friendly
+    # ImportError is more precise, so it propagates untouched.
+    from pw_core._extras import extra_import_error
+
+    raise extra_import_error("tracking", e.name or "sqlalchemy", feature="pw_core.llm.step") from e
+
+__all__ = ["BudgetEstimate", "StepResult", "llm_step"]
+
+
+@dataclass(frozen=True)
+class BudgetEstimate:
+    """Pre-call budget gate config; token defaults mirror ``project_cost``'s."""
+
+    prompt_tokens: int = 1500
+    completion_tokens: int = 1000
+    job_id: int | None = None
+    job_kind: str | None = None
+
+
+class StepResult(NamedTuple):
+    """Outcome of one :func:`llm_step` call.
+
+    ``value`` is the validated object when ``validate`` was set and passed
+    (``None`` when it failed); with ``validate=None`` it is the raw content —
+    or, on a cache hit, the stored ``parsed_output`` when one exists.
+    """
+
+    value: Any
+    content: str
+    run_id: int | None
+    cache_hit: bool
+    validation: ValidationResult | None
+
+
+def llm_step(
+    *,
+    client: Any,
+    agent_type: str,
+    messages: list[dict],
+    model: str,
+    sampling: dict[str, Any] | None = None,
+    chat_kwargs: dict[str, Any] | None = None,
+    spec: dict | None = None,
+    spec_on_change: str = "keep_first",
+    provider: str | None = None,
+    configs: dict[str, int] | None = None,
+    metadata: dict[str, Any] | None = None,
+    tags: list[str] | None = None,
+    metrics: dict[str, float] | None = None,
+    items_out: int | None = None,
+    job_id: int | None = None,
+    on_record_error: str = "raise",
+    cache: bool = False,
+    input_hash: str | None = None,
+    budget: BudgetEstimate | None = None,
+    validate: str | None = None,
+    validation_context: dict[str, Any] | None = None,
+    on_truncation: Literal["warn", "fail"] = "warn",
+    dry_run: bool = False,
+) -> StepResult:
+    """Run one cache/budget/track/validate-composed LLM call.
+
+    Args:
+        client...on_record_error: Forwarded to
+            :func:`~pw_core.llm.tracked.tracked_messages_call` under the same
+            names and semantics.
+        cache: Enable the cache legs — lookup before the call (a hit records a
+            ``cache_hit`` run and returns without chat or budget), store after
+            a successful, validation-passing call.
+        input_hash: Cache/tracking key override. Default when ``cache`` is on:
+            ``compute_input_hash(model, messages, sampling, configs)``.
+        budget: When given, gate the live call: ``project_cost`` with these
+            estimates → ``check_budget``; a block records the blocked run and
+            re-raises ``CostBudgetExceeded`` (caller decides skip/collect).
+        validate: ``expect=`` for :func:`parse_and_validate` (``"object"``,
+            ``"array"``, ``"any"``); ``None`` skips parsing entirely. Cache
+            hits re-validate the stored raw response, so a validator change
+            re-judges old cache entries instead of trusting stored output.
+        validation_context: Forwarded to :func:`parse_and_validate`.
+        on_truncation: What a provider-reported truncation means for the
+            validated value — ``"warn"`` (default) keeps whatever parsed,
+            ``"fail"`` returns ``validation.ok`` False with a
+            ``<agent>_truncated`` error signal (needs ``validate`` set —
+            with ``validate=None`` nothing inspects the response). Under either value a
+            known-truncated response is never written to the cache.
+        dry_run: Answer "would this call hit the exact cache?" without
+            spending: resolves the input hash (regardless of ``cache``),
+            looks up the exact cache, and returns — no cache-hit run row,
+            no hit-count bump, no budget check, no client call, no DB
+            writes of any kind. On a hit ``value`` is the stored
+            ``parsed_output`` and ``cache_hit`` is True; ``run_id`` is
+            always ``None``.
+
+    Returns:
+        A :class:`StepResult`. Persistence of ``value`` is the caller's job.
+
+    Raises:
+        InvalidInputError: unknown ``on_truncation`` value.
+    """
+    if on_truncation not in ("warn", "fail"):
+        raise InvalidInputError(f"on_truncation must be 'warn' or 'fail', got {on_truncation!r}")
+
+    if dry_run:
+        resolved = input_hash or compute_input_hash(
+            model=model, messages=messages, sampling=sampling, configs=configs
+        )
+        hit = cache_lookup(agent_type=agent_type, input_hash=resolved)
+        return StepResult(
+            value=hit.parsed_output if hit is not None else None,
+            content=(hit.raw_response or "") if hit is not None else "",
+            run_id=None,
+            cache_hit=hit is not None,
+            validation=None,
+        )
+
+    resolved_hash = input_hash
+    if cache:
+        if resolved_hash is None:
+            resolved_hash = compute_input_hash(
+                model=model, messages=messages, sampling=sampling, configs=configs
+            )
+        hit = cache_lookup(agent_type=agent_type, input_hash=resolved_hash)
+        if hit is not None:
+            run_id: int | None = record_cache_hit(hit=hit)
+            raw = hit.raw_response or ""
+            if validate is not None:
+                validation = parse_and_validate(
+                    raw,
+                    agent_type=agent_type,
+                    run_id=None,
+                    validation_context=validation_context,
+                    expect=validate,
+                )
+                value: Any = validation.value if validation.ok else None
+            else:
+                validation = None
+                value = hit.parsed_output if hit.parsed_output is not None else raw
+            return StepResult(
+                value=value,
+                content=raw,
+                run_id=run_id,
+                cache_hit=True,
+                validation=validation,
+            )
+
+    if budget is not None:
+        projected = project_cost(
+            agent_type=agent_type,
+            model=model,
+            estimated_prompt_tokens=budget.prompt_tokens,
+            estimated_completion_tokens=budget.completion_tokens,
+        )
+        try:
+            check_budget(
+                agent_type=agent_type,
+                projected_cost_usd=projected,
+                projected_tokens=budget.prompt_tokens + budget.completion_tokens,
+                projected_calls=1,
+                job_id=budget.job_id,
+                job_kind=budget.job_kind,
+                tags=tags,
+            )
+        except CostBudgetExceeded as exc:
+            record_blocked_run(agent_type=agent_type, model=model, exc=exc, job_id=budget.job_id)
+            raise
+
+    content, usage, run_id = tracked_messages_call(
+        client=client,
+        agent_type=agent_type,
+        messages=messages,
+        model=model,
+        sampling=sampling,
+        chat_kwargs=chat_kwargs,
+        spec=spec,
+        spec_on_change=spec_on_change,
+        provider=provider,
+        input_hash=resolved_hash,
+        configs=configs,
+        metadata=metadata,
+        tags=tags,
+        metrics=metrics,
+        items_out=items_out,
+        job_id=job_id,
+        on_record_error=on_record_error,
+    )
+
+    truncated = truncated_from_usage(usage)
+
+    if validate is not None:
+        validation = parse_and_validate(
+            content,
+            agent_type=agent_type,
+            run_id=run_id,
+            validation_context=validation_context,
+            expect=validate,
+            truncated=truncated,
+            on_truncation=on_truncation,
+        )
+        if not validation.ok:
+            return StepResult(
+                value=None,
+                content=content,
+                run_id=run_id,
+                cache_hit=False,
+                validation=validation,
+            )
+        value = validation.value
+    else:
+        validation = None
+        value = content
+
+    if cache and resolved_hash is not None and run_id is not None:
+        parsed_for_cache = value if isinstance(value, (dict, list)) else None
+        cache_store(
+            agent_type=agent_type,
+            input_hash=resolved_hash,
+            source_run_id=run_id,
+            model=model,
+            parsed_output=parsed_for_cache,
+            raw_response=content,
+            usage=usage,
+        )
+
+    return StepResult(
+        value=value, content=content, run_id=run_id, cache_hit=False, validation=validation
+    )

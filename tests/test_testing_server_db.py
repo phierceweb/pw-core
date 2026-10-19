@@ -1,4 +1,4 @@
-"""Per-test isolation on a server test backend (``PF_TEST_DATABASE_URL``)."""
+"""Per-test isolation on a server test backend (``PW_TEST_DATABASE_URL``)."""
 
 from __future__ import annotations
 
@@ -12,8 +12,8 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.pool import NullPool
 
-from pf_core.exceptions import ConfigurationError
-from pf_core.testing._server_db import (
+from pw_foundation.exceptions import ConfigurationError
+from pw_core.testing._server_db import (
     _lock_timeout_s,
     _lock_timeout_sql,
     _scoped,
@@ -22,7 +22,7 @@ from pf_core.testing._server_db import (
     configured_url,
     isolated_url,
 )
-from pf_core.testing.db_fixtures import metadata_ddl
+from pw_core.testing.db_fixtures import metadata_ddl
 
 _PG = "postgresql+psycopg://u:p@h:5432/db"
 _MY = "mysql+pymysql://u:p@h:3306/db"
@@ -43,32 +43,32 @@ class TestBackendDialect:
         assert backend_dialect(url) == expected
 
     def test_active_dialect_follows_env(self, monkeypatch):
-        monkeypatch.setenv("PF_TEST_DATABASE_URL", f"  {_PG}  ")
+        monkeypatch.setenv("PW_TEST_DATABASE_URL", f"  {_PG}  ")
         assert configured_url() == _PG
         assert active_dialect() == "postgresql"
-        monkeypatch.delenv("PF_TEST_DATABASE_URL")
+        monkeypatch.delenv("PW_TEST_DATABASE_URL")
         assert active_dialect() == "sqlite"
 
 
 class TestScopedUrl:
     def test_postgres_sets_search_path(self):
-        url, create, drop = _scoped(make_url(_PG), "postgresql", "pf_test_abc")
-        assert url.query["options"] == "-csearch_path=pf_test_abc,public"
+        url, create, drop = _scoped(make_url(_PG), "postgresql", "pw_test_abc")
+        assert url.query["options"] == "-csearch_path=pw_test_abc,public"
         assert url.database == "db"
-        assert create == 'CREATE SCHEMA "pf_test_abc"'
-        assert drop == 'DROP SCHEMA IF EXISTS "pf_test_abc" CASCADE'
+        assert create == 'CREATE SCHEMA "pw_test_abc"'
+        assert drop == 'DROP SCHEMA IF EXISTS "pw_test_abc" CASCADE'
 
     def test_postgres_keeps_existing_options(self):
         url, _, _ = _scoped(
-            make_url(f"{_PG}?options=-cstatement_timeout%3D5000"), "postgresql", "pf_test_abc"
+            make_url(f"{_PG}?options=-cstatement_timeout%3D5000"), "postgresql", "pw_test_abc"
         )
-        assert url.query["options"] == "-cstatement_timeout=5000 -csearch_path=pf_test_abc,public"
+        assert url.query["options"] == "-cstatement_timeout=5000 -csearch_path=pw_test_abc,public"
 
     def test_mysql_swaps_database(self):
-        url, create, drop = _scoped(make_url(_MY), "mysql", "pf_test_abc")
-        assert url.database == "pf_test_abc"
-        assert create == "CREATE DATABASE `pf_test_abc`"
-        assert drop == "DROP DATABASE IF EXISTS `pf_test_abc`"
+        url, create, drop = _scoped(make_url(_MY), "mysql", "pw_test_abc")
+        assert url.database == "pw_test_abc"
+        assert create == "CREATE DATABASE `pw_test_abc`"
+        assert drop == "DROP DATABASE IF EXISTS `pw_test_abc`"
 
 
 class TestLockTimeout:
@@ -87,11 +87,11 @@ class TestLockTimeout:
 
     def test_env_overrides_default(self, monkeypatch):
         assert _lock_timeout_s() == 10
-        monkeypatch.setenv("PF_TEST_LOCK_TIMEOUT_S", "3")
+        monkeypatch.setenv("PW_TEST_LOCK_TIMEOUT_S", "3")
         assert _lock_timeout_s() == 3
 
     def test_negative_falls_back_to_default(self, monkeypatch):
-        monkeypatch.setenv("PF_TEST_LOCK_TIMEOUT_S", "-5")
+        monkeypatch.setenv("PW_TEST_LOCK_TIMEOUT_S", "-5")
         assert _lock_timeout_s() == 10
 
 
@@ -111,23 +111,23 @@ class TestDdlDefaultsToTestBackend:
         return md
 
     def test_postgres_env_compiles_postgres(self, monkeypatch):
-        monkeypatch.setenv("PF_TEST_DATABASE_URL", _PG)
+        monkeypatch.setenv("PW_TEST_DATABASE_URL", _PG)
         assert "SERIAL" in "\n".join(metadata_ddl(self._metadata()))
 
     def test_mysql_env_drops_index_if_not_exists(self, monkeypatch):
-        monkeypatch.setenv("PF_TEST_DATABASE_URL", _MY)
+        monkeypatch.setenv("PW_TEST_DATABASE_URL", _MY)
         stmts = metadata_ddl(self._metadata())
         assert "CREATE TABLE IF NOT EXISTS" in stmts[0]
         assert "CREATE INDEX idx_t_name" in stmts[1] and "IF NOT EXISTS" not in stmts[1]
 
     def test_explicit_dialect_wins(self, monkeypatch):
-        monkeypatch.setenv("PF_TEST_DATABASE_URL", _PG)
+        monkeypatch.setenv("PW_TEST_DATABASE_URL", _PG)
         assert "SERIAL" not in "\n".join(metadata_ddl(self._metadata(), dialect="sqlite"))
 
 
 _server = pytest.mark.skipif(
     active_dialect() not in ("postgresql", "mysql"),
-    reason="needs a Postgres or MySQL PF_TEST_DATABASE_URL",
+    reason="needs a Postgres or MySQL PW_TEST_DATABASE_URL",
 )
 _SEEN: list[str] = []
 
@@ -144,35 +144,35 @@ def _namespaces() -> set[str]:
 class TestServerIsolation:
     """Each test gets its own schema/database, gone after its teardown."""
 
-    def test_engine_is_scoped_and_seeds_a_row(self, pf_engine):
-        dialect = pf_engine.dialect.name
+    def test_engine_is_scoped_and_seeds_a_row(self, pw_engine):
+        dialect = pw_engine.dialect.name
         name = (
             make_url(os.environ["DATABASE_URL"])
             .query["options"]
             .split("search_path=")[1]
             .split(",")[0]
             if dialect == "postgresql"
-            else pf_engine.url.database
+            else pw_engine.url.database
         )
-        assert name.startswith("pf_test_")
-        assert os.environ["DATABASE_URL"] == pf_engine.url.render_as_string(hide_password=False)
+        assert name.startswith("pw_test_")
+        assert os.environ["DATABASE_URL"] == pw_engine.url.render_as_string(hide_password=False)
         assert name in _namespaces()
-        with pf_engine.begin() as conn:
+        with pw_engine.begin() as conn:
             conn.execute(text("CREATE TABLE leak_probe (v INTEGER)"))
             conn.execute(text("INSERT INTO leak_probe (v) VALUES (1)"))
         _SEEN.append(name)
 
-    def test_previous_namespace_was_dropped(self, pf_engine):
+    def test_previous_namespace_was_dropped(self, pw_engine):
         assert len(_SEEN) == 1
         assert _SEEN[0] not in _namespaces()
-        assert "leak_probe" not in inspect(pf_engine).get_table_names()
+        assert "leak_probe" not in inspect(pw_engine).get_table_names()
 
 
 @_server
 class TestTeardownDoesNotHang:
     def test_a_leaked_transaction_fails_the_drop_until_it_closes(self, monkeypatch):
         """A test that leaves a connection mid-transaction must not stall the run."""
-        monkeypatch.setenv("PF_TEST_LOCK_TIMEOUT_S", "1")
+        monkeypatch.setenv("PW_TEST_LOCK_TIMEOUT_S", "1")
         url = configured_url()
         leaked = create_engine(url, poolclass=NullPool)
         conn = leaked.connect()
@@ -209,7 +209,7 @@ def _quoted(scoped: str) -> str:
 
 
 _postgres = pytest.mark.skipif(
-    active_dialect() != "postgresql", reason="needs a Postgres PF_TEST_DATABASE_URL"
+    active_dialect() != "postgresql", reason="needs a Postgres PW_TEST_DATABASE_URL"
 )
 
 
@@ -247,13 +247,13 @@ class TestPublicSchema:
 
     def test_a_table_in_public_is_refused_before_anything_is_created(self):
         before = _namespaces()
-        with _public_table("pf_probe_shared"):
-            with pytest.raises(ConfigurationError, match="pf_probe_shared"):
+        with _public_table("pw_probe_shared"):
+            with pytest.raises(ConfigurationError, match="pw_probe_shared"):
                 with isolated_url(configured_url()):
                     pass
         assert _namespaces() == before
 
     def test_a_table_an_extension_owns_is_not_refused(self):
-        with _public_table("pf_probe_owned", owned_by="citext"):
+        with _public_table("pw_probe_owned", owned_by="citext"):
             with isolated_url(configured_url()) as scoped:
-                assert _namespace(scoped).startswith("pf_test_")
+                assert _namespace(scoped).startswith("pw_test_")

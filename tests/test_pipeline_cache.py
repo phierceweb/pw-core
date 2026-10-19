@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from pf_core.pipeline.cache import (
+from pw_core.pipeline.cache import (
     StageDefinition,
     StageRegistry,
     files_to_invalidate,

@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import pytest
 
-from pf_core.exceptions import PipelineNotRegisteredError
-from pf_core.llm.tracking import LlmRunRepo
-from pf_core.llm.tracking import schema as ts
-from pf_core.llm.validate import (
+from pw_core.llm.validate import PipelineNotRegisteredError
+from pw_core.llm.tracking import LlmRunRepo
+from pw_core.llm.tracking import schema as ts
+from pw_core.llm.validate import (
     cross_field_validator,
     register,
     validate_value,
@@ -38,7 +38,7 @@ def test_validate_value_shape_failure_returns_fail_signal():
 def test_validate_value_runs_semantic_and_cross_field():
     @cross_field_validator("vv_xf")
     def _xf(parsed, *, context):  # noqa: ARG001
-        from pf_core.llm.validate import ValidationSignal
+        from pw_core.llm.validate import ValidationSignal
 
         return ValidationSignal("vv_xf", "info", passed=True)
 

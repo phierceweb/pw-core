@@ -1,1 +1,1 @@
-"""__NAME__ — a pf-core library / tool."""
+"""__NAME__ — a library / tool."""

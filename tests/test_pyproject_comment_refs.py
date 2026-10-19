@@ -13,8 +13,8 @@ ROOT = Path(__file__).resolve().parents[1]
 _PYPROJECT = ROOT / "pyproject.toml"
 _SRC = ROOT / "src"
 
-_DOTTED_RE = re.compile(r"pf_core(?:\.[A-Za-z_][A-Za-z0-9_]*)+")
-_MEMBERS_RE = re.compile(r"members of (pf_core(?:\.[A-Za-z_][A-Za-z0-9_]*)*)\s*\(([^)]*)\)")
+_DOTTED_RE = re.compile(r"pw_core(?:\.[A-Za-z_][A-Za-z0-9_]*)+")
+_MEMBERS_RE = re.compile(r"members of (pw_core(?:\.[A-Za-z_][A-Za-z0-9_]*)*)\s*\(([^)]*)\)")
 
 
 def _comment_text() -> str:
@@ -35,7 +35,7 @@ def test_dotted_module_refs_in_comments_exist() -> None:
     missing = [
         tok
         for tok in sorted(set(_DOTTED_RE.findall(_comment_text())))
-        # A trailing attribute (e.g. pf_core.budget.check_budget) is allowed.
+        # A trailing attribute (e.g. pw_core.budget.check_budget) is allowed.
         if not _resolves(tok) and not _resolves(tok.rsplit(".", 1)[0])
     ]
     assert not missing, f"pyproject.toml comments cite non-existent modules: {missing}"

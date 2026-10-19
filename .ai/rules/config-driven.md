@@ -8,7 +8,7 @@ Tunable values belong in `.env`, not in function calls. This lets operators chan
 
 ## The layering
 
-User-tunable operational values are configuration; internal constants are code. The full layering for consumers of pf-core:
+User-tunable operational values are configuration; internal constants are code. The full layering for consumers of pw-core:
 
 | Lives in | What |
 |---|---|
@@ -35,13 +35,13 @@ def paginate_params(page, per_page, max_per_page=200):
     ...
 
 # RIGHT — reads MAX_PER_PAGE from env, with per-call override
-from pf_core.utils.env import resolve_int
+from pw_foundation.utils.env import resolve_int
 
 def paginate_params(page, per_page, max_per_page=None):
     max_per_page = resolve_int(max_per_page, "MAX_PER_PAGE", default=200)
 ```
 
-Use `pf_core.utils.env.resolve_int` / `resolve_str` / `resolve_bool` for this pattern — they handle malformed env values (warn + fall back to default rather than crash) and strip whitespace. See [`docs/env.md`](../../src/pf_core/docs/env.md).
+Use `pw_foundation.utils.env.resolve_int` / `resolve_str` / `resolve_bool` for this pattern — they handle malformed env values (warn + fall back to default rather than crash) and strip whitespace. See [`docs/env.md`](../../src/pw_core/docs/env.md).
 
 ## When to use
 
@@ -72,7 +72,7 @@ The opposite mistake — "make every numeric literal configurable" — produces 
 For CLIs and libraries that don't have an `AppConfig` central object, the pattern is module-level constants + a tiny wrapper that calls one of the env resolvers:
 
 ```python
-from pf_core.utils.env import resolve_int
+from pw_foundation.utils.env import resolve_int
 
 _FOO_TIMEOUT_S_DEFAULT = 600
 _FOO_TIMEOUT_ENV_VAR = "MYPROJ_FOO_TIMEOUT_S"
@@ -83,7 +83,7 @@ def _foo_timeout_s() -> int:
     return n
 ```
 
-When the value is also a function kwarg, take `int | None` and pass the caller's value through as the first arg so the precedence chain stays **kwarg > env > default** (wrap `pf_core.utils.env.resolve_int` exactly as above, and add a positivity guard when zero/negative values would be nonsense for the knob).
+When the value is also a function kwarg, take `int | None` and pass the caller's value through as the first arg so the precedence chain stays **kwarg > env > default** (wrap `pw_foundation.utils.env.resolve_int` exactly as above, and add a positivity guard when zero/negative values would be nonsense for the knob).
 
 Keep the in-code constant as the default fallback (suffix `_DEFAULT` to advertise that it's just the fallback). For CLIs, the CLI flag (if any) should override env; the Python kwarg (if exposed) overrides the CLI flag.
 
@@ -93,7 +93,7 @@ Read at call time (the helper above does, because `resolve_int` reads `os.enviro
 
 ## Checklist for new AppConfig settings (web apps)
 
-1. Add the setting to `AppConfig` in `src/pf_core/config.py` with a default
+1. Add the setting to `AppConfig` in `src/pw_core/config.py` with a default
 2. Read it via `os.environ.get()` in the framework function (not via AppConfig instance — framework code shouldn't require instantiation)
 3. Add to `docs/config.md` built-in settings table
 4. Add to `.env.example` in each consumer project

@@ -1,4 +1,4 @@
-"""Enforce the extras tier contract on pf-core's own source tree.
+"""Enforce the extras tier contract on pw-core's own source tree.
 
 A module may only import, at module scope, things inside its own extra's closure
 (read from pyproject). Break that and a consumer who installed only the importer's
@@ -15,10 +15,10 @@ from pathlib import Path
 
 import pytest
 
-from pf_core._extras import _MODULE_EXTRA, required_extra
+from pw_core._extras import _MODULE_EXTRA, required_extra
 
 _ROOT = Path(__file__).resolve().parents[1]
-_SRC = _ROOT / "src" / "pf_core"
+_SRC = _ROOT / "src" / "pw_core"
 _PYPROJECT = _ROOT / "pyproject.toml"
 
 
@@ -39,15 +39,15 @@ def _closure(extra: str | None) -> set[str]:
             continue
         seen.add(name)
         for dep in extras.get(name, []):
-            if dep.startswith("pf-core["):
-                stack += [p.strip() for p in dep[len("pf-core[") : dep.rindex("]")].split(",")]
+            if dep.startswith("pw-core["):
+                stack += [p.strip() for p in dep[len("pw-core[") : dep.rindex("]")].split(",")]
     return seen
 
 
 def _module_name(path: Path) -> str:
     rel = path.relative_to(_SRC).with_suffix("")
     parts = [p for p in rel.parts if p != "__init__"]
-    return ".".join(["pf_core", *parts])
+    return ".".join(["pw_core", *parts])
 
 
 def _module_scope_pf_core_imports(path: Path) -> list[str]:
@@ -56,10 +56,10 @@ def _module_scope_pf_core_imports(path: Path) -> list[str]:
     for node in ast.walk(tree):
         if getattr(node, "col_offset", 0) != 0:  # nested = deliberate lazy gate
             continue
-        if isinstance(node, ast.ImportFrom) and node.module and node.module.startswith("pf_core"):
+        if isinstance(node, ast.ImportFrom) and node.module and node.module.startswith("pw_core"):
             out.append(node.module)
         elif isinstance(node, ast.Import):
-            out += [a.name for a in node.names if a.name.startswith("pf_core")]
+            out += [a.name for a in node.names if a.name.startswith("pw_core")]
     return out
 
 
@@ -136,14 +136,14 @@ def test_every_mapped_module_exists() -> None:
 @pytest.mark.parametrize(
     "module, expected",
     [
-        ("pf_core.log", None),
-        ("pf_core.fetch.images", None),
-        ("pf_core.llm.prompts", None),
-        ("pf_core.llm.tracking.repo", "tracking"),  # longest prefix beats pf_core.llm
-        ("pf_core.web.llm_admin.api", "admin"),  # subpackage outranks pf_core.web
-        ("pf_core.db.connection", "db"),
-        ("pf_core.llm.tracking.otel", "otel"),  # outranks pf_core.llm.tracking
-        ("pf_core.cli.export", "otel"),  # outranks pf_core.cli
+        ("pw_foundation.log", None),
+        ("pw_core.fetch.images", None),
+        ("pw_core.llm.prompts", None),
+        ("pw_core.llm.tracking.repo", "tracking"),  # longest prefix beats pw_core.llm
+        ("pw_core.web.llm_admin.api", "admin"),  # subpackage outranks pw_core.web
+        ("pw_core.db.connection", "db"),
+        ("pw_core.llm.tracking.otel", "otel"),  # outranks pw_core.llm.tracking
+        ("pw_core.cli.export", "otel"),  # outranks pw_core.cli
     ],
 )
 def test_required_extra_resolution(module: str, expected: str | None) -> None:
@@ -160,7 +160,7 @@ def test_required_extra_resolution(module: str, expected: str | None) -> None:
 # Naming a same-tier public facade over private submodules is fine.
 # ---------------------------------------------------------------------------
 
-_LAZY_FACADES = ("pf_core.utils", "pf_core.llm", "pf_core.budget")
+_LAZY_FACADES = ("pw_core.utils", "pw_core.llm", "pw_core.budget")
 
 
 @pytest.mark.parametrize("package", _LAZY_FACADES)
@@ -172,8 +172,8 @@ def test_lazy_entries_do_not_overgate(package: str) -> None:
         obj = getattr(importlib.import_module(module), attr)
         defining = getattr(obj, "__module__", None)
         # Data objects (SQLAlchemy Tables, typing constructs) report their
-        # library's module, not pf-core's — only code has a meaningful origin.
-        if defining is None or not defining.startswith("pf_core."):
+        # library's module, not pw-core's — only code has a meaningful origin.
+        if defining is None or not defining.startswith("pw_core."):
             continue
         declared_extra = required_extra(module)
         if declared_extra is not None and required_extra(defining) is None:

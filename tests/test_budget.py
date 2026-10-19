@@ -1,4 +1,4 @@
-"""Tests for pf_core.budget — schema, config, checks, projection, snapshots."""
+"""Tests for pw_core.budget — schema, config, checks, projection, snapshots."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ import time
 
 import pytest
 
-from pf_core.budget import (
+from pw_core.budget import (
     ALL_BUDGET_TABLES,
     BudgetRepo,
     BudgetSnapshotRepo,
@@ -25,10 +25,10 @@ from pf_core.budget import (
     refresh_snapshots,
     sync_budgets_from_yaml,
 )
-from pf_core.budget.check import _clear_no_scope_state, _clear_threshold_state
-from pf_core.budget.config import _flatten_scopes, load_yaml
-from pf_core.exceptions import ConfigurationError
-from pf_core.llm.tracking import (
+from pw_core.budget.check import _clear_no_scope_state, _clear_threshold_state
+from pw_core.budget.config import _flatten_scopes, load_yaml
+from pw_foundation.exceptions import ConfigurationError
+from pw_core.llm.tracking import (
     LlmRunRepo,
     clear_resolver_caches,
     metadata,
@@ -54,10 +54,10 @@ def _reset():
 
 
 @pytest.fixture()
-def budget_db(pf_engine):
-    metadata.create_all(pf_engine)
-    yield pf_engine
-    metadata.drop_all(pf_engine)
+def budget_db(pw_engine):
+    metadata.create_all(pw_engine)
+    yield pw_engine
+    metadata.drop_all(pw_engine)
 
 
 def _insert_budget(
@@ -72,8 +72,8 @@ def _insert_budget(
     soft_thresholds=None,
 ) -> int:
     """Insert a budget row directly (bypasses sync so multiple calls are additive)."""
-    from pf_core.budget._schema import llm_budgets
-    from pf_core.db.connection import transaction
+    from pw_core.budget._schema import llm_budgets
+    from pw_core.db.connection import transaction
 
     with transaction() as conn:
         result = conn.execute(
@@ -113,9 +113,9 @@ def test_budget_tables_on_shared_metadata():
     assert all(t.name in metadata.tables for t in ALL_BUDGET_TABLES)
 
 
-def test_create_all_includes_budget_tables(pf_engine):
-    metadata.create_all(pf_engine)
-    with pf_engine.connect() as conn:
+def test_create_all_includes_budget_tables(pw_engine):
+    metadata.create_all(pw_engine)
+    with pw_engine.connect() as conn:
         from sqlalchemy import inspect
 
         names = set(inspect(conn).get_table_names())
@@ -287,7 +287,7 @@ def test_project_cost_no_data_returns_zero(budget_db):
 
 
 def test_cost_budget_exceeded_is_flow_exception():
-    from pf_core.exceptions import FlowException
+    from pw_foundation.exceptions import FlowException
 
     exc = CostBudgetExceeded(
         scope_kind="agent",
@@ -334,7 +334,7 @@ def _no_scope_records(caplog) -> list:
 
 
 def test_check_budget_passes_when_no_budgets(budget_db, caplog):
-    with caplog.at_level(logging.DEBUG, logger="pf_core.budget.check"):
+    with caplog.at_level(logging.DEBUG, logger="pw_core.budget.check"):
         check_budget(agent_type="drafter", projected_cost_usd=5.00)  # no raise
     records = _no_scope_records(caplog)
     assert len(records) == 1
@@ -343,7 +343,7 @@ def test_check_budget_passes_when_no_budgets(budget_db, caplog):
 
 
 def test_check_budget_no_scope_warning_dedupes_then_drops_to_debug(budget_db, caplog):
-    with caplog.at_level(logging.DEBUG, logger="pf_core.budget.check"):
+    with caplog.at_level(logging.DEBUG, logger="pw_core.budget.check"):
         check_budget(agent_type="drafter", projected_cost_usd=1.0)
         check_budget(agent_type="drafter", projected_cost_usd=1.0, job_id=7)
         check_budget(agent_type="critic", projected_cost_usd=1.0)
@@ -353,7 +353,7 @@ def test_check_budget_no_scope_warning_dedupes_then_drops_to_debug(budget_db, ca
 
 
 def test_check_budget_no_scope_log_names_every_scope_looked_for(budget_db, caplog):
-    with caplog.at_level(logging.WARNING, logger="pf_core.budget.check"):
+    with caplog.at_level(logging.WARNING, logger="pw_core.budget.check"):
         check_budget(
             agent_type="drafter",
             projected_cost_usd=1.0,
@@ -369,9 +369,9 @@ def test_check_budget_no_scope_log_names_every_scope_looked_for(budget_db, caplo
 
 
 def test_check_budget_no_scope_warn_set_is_bounded(budget_db, caplog):
-    from pf_core.budget.check import _NO_SCOPE_WARN_LIMIT, _NO_SCOPE_WARNED
+    from pw_core.budget.check import _NO_SCOPE_WARN_LIMIT, _NO_SCOPE_WARNED
 
-    with caplog.at_level(logging.DEBUG, logger="pf_core.budget.check"):
+    with caplog.at_level(logging.DEBUG, logger="pw_core.budget.check"):
         for i in range(_NO_SCOPE_WARN_LIMIT + 50):
             check_budget(projected_cost_usd=0.1, tags=[f"run:{i}"])
     assert len(_NO_SCOPE_WARNED) == _NO_SCOPE_WARN_LIMIT
@@ -381,7 +381,7 @@ def test_check_budget_no_scope_warn_set_is_bounded(budget_db, caplog):
 
 def test_check_budget_silent_when_a_scope_matches(budget_db, caplog):
     _insert_budget(scope_kind="agent", scope_value="drafter", period="daily", limit_usd=20.0)
-    with caplog.at_level(logging.DEBUG, logger="pf_core.budget.check"):
+    with caplog.at_level(logging.DEBUG, logger="pw_core.budget.check"):
         check_budget(agent_type="drafter", projected_cost_usd=1.0)
     assert _no_scope_records(caplog) == []
 
@@ -527,8 +527,8 @@ def test_record_blocked_run_writes_tagged_row(budget_db):
     assert row["cost_usd"] == 0.0
 
     # Check tags
-    from pf_core.db.connection import transaction
-    from pf_core.llm.tracking.schema import llm_run_tags
+    from pw_core.db.connection import transaction
+    from pw_core.llm.tracking.schema import llm_run_tags
 
     with transaction() as conn:
         tags = [
@@ -552,8 +552,8 @@ def test_record_override_attaches_tag_and_outcome(budget_db):
     run_id = _spend("drafter", "claude-opus-4-7", 5.0)
     record_override(run_id=run_id, reason="manual backfill", operator="ops")
 
-    from pf_core.db.connection import transaction
-    from pf_core.llm.tracking.schema import llm_run_tags
+    from pw_core.db.connection import transaction
+    from pw_core.llm.tracking.schema import llm_run_tags
 
     with transaction() as conn:
         tags = [
@@ -564,7 +564,7 @@ def test_record_override_attaches_tag_and_outcome(budget_db):
         ]
     assert "budget:override" in tags
 
-    from pf_core.llm.tracking.subrepos import LlmRunOutcomeRepo
+    from pw_core.llm.tracking.subrepos import LlmRunOutcomeRepo
 
     outcomes = LlmRunOutcomeRepo().list_for_run(run_id)
     assert any(o["outcome_kind"] == "budget_override" for o in outcomes)
@@ -576,8 +576,8 @@ def test_record_override_twice_keeps_one_tag_and_latest_notes(budget_db):
     record_override(run_id=run_id, reason="manual backfill", operator="ops")
     record_override(run_id=run_id, reason="re-approved", operator="lead")
 
-    from pf_core.db.connection import transaction
-    from pf_core.llm.tracking.schema import llm_run_tags
+    from pw_core.db.connection import transaction
+    from pw_core.llm.tracking.schema import llm_run_tags
 
     with transaction() as conn:
         tags = [
@@ -588,7 +588,7 @@ def test_record_override_twice_keeps_one_tag_and_latest_notes(budget_db):
         ]
     assert tags.count("budget:override") == 1
 
-    from pf_core.llm.tracking.subrepos import LlmRunOutcomeRepo
+    from pw_core.llm.tracking.subrepos import LlmRunOutcomeRepo
 
     overrides = [
         o
@@ -669,7 +669,7 @@ def test_sync_budgets_from_yaml_malformed_file_is_a_logged_noop(
     cfg = tmp_path / "budgets.yaml"
     cfg.write_text("agents:\n  drafter:\n   daily: 20.0\n    monthly: [unclosed\n")
     monkeypatch.setenv("BUDGET_CONFIG", str(cfg))
-    with caplog.at_level(logging.ERROR, logger="pf_core.budget.config"):
+    with caplog.at_level(logging.ERROR, logger="pw_core.budget.config"):
         counts = sync_budgets_from_yaml()
     assert counts == {"inserted": 0, "updated": 0, "disabled": 0}
     records = _event_records(caplog, "budget_config_unreadable")
@@ -683,7 +683,7 @@ def test_sync_budgets_from_yaml_non_mapping_document_is_a_logged_noop(
     cfg = tmp_path / "budgets.yaml"
     cfg.write_text("- global\n- agents\n")
     monkeypatch.setenv("BUDGET_CONFIG", str(cfg))
-    with caplog.at_level(logging.ERROR, logger="pf_core.budget.config"):
+    with caplog.at_level(logging.ERROR, logger="pw_core.budget.config"):
         assert sync_budgets_from_yaml() == {"inserted": 0, "updated": 0, "disabled": 0}
     assert _event_records(caplog, "budget_config_unreadable")
 
@@ -714,7 +714,7 @@ def test_config_that_vanishes_does_not_disable_existing_budgets(
     cfg.unlink()
     clear_config_cache()
 
-    with caplog.at_level(logging.WARNING, logger="pf_core.budget.repo"):
+    with caplog.at_level(logging.WARNING, logger="pw_core.budget.repo"):
         assert sync_budgets_from_yaml()["disabled"] == 0
     assert _event_records(caplog, "budget_sync_refused_mass_disable")
 
@@ -821,7 +821,7 @@ class TestConfigReloadCache:
         cfg.write_text("global:\n  daily: 5.0\n")
         monkeypatch.setenv("BUDGET_CONFIG", str(cfg))
         monkeypatch.setenv("BUDGET_CONFIG_RELOAD_SECONDS", "not-a-number")
-        from pf_core.budget.config import load_yaml
+        from pw_core.budget.config import load_yaml
 
         assert load_yaml()["global"]["daily"] == 5.0
 
@@ -832,7 +832,7 @@ class TestConfigReloadCache:
         b.write_text("global:\n  daily: 2.0\n")
         monkeypatch.setenv("BUDGET_CONFIG_RELOAD_SECONDS", "3600")
         monkeypatch.setenv("BUDGET_CONFIG", str(a))
-        from pf_core.budget.config import load_yaml
+        from pw_core.budget.config import load_yaml
 
         assert load_yaml()["global"]["daily"] == 1.0
         monkeypatch.setenv("BUDGET_CONFIG", str(b))
@@ -843,7 +843,7 @@ class TestConfigReloadCache:
         cfg.write_text("global:\n  daily: 5.0\n")
         monkeypatch.setenv("BUDGET_CONFIG", str(cfg))
         monkeypatch.setenv("BUDGET_CONFIG_RELOAD_SECONDS", "0")  # reload every call
-        from pf_core.budget.config import load_yaml
+        from pw_core.budget.config import load_yaml
 
         assert load_yaml()["global"]["daily"] == 5.0
         cfg.write_text("global:\n  daily: 5.0\n   monthly: [oops\n")
@@ -853,7 +853,7 @@ class TestConfigReloadCache:
         cfg = tmp_path / "budgets.yaml"
         cfg.write_text("global:\n  daily: 5.0\n   monthly: [oops\n")
         monkeypatch.setenv("BUDGET_CONFIG", str(cfg))
-        from pf_core.budget.config import load_yaml
+        from pw_core.budget.config import load_yaml
 
         with pytest.raises(ConfigurationError):
             load_yaml()
@@ -865,7 +865,7 @@ class TestConfigReloadCache:
 
 
 def test_project_cost_falls_back_to_shared_pricing_table(budget_db):
-    # No llm_cost_rates row, but pf_core.pricing knows this model.
+    # No llm_cost_rates row, but pw_core.pricing knows this model.
     cost = project_cost(
         agent_type="drafter",
         model="claude-opus-4-7",
@@ -888,7 +888,7 @@ def test_check_budget_blocks_call_priced_only_by_shared_table(budget_db):
 
 
 def test_project_cost_warns_when_nothing_can_price_the_call(budget_db, caplog):
-    with caplog.at_level(logging.WARNING, logger="pf_core.budget.check"):
+    with caplog.at_level(logging.WARNING, logger="pw_core.budget.check"):
         cost = project_cost(agent_type="novel", model="novel-model")
     assert cost == 0.0
     assert any("budget_projection_unknown" in r.getMessage() for r in caplog.records)
@@ -900,7 +900,7 @@ def test_project_cost_warns_when_nothing_can_price_the_call(budget_db, caplog):
 
 
 def test_snapshot_refresh_counts_run_created_during_refresh(budget_db, monkeypatch):
-    import pf_core.budget.snapshot_job as snapshot_job
+    import pw_core.budget.snapshot_job as snapshot_job
 
     _insert_budget(scope_kind="agent", scope_value="drafter", period="daily", limit_usd=100.0)
     real_aggregate = snapshot_job.aggregate_usage
@@ -914,7 +914,7 @@ def test_snapshot_refresh_counts_run_created_during_refresh(budget_db, monkeypat
     monkeypatch.setattr(snapshot_job, "aggregate_usage", _aggregate_then_spend)
     snapshot_job.refresh_snapshots()
 
-    from pf_core.budget.check import _current_spent
+    from pw_core.budget.check import _current_spent
 
     budget = BudgetRepo().find(scope_kind="agent", scope_value="drafter", period="daily")
     assert _current_spent(budget) == pytest.approx(5.0, abs=1e-6)
@@ -926,7 +926,7 @@ def test_snapshot_refresh_counts_run_created_during_refresh(budget_db, monkeypat
 
 
 def test_aggregate_spent_rejects_unknown_scope_kind(budget_db):
-    from pf_core.exceptions import InvalidInputError
+    from pw_foundation.exceptions import InvalidInputError
 
     start = compute_period_start("daily")
     budget = {"scope_kind": "cost_center", "scope_value": "eng", "period": "daily"}
@@ -939,8 +939,8 @@ def test_aggregate_spent_rejects_unknown_scope_kind(budget_db):
 
 
 def test_live_delta_rejects_unknown_scope_kind(budget_db):
-    from pf_core.budget.check import _current_spent
-    from pf_core.exceptions import InvalidInputError
+    from pw_core.budget.check import _current_spent
+    from pw_foundation.exceptions import InvalidInputError
 
     _insert_budget(scope_kind="global", scope_value=None, period="daily", limit_usd=100.0)
     refresh_snapshots()
@@ -1107,7 +1107,7 @@ def test_usd_passes_while_tokens_trips_on_the_same_budget(budget_db):
 
 
 def test_unknown_limit_key_warns_and_enforces_known_keys(caplog):
-    with caplog.at_level(logging.WARNING, logger="pf_core.budget.config"):
+    with caplog.at_level(logging.WARNING, logger="pw_core.budget.config"):
         rows = _flatten_scopes({"global": {"daily": {"usd": 5.0, "token": 9}}})
     assert rows[0]["limit_usd"] == 5.0
     assert rows[0]["limit_tokens"] is None
@@ -1127,7 +1127,7 @@ def test_warn_action_logs_and_continues_per_dimension(budget_db, caplog):
     )
     _spend("drafter", "claude-opus-4-7", 0.1)  # 150 tokens, 1 call
 
-    with caplog.at_level(logging.WARNING, logger="pf_core.budget.check"):
+    with caplog.at_level(logging.WARNING, logger="pw_core.budget.check"):
         check_budget(agent_type="drafter", projected_cost_usd=0.1, projected_calls=1)  # no raise
     warns = _event_records(caplog, "budget_warn_exceeded")
     assert {r.msg["dimension"] for r in warns} == {"tokens", "calls"}
@@ -1197,7 +1197,7 @@ def test_usd_dimension_mirrors_value_onto_the_usd_attributes():
 
 
 def test_current_usage_snapshot_plus_delta_with_null_token_columns(budget_db):
-    from pf_core.budget.check import current_usage
+    from pw_core.budget.check import current_usage
 
     _insert_budget(scope_kind="agent", scope_value="drafter", period="daily", limit_tokens=10_000)
     _spend("drafter", "claude-opus-4-7", 1.0)  # 150 tokens
@@ -1222,7 +1222,7 @@ def test_current_usage_snapshot_plus_delta_with_null_token_columns(budget_db):
 
 
 def test_current_spent_matches_current_usage_usd(budget_db):
-    from pf_core.budget.check import current_spent, current_usage
+    from pw_core.budget.check import current_spent, current_usage
 
     _insert_budget(scope_kind="agent", scope_value="drafter", period="daily", limit_usd=100.0)
     _spend("drafter", "claude-opus-4-7", 3.5)
@@ -1239,7 +1239,7 @@ def test_soft_thresholds_skipped_without_usd_limit(budget_db, caplog):
         soft_thresholds=[0.5],
     )
     _spend("drafter", "claude-opus-4-7", 100.0)
-    with caplog.at_level(logging.WARNING, logger="pf_core.budget.check"):
+    with caplog.at_level(logging.WARNING, logger="pw_core.budget.check"):
         check_budget(agent_type="drafter", projected_cost_usd=100.0)
     assert _event_records(caplog, "budget_threshold_crossed") == []
 
@@ -1250,7 +1250,7 @@ def test_soft_thresholds_skipped_without_usd_limit(budget_db, caplog):
 
 
 def test_threshold_dedupe_key_is_the_utc_period_start():
-    from pf_core.budget.check import _THRESHOLD_FIRED, _maybe_log_threshold
+    from pw_core.budget.check import _THRESHOLD_FIRED, _maybe_log_threshold
 
     for period in ("daily", "monthly"):
         _clear_threshold_state()
@@ -1281,7 +1281,7 @@ def test_soft_thresholds_without_a_usd_limit_are_reported_at_sync(
         "    monthly: 50.0\n"
     )
     monkeypatch.setenv("BUDGET_CONFIG", str(cfg))
-    with caplog.at_level(logging.WARNING, logger="pf_core.budget.config"):
+    with caplog.at_level(logging.WARNING, logger="pw_core.budget.config"):
         sync_budgets_from_yaml()
     records = _event_records(caplog, "budget_config_soft_thresholds_ignored")
     assert [r.msg["where"] for r in records] == ["agents.watcher.daily"]
@@ -1293,7 +1293,7 @@ def test_soft_thresholds_with_a_usd_limit_are_not_reported(
     cfg = tmp_path / "budgets.yaml"
     cfg.write_text("agents:\n  drafter:\n    soft_thresholds: [0.8]\n    daily: 20.0\n")
     monkeypatch.setenv("BUDGET_CONFIG", str(cfg))
-    with caplog.at_level(logging.WARNING, logger="pf_core.budget.config"):
+    with caplog.at_level(logging.WARNING, logger="pw_core.budget.config"):
         sync_budgets_from_yaml()
     assert _event_records(caplog, "budget_config_soft_thresholds_ignored") == []
 

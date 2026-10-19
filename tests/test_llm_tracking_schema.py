@@ -1,4 +1,4 @@
-"""Tests for the pf_core.llm.tracking schema (SQLAlchemy metadata).
+"""Tests for the pw_core.llm.tracking schema (SQLAlchemy metadata).
 
 Schema correctness is verified against an in-memory SQLite engine. MySQL and
 PostgreSQL DDL is exercised in the testcontainer suite (separate run).
@@ -14,8 +14,8 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.pool import StaticPool
 
-from pf_core.llm.tracking import metadata
-from pf_core.llm.tracking.schema import (
+from pw_core.llm.tracking import metadata
+from pw_core.llm.tracking.schema import (
     ALL_TABLES,
     llm_agent_types,
     llm_models,

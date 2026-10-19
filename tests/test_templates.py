@@ -1,10 +1,10 @@
-"""Tests for pf_core.web.templates — Jinja2 template setup."""
+"""Tests for pw_core.web.templates — Jinja2 template setup."""
 
 from __future__ import annotations
 
 from fastapi import FastAPI
 
-from pf_core.web.templates import setup_templates
+from pw_core.web.templates import setup_templates
 
 
 class TestSetupTemplates:

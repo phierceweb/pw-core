@@ -1,33 +1,15 @@
-"""Tests for pf_core.doctor — runtime ground-truth attestation.
-
-All checks are exercised against controlled state (monkeypatched env,
-tmp files, tmp sqlite, tmp git repos); nothing here touches the network.
-"""
+"""pw-core's doctor rows: extras, env, router, deps and the --db group, and their place in pw-doctor."""
 
 from __future__ import annotations
 
 import sqlite3
 import subprocess
-import sys
 
 import pytest
 
-from pf_core import doctor
-from pf_core.doctor import (
-    CheckResult,
-    check_copy,
-    check_deps,
-    check_env,
-    check_extras,
-    check_python,
-    check_router,
-    db_checks,
-    redact_value,
-    release_checks,
-    run_checks,
-    run_cli,
-)
-from pf_core.llm import _router_loader
+from pw_core import doctor
+from pw_core.doctor import check_deps, check_env, check_extras, check_router, checks, db_checks
+from pw_core.llm import _router_loader
 
 
 @pytest.fixture(autouse=True)
@@ -35,103 +17,6 @@ def _router_cache_reset():
     _router_loader.clear_cache()
     yield
     _router_loader.clear_cache()
-
-
-# ---------------------------------------------------------------------------
-# Redaction
-# ---------------------------------------------------------------------------
-
-
-class TestRedaction:
-    def test_url_credentials_masked(self):
-        out = redact_value("DATABASE_URL", "mysql://user:s3cr3t@db.host:3306/app")
-        assert "s3cr3t" not in out
-        assert "user" not in out
-        assert "db.host" in out
-
-    def test_key_vars_presence_only(self):
-        out = redact_value("ANTHROPIC_API_KEY", "sk-ant-abc123")
-        assert "sk-ant-abc123" not in out
-        assert "abc123" not in out
-        assert out == "set (redacted)"
-
-    def test_plain_value_passthrough(self):
-        assert redact_value("LOG_LEVEL", "DEBUG") == "DEBUG"
-
-    def test_url_without_credentials_untouched(self):
-        assert redact_value("DATABASE_URL", "sqlite:///data.db") == "sqlite:///data.db"
-
-
-# ---------------------------------------------------------------------------
-# Core checks
-# ---------------------------------------------------------------------------
-
-
-class TestCheckPython:
-    def test_passes_on_current_interpreter(self):
-        (res,) = check_python()
-        assert res.status == "PASS"
-        assert f"{sys.version_info[0]}.{sys.version_info[1]}" in res.detail
-
-    def test_fails_below_floor(self, monkeypatch):
-        monkeypatch.setattr(doctor, "_MIN_PY", (99, 0))
-        (res,) = check_python()
-        assert res.status == "FAIL"
-
-
-class TestCheckCopy:
-    def test_reports_path_and_version(self):
-        (res,) = check_copy()
-        assert res.status in ("PASS", "WARN")
-        assert "pf_core" in res.detail
-        assert "version" in res.detail
-
-    def test_warns_on_editable_metadata_mismatch(self, monkeypatch, tmp_path):
-        monkeypatch.setattr(doctor, "_package_root", lambda: tmp_path / "src" / "pf_core")
-        monkeypatch.setattr(doctor, "_installed_version", lambda: "0.0.1")
-        monkeypatch.setattr(doctor, "_adjacent_pyproject_version", lambda: "9.9.9")
-        (res,) = check_copy()
-        assert res.status == "WARN"
-        assert "0.0.1" in res.detail
-        assert "9.9.9" in res.detail
-
-    def test_site_packages_never_reads_pyproject(self, monkeypatch, tmp_path):
-        site_root = tmp_path / "venv" / "lib" / "python3.12" / "site-packages" / "pf_core"
-        monkeypatch.setattr(doctor, "_package_root", lambda: site_root)
-        monkeypatch.setattr(doctor, "_installed_version", lambda: "0.0.1")
-
-        def _boom():
-            raise AssertionError("pyproject read attempted for a site-packages install")
-
-        monkeypatch.setattr(doctor, "_adjacent_pyproject_version", _boom)
-        (res,) = check_copy()
-        assert res.status == "PASS"
-        assert "(site-packages)" in res.detail
-
-    def test_editable_missing_pyproject_passes(self, monkeypatch, tmp_path):
-        monkeypatch.setattr(doctor, "_package_root", lambda: tmp_path / "src" / "pf_core")
-        monkeypatch.setattr(doctor, "_installed_version", lambda: "0.0.1")
-        (res,) = check_copy()
-        assert res.status == "PASS"
-
-    def test_editable_malformed_pyproject_passes(self, monkeypatch, tmp_path):
-        (tmp_path / "pyproject.toml").write_text("not [valid toml")
-        monkeypatch.setattr(doctor, "_package_root", lambda: tmp_path / "src" / "pf_core")
-        monkeypatch.setattr(doctor, "_installed_version", lambda: "0.0.1")
-        (res,) = check_copy()
-        assert res.status == "PASS"
-
-    def test_editable_matching_version_passes(self, monkeypatch, tmp_path):
-        (tmp_path / "pyproject.toml").write_text('[project]\nname = "x"\nversion = "0.0.1"\n')
-        monkeypatch.setattr(doctor, "_package_root", lambda: tmp_path / "src" / "pf_core")
-        monkeypatch.setattr(doctor, "_installed_version", lambda: "0.0.1")
-        (res,) = check_copy()
-        assert res.status == "PASS"
-
-    def test_adjacent_pyproject_version_reads_file(self, tmp_path, monkeypatch):
-        (tmp_path / "pyproject.toml").write_text('[project]\nname = "x"\nversion = "1.2.3"\n')
-        monkeypatch.setattr(doctor, "_package_root", lambda: tmp_path / "src" / "pf_core")
-        assert doctor._adjacent_pyproject_version() == "1.2.3"
 
 
 class TestCheckExtras:
@@ -158,19 +43,19 @@ class TestCheckEnv:
         assert "no .env" in res.detail
 
     def test_loads_cwd_dotenv_for_effective_env(self, monkeypatch, tmp_path):
-        (tmp_path / ".env").write_text("LOG_LEVEL=TRACE_TEST\n")
+        (tmp_path / ".env").write_text("WEB_HOST=TRACE_TEST\n")
         monkeypatch.chdir(tmp_path)
-        monkeypatch.delenv("LOG_LEVEL", raising=False)
+        monkeypatch.delenv("WEB_HOST", raising=False)
         (res,) = check_env()
-        assert "LOG_LEVEL=TRACE_TEST" in res.detail
+        assert "WEB_HOST=TRACE_TEST" in res.detail
         assert ".env loaded from" in res.detail
 
     def test_shell_value_wins_over_dotenv(self, monkeypatch, tmp_path):
-        (tmp_path / ".env").write_text("LOG_LEVEL=FROM_FILE\n")
+        (tmp_path / ".env").write_text("WEB_HOST=FROM_FILE\n")
         monkeypatch.chdir(tmp_path)
-        monkeypatch.setenv("LOG_LEVEL", "FROM_SHELL")
+        monkeypatch.setenv("WEB_HOST", "FROM_SHELL")
         (res,) = check_env()
-        assert "LOG_LEVEL=FROM_SHELL" in res.detail
+        assert "WEB_HOST=FROM_SHELL" in res.detail
 
 
 class TestCheckRouter:
@@ -295,119 +180,37 @@ def _git_repo_with_release(tmp_path, *, version="1.0.0", changelog="1.0.0", tag=
     return tmp_path
 
 
-class TestReleaseChecks:
-    def test_skip_when_not_a_git_repo(self, tmp_path, monkeypatch):
-        monkeypatch.chdir(tmp_path)
-        (res,) = release_checks()
-        assert res.status == "SKIP"
-
-    def test_versions_match_passes(self, tmp_path, monkeypatch):
-        _git_repo_with_release(tmp_path)
-        monkeypatch.chdir(tmp_path)
-        by_name = {r.name: r for r in release_checks()}
-        assert by_name["versions"].status == "PASS"
-
-    def test_versions_mismatch_fails(self, tmp_path, monkeypatch):
-        _git_repo_with_release(tmp_path, version="1.0.0", changelog="0.7.0")
-        monkeypatch.chdir(tmp_path)
-        by_name = {r.name: r for r in release_checks()}
-        assert by_name["versions"].status == "FAIL"
-        assert "1.0.0" in by_name["versions"].detail
-        assert "0.7.0" in by_name["versions"].detail
-
-    def test_missing_changelog_warns(self, tmp_path, monkeypatch):
-        _git_repo_with_release(tmp_path, changelog=None)
-        monkeypatch.chdir(tmp_path)
-        by_name = {r.name: r for r in release_checks()}
-        assert by_name["versions"].status == "WARN"
-
-    def test_tag_matching_pyproject_passes(self, tmp_path, monkeypatch):
-        _git_repo_with_release(tmp_path, tag="v1.0.0")
-        monkeypatch.chdir(tmp_path)
-        by_name = {r.name: r for r in release_checks()}
-        assert by_name["tag"].status == "PASS"
-
-    def test_tag_mismatch_fails(self, tmp_path, monkeypatch):
-        _git_repo_with_release(tmp_path, tag="v2.0.0")
-        monkeypatch.chdir(tmp_path)
-        by_name = {r.name: r for r in release_checks()}
-        assert by_name["tag"].status == "FAIL"
-
-    def test_no_tag_at_head_skips(self, tmp_path, monkeypatch):
-        _git_repo_with_release(tmp_path)
-        monkeypatch.chdir(tmp_path)
-        by_name = {r.name: r for r in release_checks()}
-        assert by_name["tag"].status == "SKIP"
-
-    def test_dirty_tree_warns(self, tmp_path, monkeypatch):
-        _git_repo_with_release(tmp_path)
-        (tmp_path / "extra.txt").write_text("uncommitted")
-        monkeypatch.chdir(tmp_path)
-        by_name = {r.name: r for r in release_checks()}
-        assert by_name["tree"].status == "WARN"
-
-    def test_clean_tree_passes(self, tmp_path, monkeypatch):
-        _git_repo_with_release(tmp_path)
-        monkeypatch.chdir(tmp_path)
-        by_name = {r.name: r for r in release_checks()}
-        assert by_name["tree"].status == "PASS"
-
-
-class TestRunner:
-    def test_run_checks_core_only_by_default(self):
-        results = run_checks(db=False)
-        groups = {r.group for r in results}
-        assert "db" not in groups
-        assert {"copy", "python", "extras", "env", "router", "deps"} <= groups
-
-    def test_run_checks_includes_db_when_asked(self, tmp_path, monkeypatch):
-        db_file = tmp_path / "x.db"
-        sqlite3.connect(db_file).close()
-        monkeypatch.setenv("DATABASE_URL", f"sqlite:///{db_file}")
-        monkeypatch.chdir(tmp_path)
-        results = run_checks(db=True)
-        assert any(r.group == "db" for r in results)
-
-
-class TestRunCli:
-    def test_exit_zero_when_no_fail(self, capsys, monkeypatch):
+class TestChecks:
+    def test_core_groups_without_db(self, monkeypatch):
         monkeypatch.delenv("MODEL_ROUTER_CONFIG", raising=False)
-        code = run_cli([])
-        out = capsys.readouterr().out
-        assert code == 0
-        assert "pass" in out.lower()
+        groups = {r.group for r in checks()}
+        assert {"extras", "env", "router", "deps"} <= groups
+        assert "db" not in groups
 
-    def test_exit_one_on_fail(self, capsys, monkeypatch):
-        monkeypatch.setattr(
-            doctor,
-            "run_checks",
-            lambda **kw: [CheckResult("env", "forced", "FAIL", "boom")],
-        )
-        code = run_cli([])
-        assert code == 1
-
-    def test_warn_does_not_flip_exit(self, monkeypatch):
-        monkeypatch.setattr(
-            doctor,
-            "run_checks",
-            lambda **kw: [CheckResult("copy", "forced", "WARN", "meh")],
-        )
-        assert run_cli([]) == 0
-
-    def test_db_flag_parsed(self, tmp_path, monkeypatch, capsys):
+    def test_db_group_when_asked(self, tmp_path, monkeypatch):
         db_file = tmp_path / "x.db"
         sqlite3.connect(db_file).close()
         monkeypatch.setenv("DATABASE_URL", f"sqlite:///{db_file}")
         monkeypatch.chdir(tmp_path)
-        code = run_cli(["--db"])
-        out = capsys.readouterr().out
-        assert code == 0
-        assert "connect" in out
+        assert any(r.group == "db" for r in checks(db=True))
 
-    def test_release_flag_parsed(self, tmp_path, monkeypatch, capsys):
-        _git_repo_with_release(tmp_path)
-        monkeypatch.chdir(tmp_path)
-        code = run_cli(["--release"])
-        out = capsys.readouterr().out
-        assert code == 0
-        assert "versions" in out
+    def test_unknown_options_from_pw_doctor_are_ignored(self):
+        assert checks(release=True, future_flag=1)
+
+    def test_pw_doctor_includes_the_core_rows(self, monkeypatch):
+        from pw_foundation.doctor import run_checks
+
+        monkeypatch.delenv("MODEL_ROUTER_CONFIG", raising=False)
+        groups = {r.group for r in run_checks()}
+        assert {"extras", "router", "deps"} <= groups
+        assert "plugin" not in groups, [r.detail for r in run_checks() if r.group == "plugin"]
+
+
+def test_pw_doctor_prints_each_row_name_once():
+    """pw-core's rows join pw-foundation's under names of their own."""
+    from collections import Counter
+
+    from pw_foundation.doctor import run_checks
+
+    counts = Counter((r.group, r.name) for r in run_checks())
+    assert [k for k, n in counts.items() if n > 1] == []

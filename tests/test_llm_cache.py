@@ -1,6 +1,6 @@
-"""Tests for pf_core.llm.cache — exact cache, config, invalidation, recording.
+"""Tests for pw_core.llm.cache — exact cache, config, invalidation, recording.
 
-All tests use in-memory SQLite via the ``pf_engine`` fixture.
+All tests use in-memory SQLite via the ``pw_engine`` fixture.
 """
 
 from __future__ import annotations
@@ -12,7 +12,7 @@ import logging
 import pytest
 from sqlalchemy import select
 
-from pf_core.llm.cache import (
+from pw_core.llm.cache import (
     AgentCacheConfig,
     CacheHit,
     ExactCacheRepo,
@@ -24,9 +24,9 @@ from pf_core.llm.cache import (
     purge_expired,
     record_cache_hit,
 )
-from pf_core.llm.cache import by_agent, by_model, by_run
-from pf_core.llm.cache._recorder import _age_bucket
-from pf_core.llm.tracking import (
+from pw_core.llm.cache import by_agent, by_model, by_run
+from pw_core.llm.cache._recorder import _age_bucket
+from pw_core.llm.tracking import (
     LlmRunRepo,
     clear_resolver_caches,
     compute_input_hash,
@@ -49,11 +49,11 @@ def _reset():
 
 
 @pytest.fixture()
-def cache_db(pf_engine):
+def cache_db(pw_engine):
     """In-memory SQLite engine with all framework tables (tracking + cache)."""
-    metadata.create_all(pf_engine)
-    yield pf_engine
-    metadata.drop_all(pf_engine)
+    metadata.create_all(pw_engine)
+    yield pw_engine
+    metadata.drop_all(pw_engine)
 
 
 def _make_run(agent_type="classifier", model="openai/gpt-4o"):
@@ -168,7 +168,7 @@ def test_removed_semantic_key_is_ignored_with_one_warning(tmp_path, monkeypatch,
     monkeypatch.setenv("CACHE_CONFIG", str(cfg_file))
     clear_config_cache()
 
-    with caplog.at_level(logging.WARNING, logger="pf_core.llm.cache.config"):
+    with caplog.at_level(logging.WARNING, logger="pw_core.llm.cache.config"):
         cfg = get_agent_cache_config("searcher")
 
     assert (cfg.exact, cfg.ttl_seconds) == (True, 60)
@@ -201,7 +201,7 @@ def test_cache_yaml_with_semantic_false_keeps_exact_caching(
     monkeypatch.setenv("CACHE_CONFIG", str(cfg_file))
     clear_config_cache()
 
-    with caplog.at_level(logging.WARNING, logger="pf_core.llm.cache.config"):
+    with caplog.at_level(logging.WARNING, logger="pw_core.llm.cache.config"):
         cfg = get_agent_cache_config("classifier")
     assert (cfg.exact, cfg.ttl_seconds, cfg.on_miss) == (True, 604800, "proceed")
     assert _count_events(caplog, "cache_config_ignored_key") == 1
@@ -224,7 +224,7 @@ def test_semantic_false_test_config_still_turns_exact_off(tmp_path, monkeypatch,
     monkeypatch.setenv("CACHE_CONFIG", str(cfg_file))
     clear_config_cache()
 
-    with caplog.at_level(logging.WARNING, logger="pf_core.llm.cache.config"):
+    with caplog.at_level(logging.WARNING, logger="pw_core.llm.cache.config"):
         assert get_agent_cache_config("summarizer").exact is False
 
     assert _count_events(caplog, "cache_config_ignored_key") == 1
@@ -247,7 +247,7 @@ def test_a_section_of_the_wrong_type_turns_caching_off(tmp_path, monkeypatch, ca
     cfg_file.write_text(body)
     monkeypatch.setenv("CACHE_CONFIG", str(cfg_file))
     clear_config_cache()
-    with caplog.at_level(logging.WARNING, logger="pf_core.llm.cache.config"):
+    with caplog.at_level(logging.WARNING, logger="pw_core.llm.cache.config"):
         cfg = get_agent_cache_config("searcher")
     assert cfg.exact is False
     assert _count_events(caplog, "cache_config_section_not_a_mapping") == 1
@@ -288,7 +288,7 @@ def test_an_unrecognised_flag_turns_the_feature_off(tmp_path, monkeypatch, caplo
     cfg_file.write_text('defaults:\n  exact: "maybe"\n')
     monkeypatch.setenv("CACHE_CONFIG", str(cfg_file))
     clear_config_cache()
-    with caplog.at_level(logging.WARNING, logger="pf_core.llm.cache.config"):
+    with caplog.at_level(logging.WARNING, logger="pw_core.llm.cache.config"):
         cfg = get_agent_cache_config("searcher")
     assert cfg.exact is False
     assert _count_events(caplog, "cache_config_invalid_flag") == 1
@@ -321,7 +321,7 @@ def _use_legacy_config(tmp_path, monkeypatch, *, ttl: int = 3600):
 def test_agent_cache_config_tolerates_legacy_max_entries_key(tmp_path, monkeypatch, caplog):
     _use_legacy_config(tmp_path, monkeypatch)
 
-    with caplog.at_level(logging.WARNING, logger="pf_core.llm.cache.config"):
+    with caplog.at_level(logging.WARNING, logger="pw_core.llm.cache.config"):
         cfg = get_agent_cache_config("searcher")
 
     assert cfg.ttl_seconds == 3600
@@ -333,7 +333,7 @@ def test_legacy_key_warns_once_across_config_reloads(tmp_path, monkeypatch, capl
     monkeypatch.setenv("CACHE_CONFIG_RELOAD_SECONDS", "0")  # reload on every lookup
     cfg_file = _use_legacy_config(tmp_path, monkeypatch, ttl=3600)
 
-    with caplog.at_level(logging.WARNING, logger="pf_core.llm.cache.config"):
+    with caplog.at_level(logging.WARNING, logger="pw_core.llm.cache.config"):
         assert get_agent_cache_config("drafter").ttl_seconds == 3600
         _write_legacy_config(cfg_file, ttl=7200)
         # a changed ttl proves the loader re-ran; the warning must not repeat
@@ -345,7 +345,7 @@ def test_legacy_key_warns_once_across_config_reloads(tmp_path, monkeypatch, capl
 def test_clear_config_cache_rearms_legacy_key_warning(tmp_path, monkeypatch, caplog):
     _use_legacy_config(tmp_path, monkeypatch)
 
-    with caplog.at_level(logging.WARNING, logger="pf_core.llm.cache.config"):
+    with caplog.at_level(logging.WARNING, logger="pw_core.llm.cache.config"):
         get_agent_cache_config("drafter")
         clear_config_cache()
         get_agent_cache_config("drafter")
@@ -359,7 +359,7 @@ def test_non_mapping_config_turns_caching_off(tmp_path, monkeypatch, caplog):
     monkeypatch.setenv("CACHE_CONFIG", str(cfg_file))
     clear_config_cache()
 
-    with caplog.at_level(logging.WARNING, logger="pf_core.llm.cache.config"):
+    with caplog.at_level(logging.WARNING, logger="pw_core.llm.cache.config"):
         cfg = get_agent_cache_config("searcher")
 
     assert cfg.exact is False
@@ -372,7 +372,7 @@ def test_unparseable_config_turns_caching_off(tmp_path, monkeypatch, caplog):
     monkeypatch.setenv("CACHE_CONFIG", str(cfg_file))
     clear_config_cache()
 
-    with caplog.at_level(logging.WARNING, logger="pf_core.llm.cache.config"):
+    with caplog.at_level(logging.WARNING, logger="pw_core.llm.cache.config"):
         cfg = get_agent_cache_config("searcher")
 
     assert cfg.exact is False
@@ -435,8 +435,8 @@ def test_exact_cache_miss_returns_none(cache_db):
 
 def test_exact_cache_expired_entry_is_a_miss(cache_db):
     from sqlalchemy import update
-    from pf_core.llm.cache._schema import llm_cache_entries
-    from pf_core.db import transaction
+    from pw_core.llm.cache._schema import llm_cache_entries
+    from pw_core.db import transaction
 
     run_id = _make_run()
     repo = ExactCacheRepo()
@@ -537,15 +537,15 @@ def test_exact_cache_store_conflict_returns_existing_id(cache_db):
 
 
 def _entry_col(entry_id: int, column):
-    from pf_core.db import transaction
-    from pf_core.llm.cache._schema import llm_cache_entries
+    from pw_core.db import transaction
+    from pw_core.llm.cache._schema import llm_cache_entries
 
     with transaction() as conn:
         return conn.execute(select(column).where(llm_cache_entries.c.id == entry_id)).scalar_one()
 
 
 def test_exact_cache_bump_hit(cache_db):
-    from pf_core.llm.cache._schema import llm_cache_entries
+    from pw_core.llm.cache._schema import llm_cache_entries
 
     run_id = _make_run()
     repo = ExactCacheRepo()
@@ -565,8 +565,8 @@ def test_exact_cache_bump_hit(cache_db):
 
 def test_exact_cache_store_refreshes_expired_entry(cache_db):
     """A re-store after expiry must refill the entry, not hand back the stale row."""
-    from pf_core.db import transaction
-    from pf_core.llm.cache._schema import llm_cache_entries
+    from pw_core.db import transaction
+    from pw_core.llm.cache._schema import llm_cache_entries
 
     run_id = _make_run()
     repo = ExactCacheRepo()
@@ -601,7 +601,7 @@ def test_exact_cache_store_refreshes_expired_entry(cache_db):
 
 
 def test_exact_cache_store_preserves_hit_counters_across_refresh(cache_db):
-    from pf_core.llm.cache._schema import llm_cache_entries
+    from pw_core.llm.cache._schema import llm_cache_entries
 
     run_id = _make_run()
     repo = ExactCacheRepo()
@@ -632,8 +632,8 @@ def test_store_compiles_to_a_portable_upsert(dialect_name, expected):
     it went unnoticed; compiling per dialect catches it with no server."""
     from sqlalchemy.dialects import mysql, postgresql, sqlite
 
-    from pf_core.db.upsert import _upsert_stmt
-    from pf_core.llm.cache._schema import llm_cache_entries
+    from pw_core.db.upsert import _upsert_stmt
+    from pw_core.llm.cache._schema import llm_cache_entries
 
     dialects = {
         "postgresql": postgresql.dialect(),
@@ -672,8 +672,8 @@ def test_cache_lookup_and_store_take_no_canonical_text(monkeypatch):
 
 
 def test_cache_schema_is_the_exact_cache_table_only():
-    import pf_core.llm.cache as cache
-    from pf_core.llm.cache._schema import ALL_CACHE_TABLES, llm_cache_entries
+    import pw_core.llm.cache as cache
+    from pw_core.llm.cache._schema import ALL_CACHE_TABLES, llm_cache_entries
 
     assert ALL_CACHE_TABLES == (llm_cache_entries,)
     assert "llm_embeddings" not in metadata.tables
@@ -988,7 +988,7 @@ def test_age_bucket_none():
 
 def test_cache_stats_since_bounds_the_run_half(cache_db):
     """Unbounded, the run half scans lifetime history on every poll."""
-    from pf_core.llm.cache import cache_stats
+    from pw_core.llm.cache import cache_stats
 
     _make_run()
     unbounded = {r["agent_type"]: r for r in cache_stats()}

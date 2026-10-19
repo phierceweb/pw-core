@@ -1,8 +1,8 @@
-"""Tests for pf_core.db.repository.Repository base class."""
+"""Tests for pw_core.db.repository.Repository base class."""
 
 from sqlalchemy import Column, Integer, MetaData, String, Table, insert, text
 
-from pf_core.db.repository import Repository
+from pw_core.db.repository import Repository
 
 
 _items = Table(
@@ -11,7 +11,7 @@ _items = Table(
 
 
 class ItemRepo(Repository):
-    """Test repo operating on the 'items' table from conftest pf_schema."""
+    """Test repo operating on the 'items' table from conftest pw_schema."""
 
     def insert(self, name: str) -> int:
         with self._tx() as conn:
@@ -38,7 +38,7 @@ class ItemRepo(Repository):
 class TestStandaloneTransaction:
     """Repository with no conn arg creates its own transactions."""
 
-    def test_insert_and_get(self, pf_tables, pf_connection):
+    def test_insert_and_get(self, pw_tables, pw_connection):
         repo = ItemRepo()
         repo.insert("standalone_item")
         result = repo.get_by_name("standalone_item")
@@ -46,7 +46,7 @@ class TestStandaloneTransaction:
         assert result["name"] == "standalone_item"
         assert result["status"] == "active"
 
-    def test_count(self, pf_tables, pf_connection):
+    def test_count(self, pw_tables, pw_connection):
         repo = ItemRepo()
         assert repo.count() == 0
         repo.insert("one")
@@ -57,33 +57,33 @@ class TestStandaloneTransaction:
 class TestSharedTransaction:
     """Repository with conn arg participates in caller's transaction."""
 
-    def test_shared_conn_sees_same_data(self, pf_tables, pf_connection):
+    def test_shared_conn_sees_same_data(self, pw_tables, pw_connection):
         # Insert via raw connection
-        pf_connection.execute(
+        pw_connection.execute(
             text("INSERT INTO items (name) VALUES (:name)"),
             {"name": "shared_item"},
         )
 
         # Repo using same connection should see the uncommitted data
-        repo = ItemRepo(pf_connection)
+        repo = ItemRepo(pw_connection)
         result = repo.get_by_name("shared_item")
         assert result is not None
         assert result["name"] == "shared_item"
 
-    def test_repo_insert_visible_to_caller(self, pf_tables, pf_connection):
-        repo = ItemRepo(pf_connection)
+    def test_repo_insert_visible_to_caller(self, pw_tables, pw_connection):
+        repo = ItemRepo(pw_connection)
         repo.insert("repo_item")
 
         # Caller's connection should see the repo's insert
-        row = pf_connection.execute(
+        row = pw_connection.execute(
             text("SELECT name FROM items WHERE name = :name"),
             {"name": "repo_item"},
         ).fetchone()
         assert row is not None
 
-    def test_multiple_repos_share_transaction(self, pf_tables, pf_connection):
-        repo_a = ItemRepo(pf_connection)
-        repo_b = ItemRepo(pf_connection)
+    def test_multiple_repos_share_transaction(self, pw_tables, pw_connection):
+        repo_a = ItemRepo(pw_connection)
+        repo_b = ItemRepo(pw_connection)
 
         repo_a.insert("from_a")
         # repo_b should see repo_a's insert since they share the connection

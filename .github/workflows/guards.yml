@@ -12,7 +12,7 @@ jobs:
       # duplicate here drifts from pyproject.
       - run: pip install -e ".[dev]"
       - name: file-size gate
-        run: python -m pf_core.guards
+        run: python -m pw_foundation.guards
       - name: ruff lint
         run: ruff check src tests bin
       - name: ruff format

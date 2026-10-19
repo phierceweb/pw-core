@@ -1,0 +1,13 @@
+#!/usr/bin/env python3
+"""pw-eval — thin shim over :mod:`pw_core.eval.cli` for a repo checkout.
+
+Installs get the ``pw-eval`` console script. Commands and exit codes:
+``docs/eval-harness.md``.
+"""
+
+from __future__ import annotations
+
+from pw_core.eval.cli import main
+
+if __name__ == "__main__":
+    main()

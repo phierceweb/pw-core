@@ -1,10 +1,10 @@
-"""Tests for pf_core.pipeline.sequencer."""
+"""Tests for pw_core.pipeline.sequencer."""
 
 from __future__ import annotations
 
 import pytest
 
-from pf_core.pipeline.sequencer import Phase, UnknownStageError, run_pipeline
+from pw_core.pipeline.sequencer import Phase, UnknownStageError, run_pipeline
 
 
 class _Rec:
