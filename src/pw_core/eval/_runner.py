@@ -19,13 +19,12 @@ Usage::
 
 from __future__ import annotations
 
-import math
 import time
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, NamedTuple
 
 from pw_foundation.exceptions import (
-    ClientError,
     ConfigurationError,
     InvalidInputError,
     PreconditionError,
@@ -35,59 +34,22 @@ from pw_core.llm._router_loader import config_path as router_config_path
 from pw_core.llm.parse import parse_llm_json
 from pw_core.llm.router import list_agents, resolve_agent
 from pw_core.llm.tracking.repo import LlmRunRepo
-from pw_core.llm.tracking.subrepos import LlmRunMetricRepo, LlmRunOutcomeRepo
+from pw_core.utils._errors import error_text
 from pw_foundation.log import get_logger
 
-from pw_core.eval._compare import get_comparator, split_comparator_result
-from pw_core.eval._config import AgentEvalConfig, MetricGate, load_eval_config
+from pw_core.eval._compare import get_comparator, structured_diff
+from pw_core.eval._config import AgentEvalConfig, load_eval_config
 from pw_core.eval._golden import GoldenSetRepo
 from pw_core.eval._report import EvalReport, EvalResult
+from pw_core.eval._scoring import (
+    _apply_metric_gates as _apply_metric_gates,
+    _judge_slug as _judge_slug,
+    assert_diff_fields_in_goldens,
+    golden_dict,
+    score_replay,
+)
 
 logger = get_logger(__name__)
-
-
-def _apply_metric_gates(
-    score: float,
-    gates: list[MetricGate],
-    metrics: dict[str, float],
-    *,
-    run_id: int,
-) -> float:
-    """Return ``score``, or 0.0 if any gate fails or has no finite metric to read.
-
-    Fails closed on an absent metric: a gate nobody can satisfy must not read
-    as a pass. NaN would otherwise pass every bound.
-    """
-    for gate in gates:
-        val = metrics.get(gate.name)
-        if val is None or not math.isfinite(val):
-            logger.warning(
-                "eval_metric_gate_unavailable",
-                run_id=run_id,
-                metric=gate.name,
-                value=val,
-                available=sorted(metrics),
-            )
-            return 0.0
-        if (gate.min is not None and val < gate.min) or (gate.max is not None and val > gate.max):
-            logger.warning(
-                "eval_metric_gate_failed",
-                run_id=run_id,
-                metric=gate.name,
-                value=val,
-                min=gate.min,
-                max=gate.max,
-            )
-            return 0.0
-    return score
-
-
-def _scoring_failed(event: str, exc: Exception, *, golden_id: int, run_id: int) -> EvalResult:
-    """An errored result for a replay that was recorded but could not be scored."""
-    logger.warning(event, golden_id=golden_id, run_id=run_id, error=str(exc)[:300])
-    return EvalResult(
-        golden_id=golden_id, run_id=run_id, score=0.0, passed=False, error=str(exc)[:500]
-    )
 
 
 def _router_declares(agent_type: str) -> bool:
@@ -142,8 +104,22 @@ def _resolve_replay_call(
     return _ReplayCall(client, model, merged)
 
 
-def _judge_slug(agent_type: str, agent_cfg: AgentEvalConfig) -> str:
-    return agent_cfg.judge_agent_type or f"{agent_type}_judge"
+def _golden_field_names(golden_repo: GoldenSetRepo, goldens: list[dict]) -> list[set[str]]:
+    """Each golden output's field names, reading one payload at a time.
+
+    A golden whose payload is missing, unreadable or holds no dict output errors in its own
+    replay; it does not count here.
+    """
+    names: list[set[str]] = []
+    for golden in goldens:
+        try:
+            payload = golden_repo.get_payload(int(golden["id"]))
+        except Exception:
+            continue  # the replay reads it again and reports the failure
+        keys = set(golden_dict(payload)) if payload else set()
+        if keys:
+            names.append(keys)
+    return names
 
 
 class EvalRunner:
@@ -196,9 +172,10 @@ class EvalRunner:
                 version + agent_type combination, or no model resolves.
             ConfigurationError: If eval.yaml's ``agents`` lists other agents
                 but not ``agent_type``, the replay client, or the ``llm_judge``
-                judge's, cannot be resolved, or the comparator is not
-                registered. Any error building either client propagates too;
-                all of these raise before a replay runs.
+                judge's, cannot be resolved, the comparator is not registered,
+                or the built-in ``structured_diff``'s ``diff_fields`` names no
+                field that any golden output has. Any error building either
+                client propagates too; all of these raise before a replay runs.
 
         Returns:
             :class:`EvalReport` with per-run scores and aggregate statistics.
@@ -229,10 +206,17 @@ class EvalRunner:
             )
         # Resolved again per replay: a registered client factory owns each acquisition.
         _resolve_replay_call(agent_type, agent_cfg, target)
+        comparator = None
         if agent_cfg.compare == "llm_judge":
             resolve_judge(_judge_slug(agent_type, agent_cfg))
         else:
-            get_comparator(agent_cfg.compare)
+            comparator = get_comparator(agent_cfg.compare)
+        if comparator is structured_diff and agent_cfg.diff_fields:
+            assert_diff_fields_in_goldens(
+                agent_type=agent_type,
+                diff_fields=agent_cfg.diff_fields,
+                golden_keys=_golden_field_names(golden_repo, goldens),
+            )
 
         job_id = JobRepo().create(
             kind="eval_replay",
@@ -257,19 +241,13 @@ class EvalRunner:
                     target=target,
                     tags=replay_tags,
                     golden_repo=golden_repo,
+                    comparator=comparator,
                 )
             except Exception as exc:
-                logger.warning(
-                    "replay_failed",
-                    golden_id=golden_id,
-                    error=str(exc)[:300],
-                )
+                error = error_text(exc, 500)
+                logger.warning("replay_failed", golden_id=golden_id, error=error[:300])
                 return EvalResult(
-                    golden_id=golden_id,
-                    run_id=-1,
-                    score=0.0,
-                    passed=False,
-                    error=str(exc)[:500],
+                    golden_id=golden_id, run_id=-1, score=0.0, passed=False, error=error
                 )
 
         with Job(job_id) as job:
@@ -343,10 +321,12 @@ class EvalRunner:
         target: dict[str, Any],
         tags: list[str],
         golden_repo: GoldenSetRepo,
+        comparator: Callable[..., float] | None = None,
     ) -> EvalResult:
-        """Execute one replay and return a scored EvalResult."""
-        from pw_core.eval._judge import run_judge
+        """Read ``golden_id``'s payload, replay it and return a scored EvalResult.
 
+        ``comparator`` is the one ``run`` resolved (``None`` for ``llm_judge``).
+        """
         payload = golden_repo.get_payload(golden_id)
         if payload is None:
             raise PreconditionError(
@@ -356,13 +336,7 @@ class EvalRunner:
 
         rendered_system = payload.get("rendered_system")
         rendered_user = payload.get("rendered_user")
-        golden_parsed: dict = payload.get("parsed_output") or {}
-        if not golden_parsed and payload.get("raw_response"):
-            # Consumers that validate post-record can store JSON-null
-            # parsed_output; without this fallback every replay scores vs {}.
-            reparsed = parse_llm_json(payload["raw_response"])
-            if isinstance(reparsed, dict):
-                golden_parsed = reparsed
+        golden_parsed = golden_dict(payload)
 
         # Structured comparators need a non-empty dict golden — fail here,
         # before the replay spends tokens ({} vs {} would score 1.0).
@@ -373,6 +347,15 @@ class EvalRunner:
                 f"golden {golden_id} has no non-empty dict parsed_output for "
                 f"structured comparison (compare={agent_cfg.compare!r}). "
                 "Re-promote it with dict output or use compare: llm_judge."
+            )
+        if (
+            comparator is structured_diff
+            and agent_cfg.diff_fields
+            and not any(name in golden_parsed for name in agent_cfg.diff_fields)
+        ):
+            raise PreconditionError(
+                f"golden {golden_id} has none of diff_fields {agent_cfg.diff_fields!r} in its "
+                "output; there is nothing to compare."
             )
 
         messages: list[dict] = []
@@ -392,7 +375,7 @@ class EvalRunner:
             raw_content = ""
             usage_raw = {}
             status = "failed"
-            error_msg = str(exc)[:1000]
+            error_msg = error_text(exc, 1000)
         duration_ms = int((time.monotonic() - t0) * 1000)
 
         parsed_replay: dict | None = None
@@ -424,63 +407,13 @@ class EvalRunner:
                 error=error_msg,
             )
 
-        # Score
-        scored_metrics: dict[str, float] = {}
-        if agent_cfg.compare == "llm_judge":
-            try:
-                score = run_judge(
-                    agent_type=agent_type,
-                    judge_agent_type=_judge_slug(agent_type, agent_cfg),
-                    golden_payload=payload,
-                    replay_content=raw_content,
-                    replay_run_id=replay_run_id,
-                )
-            except ClientError as exc:
-                return _scoring_failed(
-                    "judge_failed", exc, golden_id=golden_id, run_id=replay_run_id
-                )
-        else:
-            comparator = get_comparator(agent_cfg.compare)
-            context = {
-                "diff_fields": agent_cfg.diff_fields,
-                "tolerances": agent_cfg.tolerances,
-            }
-            try:
-                score, scored_metrics = split_comparator_result(
-                    comparator(
-                        golden_parsed,
-                        parsed_replay or {},
-                        context=context,
-                    )
-                )
-            except Exception as exc:
-                return _scoring_failed(
-                    "comparator_failed", exc, golden_id=golden_id, run_id=replay_run_id
-                )
-
-        metric_repo = LlmRunMetricRepo()
-        metric_repo.record(replay_run_id, metrics=scored_metrics)
-
-        if agent_cfg.metrics:
-            score = _apply_metric_gates(
-                score,
-                agent_cfg.metrics,
-                metric_repo.list_for_run(replay_run_id),
-                run_id=replay_run_id,
-            )
-
-        LlmRunOutcomeRepo().record(
-            replay_run_id,
-            outcome_kind="eval_score",
-            score=score,
-            notes=f"vs golden {golden_id}",
-        )
-
-        passed = score >= agent_cfg.pass_threshold
-        return EvalResult(
+        return score_replay(
             golden_id=golden_id,
-            run_id=replay_run_id,
-            score=score,
-            passed=passed,
-            error=None,
+            agent_type=agent_type,
+            agent_cfg=agent_cfg,
+            payload=payload,
+            golden_parsed=golden_parsed,
+            raw_content=raw_content,
+            parsed_replay=parsed_replay,
+            replay_run_id=replay_run_id,
         )

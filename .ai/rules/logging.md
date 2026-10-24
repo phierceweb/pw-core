@@ -15,4 +15,4 @@ All operational logging uses `pw_foundation.log` (structlog). Never use raw `pri
 | WARNING | Expected domain failures (`FlowException`) — not bugs, but worth noting. |
 | ERROR | Actual errors (`AppError`) — LLM/DB failures, unexpected states. |
 
-Setup, env vars (`LOG_LEVEL`, `LOG_FILE`), the `app_logger_name` option, and the console / JSON-lines output formats are documented in `docs/logging.md`.
+Setup, env vars (`LOG_LEVEL`, `LOG_FILE`), the `app_logger_name` option, and the console / JSON-lines output formats are documented in [logging.md](https://github.com/phierceweb/pw-foundation/blob/main/src/pw_foundation/docs/logging.md).

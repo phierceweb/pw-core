@@ -16,7 +16,7 @@ All exceptions thrown from service and orchestrator code must use the hierarchy 
 
 `FlowException` exceptions have no `context` dict — they carry only a message.
 
-`InvalidInputError` is also a `ValueError` and `PreconditionError` a `RuntimeError`, so replacing a builtin raise with one keeps existing `except` clauses and `pytest.raises` working (see `docs/exceptions.md`).
+`InvalidInputError` is also a `ValueError` and `PreconditionError` a `RuntimeError`, so replacing a builtin raise with one keeps existing `except` clauses and `pytest.raises` working (see [exceptions.md](https://github.com/phierceweb/pw-foundation/blob/main/src/pw_foundation/docs/exceptions.md)).
 
 ---
 

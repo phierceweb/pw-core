@@ -183,6 +183,26 @@ def test_run_exits_2_when_the_version_has_no_goldens(tracking_db, project):
     assert _pf_eval("run", "--version", "golden_unseeded", "--agent-type", AGENT) == 2
 
 
+@pytest.mark.parametrize("compare", ["structured_diff", "custom:structured_diff"])
+def test_run_exits_2_on_a_typoed_diff_fields(tracking_db, project, monkeypatch, compare):
+    block = AGENT_BLOCK.replace("compare: structured_diff", f"compare: {compare}")
+    (project / "config" / "eval.yaml").write_text(block + '    diff_fields: ["anwser"]\n')
+    _golden("Q1", {"answer": 1})
+    calls = _replay_with(monkeypatch, {"Q1": {"answer": 1}})
+    assert _run() == 2
+    assert calls == []
+
+
+def test_run_exits_1_when_goldens_lack_every_diff_field(tracking_db, project, monkeypatch):
+    (project / "config" / "eval.yaml").write_text(AGENT_BLOCK + '    diff_fields: ["title"]\n')
+    _golden("Q1", {"title": "a"})
+    _golden("Q2", {"headline": "b"})
+    _golden("Q3", {"headline": "c"})
+    calls = _replay_with(monkeypatch, {f"Q{i}": {"title": "a"} for i in (1, 2, 3)})
+    assert _run() == 1
+    assert calls == ["fake-model"]
+
+
 def test_run_writes_the_report_into_a_directory_it_creates(tracking_db, project, monkeypatch):
     _golden("Q1", {"answer": 1})
     _replay_with(monkeypatch, {"Q1": {"answer": 1}})

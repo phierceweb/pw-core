@@ -27,7 +27,7 @@ def run_export():
     records = record_service.get_records_for_export()
 ```
 
-The one sanctioned `transaction()` use in an orchestrator: opening a shared transaction that services join via `self._service(Svc, conn=conn)` so a multi-step workflow commits atomically — the orchestrator still never executes SQL itself (see `docs/pw-core/orchestrators.md`).
+The one sanctioned `transaction()` use in an orchestrator: opening a shared transaction that services join via `self._service(Svc, conn=conn)` so a multi-step workflow commits atomically — the orchestrator still never executes SQL itself (see `docs/pw-core/orchestrators.md`). `pw-guards` flags that import under `orchestrators/`; list the orchestrator module under `[tool.pw_guards.layering_allowlist]` in `.pw-guards.toml` (`pw-guards --emit-allowlist` prints the block).
 
 ---
 

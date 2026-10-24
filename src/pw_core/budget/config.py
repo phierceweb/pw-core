@@ -3,7 +3,7 @@ Budget configuration loader.
 
 Reads ``BUDGET_CONFIG`` env var (default ``config/budgets.yaml``) and syncs
 the defined scopes into ``llm_budgets``. In-process reload TTL controlled by
-``BUDGET_CONFIG_RELOAD_SECONDS``.
+``BUDGET_CONFIG_RELOAD_SECONDS``; ``BUDGET_ENFORCEMENT_DISABLED`` turns enforcement off.
 
 The YAML format and the read-failure policy are documented in
 ``docs/cost-budget.md``.
@@ -19,11 +19,17 @@ import yaml
 
 from pw_foundation.exceptions import ConfigurationError
 from pw_foundation.log import get_logger
-from pw_foundation.utils.env import resolve_int
+from pw_foundation.utils.env import resolve_bool, resolve_int
 from pw_foundation.utils.reload_cache import ReloadCache
 from pw_foundation.utils.yaml import safe_load
 
 logger = get_logger(__name__)
+
+
+def _enforcement_disabled() -> bool:
+    """BUDGET_ENFORCEMENT_DISABLED kill switch — disables the guard pair."""
+    return resolve_bool(None, "BUDGET_ENFORCEMENT_DISABLED", default=False)
+
 
 # ---------------------------------------------------------------------------
 # YAML reader with TTL cache

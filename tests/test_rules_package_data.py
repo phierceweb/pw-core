@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from pw_foundation.wiring import installed_rules_dir
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -23,7 +25,14 @@ def test_shipped_rule_names_do_not_collide_with_pw_foundation():
 
 
 def test_pw_setup_sees_them():
-    assert installed_rules_dir("pw_core") == SHIPPED.resolve()
+    installed = installed_rules_dir("pw_core")
+    if installed.resolve() == SHIPPED.resolve():
+        pytest.skip("editable install: the installed rules dir is the checkout")
+    assert sorted(p.name for p in installed.glob("*.md")) == sorted(
+        p.name for p in SHIPPED.glob("*.md")
+    )
+    for p in SHIPPED.glob("*.md"):
+        assert (installed / p.name).read_bytes() == p.read_bytes(), p.name
 
 
 def test_shipped_rules_carry_cursor_frontmatter_like_pw_foundations():

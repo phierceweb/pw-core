@@ -9,11 +9,12 @@ from __future__ import annotations
 
 import importlib.metadata
 import importlib.util
+import os
 from pathlib import Path
 
 from pw_foundation.doctor import CheckResult, redact_value
 
-from pw_core._env_compat import getenv
+from pw_core._env_compat import env_name
 
 _PROBE_CONNECT_TIMEOUT_S = 5
 
@@ -88,10 +89,26 @@ def check_env() -> list[CheckResult]:
         load_dotenv(dotenv_path)
         source = f".env loaded from {dotenv_path}"
     lines = [source]
+    warn = False
     for var in _ENV_VARS:
-        value = getenv(var)
-        lines.append(f"{var}={redact_value(var, value)}" if value else f"{var} unset")
-    return [CheckResult("env", "pw-core", "PASS", "; ".join(lines))]
+        read_from = env_name(var)
+        value = os.environ.get(read_from, "")
+        hidden = "PF_" + var[3:] if var.startswith("PW_") else ""
+        if read_from == var and not value:
+            if var not in os.environ:
+                lines.append(f"{var} unset")
+            elif hidden and os.environ.get(hidden):
+                warn = True
+                lines.append(f"{var}= (set empty, {hidden} ignored)")
+            else:
+                lines.append(f"{var}= (set empty)")
+            continue
+        line = f"{var}={redact_value(var, value)}"
+        if read_from != var:
+            warn = True
+            line += f" (read from {read_from}, deprecated)"
+        lines.append(line)
+    return [CheckResult("env", "pw-core", "WARN" if warn else "PASS", "; ".join(lines))]
 
 
 def check_router() -> list[CheckResult]:

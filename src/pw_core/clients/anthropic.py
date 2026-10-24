@@ -39,17 +39,24 @@ import os
 import time
 from typing import Any
 
-from pw_foundation.exceptions import ClientError
 from pw_foundation.log import get_logger
 from pw_core.pricing import estimate_cost
 from pw_foundation.utils.env import resolve_int
+from pw_core.clients._anthropic_errors import AnthropicError as AnthropicError
+from pw_core.clients._anthropic_request import (
+    _JSON_OBJECT_INSTRUCTION as _JSON_OBJECT_INSTRUCTION,
+    _apply_response_format as _apply_response_format,
+    _response_format_warned as _response_format_warned,
+    _split_system as _split_system,
+)
+from pw_core.clients._anthropic_retry import (
+    _RETRY_BACKOFF_BASE as _RETRY_BACKOFF_BASE,
+    _RETRYABLE_STATUS_CODES as _RETRYABLE_STATUS_CODES,
+    _is_retryable as _is_retryable,
+    _timeout_left_the_client as _timeout_left_the_client,
+)
 
 _log = get_logger(__name__)
-
-
-class AnthropicError(ClientError):
-    """Anthropic API call failed (SDK error, network failure, or bad config)."""
-
 
 DEFAULT_TIMEOUT_SECONDS = 120
 DEFAULT_MAX_TOKENS = 4096
@@ -60,112 +67,6 @@ DEFAULT_MAX_TOKENS = 4096
 DEFAULT_PREFLIGHT_TIMEOUT_SECONDS = 30
 
 _VALID_CACHE_TTLS = ("5m", "1h")
-
-# An allow-list, not a 5xx range: 501/505/507 are caller or capability errors
-# that fail identically on every attempt. 529 is Anthropic's "overloaded".
-_RETRYABLE_STATUS_CODES = frozenset({408, 429, 500, 502, 503, 504, 529})
-
-# Backoff before retry N (0-based): _RETRY_BACKOFF_BASE * (N + 1) seconds.
-_RETRY_BACKOFF_BASE = 0.5
-
-_JSON_OBJECT_INSTRUCTION = (
-    "Respond with a single valid JSON object and nothing else — no prose, no code fences."
-)
-# One-shot warning guard, keyed by response_format type.
-_response_format_warned: set[str] = set()
-
-
-def _timeout_left_the_client(exc: Exception) -> bool:
-    """True when an SDK timeout happened after the request was on the wire.
-
-    A read timeout can leave a completion generated — and billed — server
-    side; re-sending pays for the same prompt twice.
-    """
-    import httpx
-
-    return not isinstance(exc.__cause__, (httpx.ConnectTimeout, httpx.PoolTimeout))
-
-
-def _is_retryable(exc: Exception) -> bool:
-    """Whether re-sending the request can plausibly succeed without paying twice."""
-    from anthropic import APIConnectionError, APIStatusError, APITimeoutError
-
-    if isinstance(exc, APITimeoutError):
-        return not _timeout_left_the_client(exc)
-    if isinstance(exc, APIConnectionError):
-        return True
-    if isinstance(exc, APIStatusError):
-        return exc.status_code in _RETRYABLE_STATUS_CODES
-    return True  # unclassifiable (non-SDK) failure — assume transient
-
-
-def _split_system(messages: list[dict]) -> tuple[str | None, list[dict]]:
-    """Extract leading system-role messages into a single system string.
-
-    Anthropic takes the system prompt as a top-level ``system=`` request
-    param — a ``role: "system"`` entry inside ``messages`` is rejected by
-    the API. Only leading system messages with string content are
-    extracted; everything from the first non-system (or non-string-content)
-    message on is returned untouched.
-    """
-    parts: list[str] = []
-    for msg in messages:
-        content = msg.get("content")
-        if msg.get("role") == "system" and isinstance(content, str):
-            parts.append(content)
-        else:
-            break
-    if not parts:
-        return None, messages
-    return "\n\n".join(parts), messages[len(parts) :]
-
-
-def _apply_response_format(
-    response_format: dict | None, call_kwargs: dict, system: str | None
-) -> str | None:
-    """Map an OpenAI-style ``response_format`` onto Anthropic request kwargs.
-
-    ``json_schema`` uses native structured outputs (``output_config.format``);
-    accepts both the bare ``{"type": "json_schema", "schema": {...}}`` shape
-    and the OpenAI nesting ``{"type": "json_schema", "json_schema":
-    {"schema": {...}}}``. ``json_object`` has no native equivalent (Anthropic
-    schemas require ``additionalProperties: false``, so a permissive object
-    schema is inexpressible) — enforced by appending a JSON-only instruction
-    to the system string, logged once per process. Unknown types warn once
-    and are ignored so clients stay drop-in swappable. Mutates
-    ``call_kwargs``; returns the (possibly amended) system string.
-    """
-    if not response_format:
-        return system
-    fmt_type = response_format.get("type")
-    if fmt_type == "json_schema":
-        schema = response_format.get("schema")
-        if schema is None:
-            schema = (response_format.get("json_schema") or {}).get("schema")
-        if schema is None:
-            raise AnthropicError(
-                "response_format type 'json_schema' requires a schema — pass "
-                "{'type': 'json_schema', 'schema': {...}} or the OpenAI "
-                "nesting {'type': 'json_schema', 'json_schema': "
-                "{'schema': {...}}}."
-            )
-        call_kwargs["output_config"] = {"format": {"type": "json_schema", "schema": schema}}
-        return system
-    if fmt_type == "json_object":
-        if "json_object" not in _response_format_warned:
-            _response_format_warned.add("json_object")
-            _log.warning(
-                "anthropic_json_object_prompt_enforced",
-                detail="no native json_object mode; enforcing via system instruction",
-            )
-        if system:
-            return f"{system}\n\n{_JSON_OBJECT_INSTRUCTION}"
-        return _JSON_OBJECT_INSTRUCTION
-    key = f"unknown:{fmt_type}"
-    if key not in _response_format_warned:
-        _response_format_warned.add(key)
-        _log.warning("anthropic_response_format_ignored", format_type=str(fmt_type))
-    return system
 
 
 class AnthropicClient:
@@ -283,7 +184,7 @@ class AnthropicClient:
             call_kwargs["temperature"] = temperature
         if top_p is not None:
             call_kwargs["top_p"] = top_p
-        system = _apply_response_format(response_format, call_kwargs, system)
+        system = _apply_response_format(response_format, call_kwargs, system, log=_log)
         if system is not None:
             if cache_system:
                 cache_control: dict[str, str] = {"type": "ephemeral"}

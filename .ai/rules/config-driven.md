@@ -41,7 +41,7 @@ def paginate_params(page, per_page, max_per_page=None):
     max_per_page = resolve_int(max_per_page, "MAX_PER_PAGE", default=200)
 ```
 
-Use `pw_foundation.utils.env.resolve_int` / `resolve_str` / `resolve_bool` for this pattern — they handle malformed env values (warn + fall back to default rather than crash) and strip whitespace. See [`docs/env.md`](../../src/pw_core/docs/env.md).
+Use `pw_foundation.utils.env.resolve_int` / `resolve_str` / `resolve_bool` for this pattern — they handle malformed env values (warn + fall back to default rather than crash) and strip whitespace. See [env.md](https://github.com/phierceweb/pw-foundation/blob/main/src/pw_foundation/docs/env.md).
 
 ## When to use
 
@@ -99,7 +99,7 @@ Read at call time (the helper above does, because `resolve_int` reads `os.enviro
 4. Add to `.env.example` in each consumer project
 5. Document in the relevant module's doc file
 
-For non-AppConfig consumers (CLIs, libraries), follow the wrapper-function recipe above and the project's own docs-sync rule (typically: add to `.env.example`, sync the env-var table in `CLAUDE.md` / `docs/usage.md` or equivalent, add tests).
+For non-AppConfig consumers (CLIs, libraries), follow the wrapper-function recipe above and the project's own docs-sync rule (typically: add to `.env.example`, sync the env-var table in `CLAUDE.md` / the project's usage doc or equivalent, add tests).
 
 ## Why this matters
 

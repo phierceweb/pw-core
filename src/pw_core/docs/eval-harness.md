@@ -47,7 +47,7 @@ Given a golden run, the replay engine:
 
 1. Loads the stored rendered prompts from `llm_run_payloads`
 2. Overlays the target config (new model, eval sampling)
-3. Resolves the agent's client through the model router, so the replay runs on the backend the agent declares — the eval measures the transport production uses. `target` keys `backend` and `model` override the routed choice. Before any replay, the run resolves the client once as a check, with the judge's for `compare: llm_judge` or the comparator otherwise; a failure — a `backend` the agent doesn't declare or nobody registered, a client that cannot be built (a missing API key), no model, a `model_router.yaml` that exists but fails to load, a comparator nobody registered — raises from `run()` and no replay runs. An agent absent from the router degrades, with a `replay_router_unavailable` warning, to the target's backend (OpenRouter when none is named) and the target-supplied model. An agent the router declares never falls back.
+3. Resolves the agent's client through the model router, so the replay runs on the backend the agent declares — the eval measures the transport production uses. `target` keys `backend` and `model` override the routed choice. Before any replay, the run resolves the client once as a check, with the judge's for `compare: llm_judge` or the comparator otherwise; a failure — a `backend` the agent doesn't declare or nobody registered, a client that cannot be built (a missing API key), no model, a `model_router.yaml` that exists but fails to load, a comparator nobody registered, a non-empty `diff_fields` under the built-in `structured_diff` that names no field any golden output has — raises from `run()` and no replay runs. With the built-in `structured_diff` and a non-empty `diff_fields`, that check reads each golden's payload once before the first replay, one at a time, and keeps only its output's field names; each payload is read again as its replay starts. Otherwise each payload is read once, as its replay starts. An agent absent from the router degrades, with a `replay_router_unavailable` warning, to the target's backend (OpenRouter when none is named) and the target-supplied model. An agent the router declares never falls back.
 4. Records the new `llm_runs` row, links it to the golden via `llm_run_links(relation='replay')`
 5. Compares golden output vs replay output; writes score to `llm_run_outcomes(outcome_kind='eval_score')`. If the golden's stored `parsed_output` is empty (e.g. a post-record validator wrote JSON null), the comparison falls back to re-parsing the golden's stored `raw_response` instead of scoring against `{}`. Structured comparison requires a non-empty **dict** golden: a golden whose parsed output is a list, or irrecoverably empty, errors before the replay call is spent — `{}` vs `{}` never scores 1.0
 
@@ -199,7 +199,7 @@ class EvalResult:
     run_id: int  # -1 if the replay call failed before recording
     score: float  # 0.0-1.0
     passed: bool
-    error: str | None  # short message if replay failed outright
+    error: str | None  # "<Type>: <message>" (type alone if empty or str() raises) when it errored
 ```
 
 ---
@@ -243,7 +243,7 @@ agents:
 | `pass_threshold` | `0.85` | Mean score required for the overall eval to pass. |
 | `parallelism` | `4` | Concurrent replay workers. |
 | `sampling` | `{temperature: 0.0}` | Sampling overrides for replay calls (merged over base agent config). It may not set `model` or `backend` — `model_router.yaml` and the run's target choose those. |
-| `diff_fields` | all golden fields | Fields to compare in `structured_diff`. Names must exist in the golden output — see the comparator table for how missing names are scored. |
+| `diff_fields` | all golden fields | Fields to compare in `structured_diff`. Names must exist in the golden output — see the comparator table for how missing names are scored. With the built-in `structured_diff`, a non-empty `diff_fields` that no golden has is a config error: `run` exits `2` before any replay. A golden that lacks every name errors before its own replay call, so it costs no paid call. |
 | `tolerances` | `{}` | Per-field abs tolerance for numeric fields (int or float; bools always compare exact). |
 | `judge_agent_type` | `null` (falls back to `<agent>_judge`) | Slug of the judge agent type when `compare: llm_judge`. When unset, the runner uses `<agent_type>_judge`. The resolved slug must exist in `model_router.yaml`. |
 | `metrics` | `[]` | Optional metric gates (see below). |
@@ -308,9 +308,9 @@ Exit codes are the gate contract:
 |---|---|---|
 | `0` | Every golden replayed and the mean score met `pass_threshold`. | The candidate scored every golden the baseline scored, and the mean delta is ≥ 0. |
 | `1` | A replay or its judge call errored, or the mean score fell short. | The candidate left a baseline golden unscored — including a candidate whose every replay errored — or the mean delta is negative. |
-| `2` | Could not evaluate: no goldens for the version, a config, `--target` or `--tag-as` error, a replay or judge client that cannot be resolved, the database or another dependency failing, or an `--output` report that cannot be written. | Could not evaluate: the baseline has no scored replays, the candidate has no replays, the tags share no golden, both name the same tag, or the database failing. |
+| `2` | Could not evaluate: no goldens for the version, a built-in `structured_diff` `diff_fields` that no golden's output has, a config, `--target` or `--tag-as` error, a replay or judge client that cannot be resolved, the database or another dependency failing, or an `--output` report that cannot be written. | Could not evaluate: the baseline has no scored replays, the candidate has no replays, the tags share no golden, both name the same tag, or the database failing. |
 
-Exit `1` only ever means the eval ran to completion and failed; anything that stops it finishing is `2`. A comparator error, `structured_diff`'s `ConfigurationError` for `diff_fields` the golden lacks included, surfaces per replay after its call, so it fails the run with `1`.
+Exit `1` only ever means the eval ran to completion and failed; anything that stops it finishing is `2`. With the built-in `structured_diff` and a non-empty `diff_fields`, the `ConfigurationError` for names the golden set lacks is raised before the first replay, so it is `2`. When only some golden outputs carry the names, each golden that lacks every name errors before its replay call, and the run exits `1`.
 
 Every command takes `--config` and loads eval.yaml first, so `imports:` apply to the golden-set commands too. The table covers `run` and `compare`; the golden-set commands exit `1` on any error, a config error included.
 

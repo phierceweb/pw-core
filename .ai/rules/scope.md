@@ -5,7 +5,7 @@ pw-core is infrastructure: the mechanisms every consumer would otherwise hand-ro
 ## What belongs here
 
 - Reusable mechanisms — logging, config/env resolution, exceptions, DB access, LLM clients and run tracking, jobs, caching, guards.
-- **Generic, mountable entry points** — routers a consumer mounts (`pw_core.web.llm_admin`, `pw_core.web.jobs_admin`, `pw_core.web.health`) and framework CLIs it runs (`pw-guards`, `pw-doctor`, `pw-jobs`, `pw-eval`, `pw-export`, `pw-setup`). These operate on framework-owned tables and framework-owned rules only; they are wiring, not application surface.
+- **Generic, mountable entry points** — routers a consumer mounts (`pw_core.web.llm_admin`, `pw_core.web.jobs_admin`, `pw_core.web.health`) and framework CLIs it runs (`pw-jobs`, `pw-eval`, `pw-export`). These operate on framework-owned tables and framework-owned rules only; they are wiring, not application surface.
 - Scaffolding and templates for consumer projects.
 
 ## What must NEVER be here

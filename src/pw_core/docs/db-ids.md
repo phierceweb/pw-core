@@ -20,7 +20,7 @@ with transaction() as conn:
   are interpolated into the lookup SQL; the candidate id is bound as a parameter.
 - After `max_attempts` (24) collisions it raises `PreconditionError`.
 
-The caller inserts the row; `allocate_id` only reserves nothing and only checks.
+`allocate_id` reserves nothing; it only checks that the id is free when called. The caller inserts the row.
 
 ## See also
 

@@ -24,13 +24,22 @@ Usage::
 
 from __future__ import annotations
 
-import datetime as dt
 from typing import Any
 
 from pw_foundation.exceptions import FlowException
 from pw_foundation.log import get_logger
+from pw_core.budget.config import _enforcement_disabled as _enforcement_disabled
+from pw_core.budget.periods import (
+    compute_period_end as compute_period_end,
+    compute_period_start as compute_period_start,
+    current_spent as current_spent,
+    current_usage as current_usage,
+)
+from pw_core.budget.projection import project_cost as project_cost
 
 logger = get_logger(__name__)
+
+_current_spent = current_spent
 
 
 # ---------------------------------------------------------------------------
@@ -93,198 +102,6 @@ class CostBudgetExceeded(FlowException):
             f"spent={_fmt(self.spent_value)} + projected={_fmt(self.projected_value)} "
             f"> limit={_fmt(self.limit_value)}"
         )
-
-
-# ---------------------------------------------------------------------------
-# Projection
-# ---------------------------------------------------------------------------
-
-
-def _enforcement_disabled() -> bool:
-    """BUDGET_ENFORCEMENT_DISABLED kill switch — disables the guard pair."""
-    from pw_foundation.utils.env import resolve_bool
-
-    return resolve_bool(None, "BUDGET_ENFORCEMENT_DISABLED", default=False)
-
-
-def project_cost(
-    *,
-    agent_type: str,
-    model: str,
-    provider: str | None = None,
-    estimated_prompt_tokens: int = 1500,
-    estimated_completion_tokens: int = 1000,
-) -> float:
-    """Project the USD cost of a planned call.
-
-    Priced from the ``llm_cost_rates`` row, else the shared
-    :mod:`pw_core.pricing` table, else a 24h rolling mean of
-    ``llm_runs.cost_usd`` for the (agent_type, model) pair. When nothing can
-    price the call the projection is unknown rather than free: it logs
-    ``budget_projection_unknown`` and returns ``0.0``, leaving the cap to
-    fire on recorded spend alone. Returns ``0.0`` without touching the DB
-    when ``BUDGET_ENFORCEMENT_DISABLED`` is set.
-    """
-    if _enforcement_disabled():
-        return 0.0
-
-    from pw_core.budget.repo import CostRateRepo
-
-    rate = CostRateRepo().get_effective(model=model)
-    if rate is not None:
-        return estimated_prompt_tokens / 1000.0 * float(
-            rate["input_per_1k"]
-        ) + estimated_completion_tokens / 1000.0 * float(rate["output_per_1k"])
-
-    from pw_core.pricing._resolver import price_call
-
-    listed = price_call(
-        provider or "",
-        model,
-        prompt_tokens=estimated_prompt_tokens,
-        completion_tokens=estimated_completion_tokens,
-    )
-    if listed is not None:
-        return listed
-
-    mean = _recent_mean_cost(agent_type=agent_type, model=model)
-    if mean is not None:
-        return mean
-
-    logger.warning(
-        "budget_projection_unknown",
-        agent_type=agent_type,
-        model=model,
-        message=(
-            "no cost rate, price list entry, or recent runs — this call is "
-            "invisible to the cap; add an llm_cost_rates row or call "
-            "pw_core.pricing.register_rates"
-        ),
-    )
-    return 0.0
-
-
-def _recent_mean_cost(*, agent_type: str, model: str) -> float | None:
-    """24h mean cost for the pair, or ``None`` when there is nothing to average."""
-    from sqlalchemy import and_, func, select
-
-    from pw_core.db.connection import transaction
-    from pw_core.llm.tracking._resolvers import (
-        resolve_agent_type_id,
-        resolve_llm_model_id,
-    )
-    from pw_core.llm.tracking.schema import llm_runs
-
-    try:
-        agent_id = resolve_agent_type_id(agent_type)
-        model_id = resolve_llm_model_id(model)
-    except Exception:
-        return None
-
-    since = dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=24)
-    with transaction() as conn:
-        row = conn.execute(
-            select(func.avg(llm_runs.c.cost_usd)).where(
-                and_(
-                    llm_runs.c.agent_type_id == agent_id,
-                    llm_runs.c.model_id == model_id,
-                    llm_runs.c.status == "success",
-                    llm_runs.c.created_at >= since,
-                )
-            )
-        ).fetchone()
-    if row is None or row[0] is None:
-        return None
-    return float(row[0])
-
-
-# ---------------------------------------------------------------------------
-# Period helpers
-# ---------------------------------------------------------------------------
-
-
-def compute_period_start(period: str, now: dt.datetime | None = None) -> dt.date:
-    """Return the UTC period start date for ``daily`` or ``monthly``."""
-    if now is None:
-        now = dt.datetime.now(dt.timezone.utc)
-    if period == "daily":
-        return now.date()
-    if period == "monthly":
-        return now.date().replace(day=1)
-    raise ValueError(f"unknown period: {period!r}")
-
-
-def compute_period_end(period: str, start: dt.date) -> dt.date:
-    if period == "daily":
-        return start + dt.timedelta(days=1)
-    if period == "monthly":
-        if start.month == 12:
-            return start.replace(year=start.year + 1, month=1)
-        return start.replace(month=start.month + 1)
-    raise ValueError(f"unknown period: {period!r}")
-
-
-# ---------------------------------------------------------------------------
-# Spent lookup (snapshot + live delta)
-# ---------------------------------------------------------------------------
-
-
-def current_usage(budget: dict, *, conn=None) -> dict[str, float | int]:
-    """Return current usage for *budget* = snapshot + live delta since snapshot.
-
-    The one definition of "spent" — the guard, the admin pages, and anything
-    else reporting budget state must agree. Returns ``{"usd": float,
-    "tokens": int, "calls": int}``, where ``tokens`` sums all four token
-    columns — uncached prompt, completion, cache read and cache write.
-    """
-    from pw_core.budget.repo import BudgetSnapshotRepo, aggregate_usage
-
-    now = dt.datetime.now(dt.timezone.utc)
-    period_start = compute_period_start(budget["period"], now)
-    period_end = compute_period_end(budget["period"], period_start)
-
-    snap = BudgetSnapshotRepo().get(budget_id=budget["id"], period_start=period_start)
-    if snap is None:
-        return aggregate_usage(
-            budget=budget, period_start=period_start, period_end=period_end, conn=conn
-        )
-
-    # Snapshot exists — add runs from last_updated on; inclusive, because the
-    # aggregate behind it stopped strictly below that same cutoff.
-    from sqlalchemy import and_, select
-
-    from pw_core.budget.repo import apply_scope_filter, usage_columns
-    from pw_core.db.connection import transaction
-    from pw_core.llm.tracking.schema import llm_runs
-
-    def _delta(c):
-        q = select(*usage_columns()).where(
-            and_(
-                llm_runs.c.created_at >= snap["last_updated"],
-                llm_runs.c.created_at < period_end,
-                llm_runs.c.status.notin_(["cache_hit", "budget_blocked"]),
-            )
-        )
-        return c.execute(apply_scope_filter(q, budget)).fetchone()
-
-    if conn is not None:
-        usd, tokens, calls = _delta(conn)
-    else:
-        with transaction() as c:
-            usd, tokens, calls = _delta(c)
-    return {
-        "usd": float(snap["spent_usd"]) + float(usd or 0),
-        "tokens": int(snap.get("spent_tokens") or 0) + int(tokens or 0),
-        "calls": int(snap.get("run_count") or 0) + int(calls or 0),
-    }
-
-
-def current_spent(budget: dict, *, conn=None) -> float:
-    """USD-only view of :func:`current_usage`."""
-    return float(current_usage(budget, conn=conn)["usd"])
-
-
-_current_spent = current_spent
 
 
 # ---------------------------------------------------------------------------

@@ -9,6 +9,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src" / "pw_core"
+RULES = SRC / "rules"
 
 
 def _tree_members() -> set[str]:
@@ -33,7 +34,13 @@ def test_wheel_built_through_the_sdist_matches_the_source_tree(tmp_path):
         names = set(zf.namelist())
         entry = next(n for n in names if n.endswith("entry_points.txt"))
         scripts = zf.read(entry).decode()
+        rules = {
+            n: zf.read(n) for n in names if n.startswith("pw_core/rules/") and n.endswith(".md")
+        }
     shipped = {n for n in names if n.startswith("pw_core/")}
     assert shipped == _tree_members()
+    assert rules and rules == {
+        f"pw_core/rules/{p.name}": p.read_bytes() for p in RULES.glob("*.md")
+    }
     assert all(s in scripts for s in ("pw-jobs", "pw-eval", "pw-export", "pytest11"))
     assert "pf_core" not in " ".join(names)

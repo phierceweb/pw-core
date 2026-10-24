@@ -1,4 +1,4 @@
-"""``PW_*`` env vars with the ``PF_*`` spelling honored until 1.0 (one DeprecationWarning each)."""
+"""``PW_*`` env vars with the ``PF_*`` spelling honored until 1.0 (one FutureWarning each)."""
 
 from __future__ import annotations
 
@@ -16,9 +16,7 @@ def env_name(pw_name: str) -> str:
     if legacy in os.environ:
         if legacy not in _warned:
             _warned.add(legacy)
-            warnings.warn(
-                f"{legacy} is deprecated; set {pw_name}", DeprecationWarning, stacklevel=3
-            )
+            warnings.warn(f"{legacy} is deprecated; set {pw_name}", FutureWarning, stacklevel=3)
         return legacy
     return pw_name
 

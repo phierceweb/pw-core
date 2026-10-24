@@ -8,6 +8,8 @@ callers have one exception to catch.
 
 from __future__ import annotations
 
+import re
+import sys
 import zlib
 from email.message import Message
 
@@ -15,36 +17,48 @@ from pw_foundation.exceptions import ClientError
 
 _GZIP_WBITS = 16 + zlib.MAX_WBITS
 _RAW_DEFLATE_WBITS = -zlib.MAX_WBITS
+_FIRST_SLICE = 256
+_SLICE = 64 * 1024
+_NOT_NUL = re.compile(rb"[^\x00]")
 
 
 def _inflate(data: bytes, wbits: int, max_bytes: int | None, url: str) -> bytes:
     """Inflate buffered *data*, emitting at most *max_bytes* (``None`` = unlimited).
+
+    Each member is fed by offset in slices doubling from 256 bytes to 64 KiB, so
+    concatenated gzip members inflate in time linear in *data*, tiny ones included.
 
     Raises:
         ClientError: Decoded output exceeded *max_bytes*.
         zlib.error: Stream is malformed or ended early.
     """
     out = bytearray()
-    stream = data
-    while stream:
+    view = memoryview(data)
+    pos = 0
+    while pos < len(data):
         obj = zlib.decompressobj(wbits=wbits)
-        while stream:
-            # 0 is zlib's "unlimited" sentinel; otherwise ask for one byte past
-            # the budget so an overrun is detectable without decoding the rest.
-            budget = 0 if max_bytes is None else max_bytes - len(out) + 1
-            out += obj.decompress(stream, budget)
+        size = _FIRST_SLICE
+        while not obj.eof:
+            if pos >= len(data):
+                raise zlib.error("compressed stream ended before the end-of-stream marker")
+            chunk = view[pos : pos + size]
+            pos += len(chunk)
+            size = min(2 * size, _SLICE)
+            # 0 is zlib's "unlimited" sentinel; otherwise one byte past the budget, so an
+            # overrun is detectable without decoding the rest. zlib takes at most sys.maxsize.
+            budget = 0 if max_bytes is None else min(max_bytes - len(out) + 1, sys.maxsize)
+            out += obj.decompress(chunk, budget)
             if max_bytes is not None and len(out) > max_bytes:
                 raise ClientError(
                     "decoded body exceeded max_bytes",
                     context={"url": url, "max_bytes": max_bytes},
                 )
-            stream = obj.unconsumed_tail
-        if not obj.eof:
-            raise zlib.error("compressed stream ended before the end-of-stream marker")
+        pos -= len(obj.unused_data)
         if wbits != _GZIP_WBITS:  # only gzip concatenates members
             break
         # Matches gzip.decompress: NUL padding between members is not garbage.
-        stream = obj.unused_data.lstrip(b"\x00")
+        member = _NOT_NUL.search(data, pos)
+        pos = member.start() if member else len(data)
     return bytes(out)
 
 

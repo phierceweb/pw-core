@@ -9,8 +9,10 @@ from __future__ import annotations
 
 import gzip
 import http.client
+import random
 import socket
 import ssl
+import sys
 import time
 import urllib.error
 import urllib.request
@@ -28,6 +30,7 @@ from pw_core.fetch import (
     fetch_text,
     not_modified,
 )
+from pw_core.fetch._decode import decode_body
 
 URL = "https://example.com/docs/page"
 
@@ -86,6 +89,28 @@ def _raw_deflate(data: bytes) -> bytes:
     """Deflate with no zlib wrapper — what servers that skip it send."""
     compressor = zlib.compressobj(wbits=-15)
     return compressor.compress(data) + compressor.flush()
+
+
+def _fed_per_member(monkeypatch) -> list[list[int]]:
+    """Spy on ``zlib.decompressobj``: per object, the size of each slice fed to it."""
+    fed: list[list[int]] = []
+    real = zlib.decompressobj
+
+    class Spy:
+        def __init__(self, *args, **kwargs):
+            self._inner = real(*args, **kwargs)
+            self._fed: list[int] = []
+            fed.append(self._fed)
+
+        def decompress(self, data, max_length=0):
+            self._fed.append(len(data))
+            return self._inner.decompress(data, max_length)
+
+        def __getattr__(self, name):
+            return getattr(self._inner, name)
+
+    monkeypatch.setattr(zlib, "decompressobj", Spy)
+    return fed
 
 
 def _http_error(code: int, headers: dict[str, str] | None = None) -> urllib.error.HTTPError:
@@ -328,6 +353,12 @@ class TestContentEncoding:
         _, raw = Fetcher().get_bytes(URL)
         assert raw == b"payload"
 
+    def test_deflate_reads_one_stream_and_ignores_what_follows(self):
+        headers = _headers({"Content-Encoding": "deflate"})
+        assert decode_body(zlib.compress(b"hello") + b"junk", headers, None, URL) == b"hello"
+        two = zlib.compress(b"first") + zlib.compress(b"second")
+        assert decode_body(two, headers, None, URL) == b"first"
+
     def test_raw_deflate_fallback(self, monkeypatch):
         compressor = zlib.compressobj(wbits=-15)
         body = compressor.compress(b"payload") + compressor.flush()
@@ -355,6 +386,38 @@ class TestContentEncoding:
         )
         _, raw = Fetcher().get_bytes(URL)
         assert raw == b"payload"
+
+    @pytest.mark.parametrize("padding", [b"", b"\x00"], ids=["bare", "nul-padded"])
+    def test_many_empty_gzip_members_are_each_fed_little(self, monkeypatch, padding):
+        member = gzip.compress(b"", mtime=0) + padding
+        count = 2 * 1024 * 1024 // len(member)
+        body = member * count + gzip.compress(b"tail", mtime=0)
+        fed = _fed_per_member(monkeypatch)
+        _script_open(monkeypatch, [_Resp(body, {"Content-Encoding": "gzip"})])
+        _, raw = Fetcher().get_bytes(URL)
+        assert raw == b"tail"
+        members = [slices for slices in fed if slices]
+        assert len(members) == count + 1
+        assert sum(map(sum, members)) <= 2 * len(body) + 256 * len(members)
+
+    @pytest.mark.parametrize("padding", [b"", b"\x00"], ids=["bare", "nul-padded"])
+    def test_each_member_is_fed_from_its_own_offset(self, monkeypatch, padding):
+        rng = random.Random(0)
+        first, second = rng.randbytes(200_000), rng.randbytes(200_000)
+        body = gzip.compress(first, mtime=0) + padding + gzip.compress(second, mtime=0)
+        fed = _fed_per_member(monkeypatch)
+        _script_open(monkeypatch, [_Resp(body, {"Content-Encoding": "gzip"})])
+        _, raw = Fetcher().get_bytes(URL)
+        assert raw == first + second
+        assert len([member for member in fed if member]) >= 2
+        assert sum(map(sum, fed)) <= len(body) + 64 * 1024
+
+    def test_one_large_member_is_fed_in_slices_that_reach_64_kib(self, monkeypatch):
+        body = gzip.compress(random.Random(0).randbytes(200_000), mtime=0)
+        fed = _fed_per_member(monkeypatch)
+        decode_body(body, _headers({"Content-Encoding": "gzip"}), None, URL)
+        (slices,) = fed
+        assert max(slices) == 64 * 1024
 
     @pytest.mark.parametrize(
         "body, encoding",
@@ -419,10 +482,27 @@ class TestMaxBytes:
         body = compress(b"\0" * (2 * 1024 * 1024))
         cap = 64 * 1024
         assert len(body) < cap, "wire body must fit under the cap or this proves nothing"
+        inflated: list[int] = []
+        real = zlib.decompressobj
+
+        class Spy:
+            def __init__(self, *args, **kwargs):
+                self._inner = real(*args, **kwargs)
+
+            def decompress(self, data, max_length=0):
+                out = self._inner.decompress(data, max_length)
+                inflated.append(len(out))
+                return out
+
+            def __getattr__(self, name):
+                return getattr(self._inner, name)
+
+        monkeypatch.setattr(zlib, "decompressobj", Spy)
         _script_open(monkeypatch, [_Resp(body, {"Content-Encoding": encoding})])
         with pytest.raises(ClientError) as exc_info:
             Fetcher(max_bytes=cap).get_bytes(URL)
         assert exc_info.value.context == {"url": URL, "max_bytes": cap}
+        assert inflated and sum(inflated) <= cap + 1
 
     def test_decoded_body_at_cap_passes(self, monkeypatch):
         payload = b"\0" * 1000
@@ -435,6 +515,11 @@ class TestMaxBytes:
         _script_open(monkeypatch, [_Resp(gzip.compress(payload), {"Content-Encoding": "gzip"})])
         _, raw = Fetcher().get_bytes(URL)
         assert raw == payload
+
+    @pytest.mark.parametrize("max_bytes", [sys.maxsize, 2**63, 2**64])
+    def test_max_bytes_past_the_platform_word_still_decodes(self, max_bytes):
+        headers = _headers({"Content-Encoding": "gzip"})
+        assert decode_body(gzip.compress(b"payload"), headers, max_bytes, URL) == b"payload"
 
     def test_incomplete_read_raises_client_error(self, monkeypatch):
         class _Truncated(_Resp):

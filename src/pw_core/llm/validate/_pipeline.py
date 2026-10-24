@@ -47,11 +47,6 @@ class PipelineNotRegisteredError(ConfigurationError):
         super().__init__(msg)
 
 
-# ---------------------------------------------------------------------------
-# AppError branch — actual errors, always log with traceback + context
-# ---------------------------------------------------------------------------
-
-
 logger = get_logger(__name__)
 
 

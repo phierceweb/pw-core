@@ -2,6 +2,47 @@
 
 Notable changes to pw-core, newest first. The project is pre-1.0 — pin to a tagged release; `main` is the development line.
 
+## v0.28.0 — 2026-10-23
+
+### Changed
+- The `PF_*` env-var fallback warns with a `FutureWarning` (shown by default) instead of a
+  `DeprecationWarning`, and `pw-doctor`'s `env.pw-core` row names a value read from its `PF_*`
+  spelling, an empty one included, as `PW_X=… (read from PF_X, deprecated)` and a `PW_X` set
+  empty while `PF_X` is set non-empty as `PW_X= (set empty, PF_X ignored)`, reporting WARN for
+  either; any other listed variable set to an empty string shows as `X= (set empty)`.
+- `pw_core.budget.periods` and `pw_core.budget.projection` hold the period-usage and
+  cost-projection helpers, and `_enforcement_disabled` is in `pw_core.budget.config`;
+  `pw_core.budget.check` re-exports the public names.
+- `pw_core.clients.anthropic` no longer re-exports `ClientError`; import it from
+  `pw_foundation.exceptions`.
+- The shipped `anti-patterns.md` starter rule names `[tool.pw_guards.layering_allowlist]` for the
+  sanctioned orchestrator `transaction()`.
+- Patch points: the budget helpers are in `pw_core.budget.periods` and
+  `pw_core.budget.projection`, and the Anthropic client's retry and request helpers in
+  `pw_core.clients._anthropic_retry` and `pw_core.clients._anthropic_request`, where
+  `_apply_response_format` takes a keyword-only `log=`. `_apply_metric_gates`, `_judge_slug` and
+  `_scoring_failed` are in `pw_core.eval._scoring`; `pw_core.eval._runner` re-imports the first
+  two. Names the old modules only imported (`math`, `dt`, `ClientError`, `LlmRunMetricRepo`,
+  `LlmRunOutcomeRepo`, `MetricGate`, `split_comparator_result`) are gone, and patching a moved
+  helper on its old module no longer reaches the code that moved: patch `_enforcement_disabled`
+  and `_recent_mean_cost` in `pw_core.budget.projection`, and `get_comparator`, `parse_llm_json`
+  and `_apply_metric_gates` in `pw_core.eval._scoring`, where that code looks them up.
+- Error text recorded for a failed replay (`EvalResult.error`, `llm_runs.error`) and logged as the
+  `error=` field of the `replay_failed`, `judge_failed` and `comparator_failed` events is
+  `<ExceptionType>: <message>` (the type alone when the message is empty), clipped as before.
+
+### Fixed
+- With the built-in `structured_diff` and a non-empty `diff_fields`: every golden's payload is read
+  once before the first replay, one at a time, keeping only its output's field names (each payload
+  is read again for its replay); `EvalRunner.run` raises `ConfigurationError` and `pw-eval run`
+  exits `2` before the first replay when none of the names exists in any golden output; a single
+  golden lacking every name errors before its own paid call.
+- Any exception from the judge call that is not a `ClientError` errors that replay with its replay
+  run id instead of `-1`.
+- A replay whose client error cannot be stringified is recorded with its run id instead of
+  escaping with `-1`.
+- Multi-member gzip bodies decode in linear time (`pw_core.fetch`).
+
 ## v0.27.0 — 2026-10-18
 
 ### Changed
@@ -399,8 +440,7 @@ Notable changes to pw-core, newest first. The project is pre-1.0 — pin to a ta
 
 ## v0.21.0 — 2026-08-27
 
-Correctness fixes from an adversarial review of the framework. Behaviour changes throughout —
-a minor bump, not a patch.
+Correctness fixes; behaviour changes throughout.
 
 ### Breaking
 - `pf_core.web.health.require_db()` is a plain function, not a coroutine. `Depends(require_db)`
@@ -445,7 +485,7 @@ a minor bump, not a patch.
 - `structured_diff` no longer scores 1.0 for a field absent from both sides, which made a
   typo'd or renamed `diff_fields` certify any replay as a perfect match.
 - `parse_body_html` tracks its buffer offset incrementally instead of re-summing every chunk on
-  each anchor — the walk was quadratic, so a 1.5 MB link-heavy page burned ~15 s of CPU.
+  each anchor; the walk is linear in page size.
 - `pf_tables` applies a `pf_schema` fixture whether or not the test names it. A plain
   non-autouse `pf_schema`, exactly as `docs/testing.md` shows it, previously created zero tables.
   Marker DDL that redefines an object `pf_schema` already creates now raises `InvalidInputError`
@@ -813,7 +853,7 @@ a minor bump, not a patch.
 - Built-in Anthropic cache pricing: the bundled rate table now carries `cache_read` (0.1x input) and TTL-aware cache-write rates (`cache_write` at 1.25x input for 5m, new `ModelRates.cache_write_1h` at 2x for 1h). `estimate_cost()` gains `cache_ttl="5m"|"1h"` and `AnthropicClient.chat()` passes its `cache_ttl` through, so `usage["cost_usd"]` reflects cache pricing out of the box. Cost estimates for calls with cache tokens on built-in Anthropic models increase accordingly (previously cache tokens priced at 0).
 
 ### Fixed
-- `AnthropicClient.chat()` no longer sends `top_p` by default — Claude 4+ models reject requests specifying both `temperature` and `top_p`, so default-kwargs calls 400'd against them (caught by a live smoke test). `top_p` is now opt-in; passing it explicitly still forwards it.
+- `AnthropicClient.chat()` no longer sends `top_p` by default — Claude 4+ models reject requests specifying both `temperature` and `top_p`, so default-kwargs calls 400'd against them. `top_p` is now opt-in; passing it explicitly still forwards it.
 
 ## v0.2.3 — 2026-07-01
 

@@ -85,6 +85,7 @@ A deprecated API keeps working and emits a `DeprecationWarning` naming its repla
 
 - `pw_core.clients.routing.get_routed_client(use_claude_code)` → use `pw_core.llm.router.resolve_agent` or `get_client_for_backend`.
 - `pw_core.llm.tracking.track_run()` without an explicit `provider=` → pass the backend (e.g. `resolve_agent(...).backend`) or `provider=None`.
+- `PF_*` env vars → set the `PW_*` spelling. This fallback warns with a `FutureWarning`, which Python shows by default.
 
 ## License
 

@@ -9,6 +9,8 @@ each other).
 
 from __future__ import annotations
 
+import subprocess
+import sys
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -345,3 +347,18 @@ class TestCacheAwareCost:
             client = AnthropicClient(api_key="k", model="m")
             client.chat(messages=list(_SYS), cache_system=True, cache_ttl="1h")
             assert mock_cost.call_args.kwargs["cache_ttl"] == "1h"
+
+
+class TestPublicModulePath:
+    def test_the_error_names_the_public_module_when_only_a_helper_module_loaded(self):
+        code = (
+            "import pickle, sys\n"
+            "from pw_core.clients._anthropic_request import AnthropicError\n"
+            "assert 'pw_core.clients.anthropic' not in sys.modules\n"
+            "assert AnthropicError.__module__ == 'pw_core.clients.anthropic', "
+            "AnthropicError.__module__\n"
+            "clone = pickle.loads(pickle.dumps(AnthropicError('boom', context={'model': 'm'})))\n"
+            "assert type(clone) is AnthropicError and clone.context == {'model': 'm'}, clone\n"
+        )
+        proc = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
+        assert proc.returncode == 0, proc.stderr

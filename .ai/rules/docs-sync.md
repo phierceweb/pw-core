@@ -42,7 +42,7 @@
 - [ ] Update the relevant `docs/*.md` install instructions
 
 ### Exception hierarchy changed?
-- [ ] Update `docs/exceptions.md`
+- [ ] A change to the base hierarchy is a pw-foundation change (its `exceptions.md`); a pw-core exception class is documented in the module doc that owns it
 - [ ] Update downstream projects' `errors.py` re-exports if classes were renamed or removed
 
 ### New skill added to `.ai/skills/`?

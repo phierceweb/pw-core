@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 import pytest
 
 from pw_core.eval._config import AgentEvalConfig, EvalConfig, clear_config_cache
@@ -417,7 +419,7 @@ def test_replay_resolves_client_through_the_router(tracking_db, monkeypatch):
     assert models_called == ["routed-model"]
 
 
-def test_a_failed_judge_errors_the_replay_and_records_no_score(tracking_db, monkeypatch):
+def test_a_failed_judge_errors_the_replay_and_records_no_score(tracking_db, monkeypatch, caplog):
     from sqlalchemy import select
 
     from pw_core.eval._golden import GoldenSetRepo
@@ -445,8 +447,11 @@ def test_a_failed_judge_errors_the_replay_and_records_no_score(tracking_db, monk
     runner = EvalRunner.__new__(EvalRunner)
     runner._cfg = EvalConfig({"agents": {"judged_agent": {"compare": "llm_judge"}}})
 
-    report = runner.run(version="judged_v1", agent_type="judged_agent", target={})
+    with caplog.at_level(logging.WARNING, logger="pw_core.eval._runner"):
+        report = runner.run(version="judged_v1", agent_type="judged_agent", target={})
 
+    (record,) = [r for r in caplog.records if "judge_failed" in r.getMessage()]
+    assert record.name == "pw_core.eval._runner"
     result = report.results[0]
     assert "judge unreachable" in (result.error or "")
     assert result.run_id > 0
@@ -458,6 +463,76 @@ def test_a_failed_judge_errors_the_replay_and_records_no_score(tracking_db, monk
             )
         ).scalars()
         assert "eval_score" not in list(kinds)
+
+
+def test_a_judge_error_that_is_not_a_client_error_keeps_the_replay_run_id(tracking_db, monkeypatch):
+    from pw_core.eval._golden import GoldenSetRepo
+    from pw_core.eval._runner import EvalRunner
+    from pw_foundation.exceptions import DataError
+
+    gid = _seed_golden(tracking_db, slug="judged_agent", parsed_output={"answer": 1})
+    GoldenSetRepo().add(gid, version="judged_v1")
+
+    class _Replay:
+        def chat(self, *, messages, model="", **kwargs):
+            return '{"answer": 1}', {"duration_ms": 1}
+
+    def _boom(**kwargs):
+        raise DataError("judge row write failed")
+
+    monkeypatch.setattr(
+        "pw_core.eval._runner.resolve_agent", lambda slug, **k: (_Replay(), {"model": "m"}, "fake")
+    )
+    monkeypatch.setattr(
+        "pw_core.eval._judge.resolve_agent",
+        lambda slug, **k: (object(), {"model": "judge-m"}, "fake"),
+    )
+    monkeypatch.setattr("pw_core.eval._judge.run_judge", _boom)
+    runner = EvalRunner.__new__(EvalRunner)
+    runner._cfg = EvalConfig({"agents": {"judged_agent": {"compare": "llm_judge"}}})
+
+    report = runner.run(version="judged_v1", agent_type="judged_agent", target={})
+
+    (result,) = report.results
+    assert result.run_id == _replay_id(gid) != gid
+    assert result.error and "judge row write failed" in result.error
+    assert result.score == 0.0 and not result.passed and not report.passed
+
+
+def test_a_judge_error_whose_text_raises_keeps_the_replay_run_id(tracking_db, monkeypatch):
+    from pw_core.eval._golden import GoldenSetRepo
+    from pw_core.eval._runner import EvalRunner
+
+    class _Unprintable(Exception):
+        def __str__(self) -> str:
+            raise RuntimeError("no text")
+
+    gid = _seed_golden(tracking_db, slug="judged_agent", parsed_output={"answer": 1})
+    GoldenSetRepo().add(gid, version="judged_v1")
+
+    class _Replay:
+        def chat(self, *, messages, model="", **kwargs):
+            return '{"answer": 1}', {"duration_ms": 1}
+
+    def _boom(**kwargs):
+        raise _Unprintable
+
+    monkeypatch.setattr(
+        "pw_core.eval._runner.resolve_agent", lambda slug, **k: (_Replay(), {"model": "m"}, "fake")
+    )
+    monkeypatch.setattr(
+        "pw_core.eval._judge.resolve_agent",
+        lambda slug, **k: (object(), {"model": "judge-m"}, "fake"),
+    )
+    monkeypatch.setattr("pw_core.eval._judge.run_judge", _boom)
+    runner = EvalRunner.__new__(EvalRunner)
+    runner._cfg = EvalConfig({"agents": {"judged_agent": {"compare": "llm_judge"}}})
+
+    report = runner.run(version="judged_v1", agent_type="judged_agent", target={})
+
+    (result,) = report.results
+    assert (result.run_id, result.error) == (_replay_id(gid), "_Unprintable")
+    assert result.score == 0.0 and not result.passed
 
 
 def test_run_rejects_a_tag_in_the_eval_namespace(tracking_db, monkeypatch):
@@ -572,6 +647,602 @@ def test_array_golden_errors_instead_of_silent_pass(tracking_db, monkeypatch):
     assert result.error is not None and "parsed_output" in result.error
     assert result.score == 0.0
     assert result.passed is False
+
+
+def _record_goldens(*, agent_type: str, version: str, outputs: list[dict]) -> list[int]:
+    from pw_core.eval._golden import GoldenSetRepo
+    from pw_core.llm.tracking import LlmRunRepo
+
+    golden_ids = []
+    for i, output in enumerate(outputs):
+        run_id = LlmRunRepo().record(
+            agent_type=agent_type,
+            model="golden-model",
+            rendered_prompts=("Be brief.", f"Question {i}"),
+            parsed_output=output,
+        )
+        GoldenSetRepo().add(run_id, version=version)
+        golden_ids.append(run_id)
+    return golden_ids
+
+
+def _replay_id(golden_id: int) -> int:
+    """The id of the run recorded as ``golden_id``'s replay."""
+    from sqlalchemy import select
+
+    from pw_core.db import transaction
+    from pw_core.llm.tracking import llm_run_links
+
+    with transaction() as conn:
+        return conn.execute(
+            select(llm_run_links.c.child_run_id).where(
+                llm_run_links.c.parent_run_id == golden_id,
+                llm_run_links.c.relation == "replay",
+            )
+        ).scalar_one()
+
+
+def _counting_replays(monkeypatch) -> list[str]:
+    """Route every replay to a client answering ``{"answer": 1}``; returns one entry per call."""
+    calls: list[str] = []
+
+    class _Client:
+        def chat(self, *, messages, model="", **kwargs):
+            calls.append(model)
+            return '{"answer": 1}', {"duration_ms": 1}
+
+    monkeypatch.setattr(
+        "pw_core.eval._runner.resolve_agent",
+        lambda slug, **k: (_Client(), {"model": "fake-model"}, "fake"),
+    )
+    return calls
+
+
+def _runner_for(agent_type: str, block: dict):
+    from pw_core.eval._runner import EvalRunner
+
+    runner = EvalRunner.__new__(EvalRunner)
+    runner._cfg = EvalConfig({"agents": {agent_type: {"parallelism": 1, **block}}})
+    return runner
+
+
+@pytest.mark.parametrize("compare", ["structured_diff", "custom:structured_diff"])
+def test_a_typoed_diff_fields_makes_no_replay_and_no_job(tracking_db, monkeypatch, compare):
+    from pw_foundation.exceptions import ConfigurationError
+    from pw_core.jobs import JobRepo
+
+    _record_goldens(
+        agent_type="typo_agent", version="typo_v1", outputs=[{"answer": 1}, {"answer": 2}]
+    )
+    calls = _counting_replays(monkeypatch)
+    runner = _runner_for("typo_agent", {"compare": compare, "diff_fields": ["anwser"]})
+
+    with pytest.raises(ConfigurationError) as exc:
+        runner.run(version="typo_v1", agent_type="typo_agent", target={})
+    assert "anwser" in str(exc.value) and calls == []
+    assert JobRepo().find(kind="eval_replay") == []
+
+
+def test_the_diff_fields_error_lists_at_most_twenty_golden_keys():
+    from pw_foundation.exceptions import ConfigurationError
+    from pw_core.eval._scoring import assert_diff_fields_in_goldens
+
+    def _message(n_keys: int) -> str:
+        golden = {f"k{i:02d}": i for i in range(n_keys)}
+        with pytest.raises(ConfigurationError) as exc:
+            assert_diff_fields_in_goldens(
+                agent_type="a", diff_fields=["anwser"], golden_keys=[set(golden)]
+            )
+        return str(exc.value)
+
+    assert "'k19']" in _message(20) and "…" not in _message(20)
+    assert "'k19', …]" in _message(25) and "k20" not in _message(25)
+
+
+def test_a_golden_lacking_every_diff_field_errors_before_its_call(tracking_db, monkeypatch):
+    titled, *headlined = _record_goldens(
+        agent_type="partial_agent",
+        version="partial_v1",
+        outputs=[{"title": "a"}, {"headline": "b"}, {"headline": "c"}],
+    )
+    calls = _counting_replays(monkeypatch)
+    runner = _runner_for("partial_agent", {"compare": "structured_diff", "diff_fields": ["title"]})
+
+    report = runner.run(version="partial_v1", agent_type="partial_agent", target={})
+    assert len(calls) == 1
+    results = {r.golden_id: r for r in report.results}
+    assert results[titled].error is None and results[titled].run_id == _replay_id(titled)
+    for golden_id in headlined:
+        error = results[golden_id].error or ""
+        assert f"golden {golden_id}" in error and "['title']" in error
+        assert results[golden_id].run_id == -1
+
+
+def test_a_golden_holding_any_one_diff_field_replays(tracking_db, monkeypatch):
+    titled, bare = _record_goldens(
+        agent_type="either_agent",
+        version="either_v1",
+        outputs=[{"title": "a"}, {"headline": "b"}],
+    )
+    calls = _counting_replays(monkeypatch)
+    runner = _runner_for(
+        "either_agent", {"compare": "structured_diff", "diff_fields": ["title", "subtitle"]}
+    )
+
+    report = runner.run(version="either_v1", agent_type="either_agent", target={})
+    assert len(calls) == 1
+    results = {r.golden_id: r for r in report.results}
+    assert results[titled].error is None and results[titled].run_id == _replay_id(titled)
+    assert f"golden {bare}" in (results[bare].error or "")
+    assert "['title', 'subtitle']" in (results[bare].error or "")
+    assert results[bare].run_id == -1
+
+
+class _Unprintable(Exception):
+    def __str__(self) -> str:
+        raise RuntimeError("no text")
+
+
+def test_a_replay_whose_client_error_cannot_be_stringified_is_recorded(tracking_db, monkeypatch):
+    from sqlalchemy import select
+
+    from pw_core.db import transaction
+    from pw_core.llm.tracking import llm_runs
+
+    (gid,) = _record_goldens(
+        agent_type="unprintable_agent", version="unprintable_v1", outputs=[{"answer": 1}]
+    )
+
+    class _Client:
+        def chat(self, *, messages, model="", **kwargs):
+            raise _Unprintable
+
+    monkeypatch.setattr(
+        "pw_core.eval._runner.resolve_agent", lambda slug, **k: (_Client(), {"model": "m"}, "fake")
+    )
+    runner = _runner_for("unprintable_agent", {"compare": "structured_diff"})
+
+    (result,) = runner.run(
+        version="unprintable_v1", agent_type="unprintable_agent", target={}
+    ).results
+    assert result.run_id > 0 and result.run_id == _replay_id(gid)
+    assert (result.error, result.score, result.passed) == ("_Unprintable", 0.0, False)
+    with transaction() as conn:
+        row = conn.execute(
+            select(llm_runs.c.status, llm_runs.c.error).where(llm_runs.c.id == result.run_id)
+        ).one()
+    assert (row.status, row.error) == ("failed", "_Unprintable")
+
+
+def test_a_replay_error_that_cannot_be_stringified_errors_only_that_replay(
+    tracking_db, monkeypatch
+):
+    _record_goldens(agent_type="unprintable_agent", version="unprintable_v1", outputs=[{"a": 1}])
+    resolutions: list[str] = []
+
+    def _resolve(slug, **kwargs):
+        resolutions.append(slug)
+        if len(resolutions) > 1:
+            raise _Unprintable
+        return object(), {"model": "m"}, "fake"
+
+    monkeypatch.setattr("pw_core.eval._runner.resolve_agent", _resolve)
+    runner = _runner_for("unprintable_agent", {"compare": "structured_diff"})
+
+    (result,) = runner.run(
+        version="unprintable_v1", agent_type="unprintable_agent", target={}
+    ).results
+    assert (result.run_id, result.error) == (-1, "_Unprintable")
+
+
+def test_a_failed_replay_is_logged_once_with_its_error_clipped_to_500(
+    tracking_db, monkeypatch, caplog
+):
+    _record_goldens(agent_type="long_error_agent", version="long_error_v1", outputs=[{"a": 1}])
+
+    resolutions: list[str] = []
+
+    def _resolve(slug, **kwargs):
+        resolutions.append(slug)
+        if len(resolutions) > 1:
+            raise RuntimeError("x" * 2000)
+        return object(), {"model": "m"}, "fake"
+
+    monkeypatch.setattr("pw_core.eval._runner.resolve_agent", _resolve)
+    runner = _runner_for("long_error_agent", {"compare": "structured_diff"})
+
+    with caplog.at_level(logging.WARNING, logger="pw_core.eval._runner"):
+        (result,) = runner.run(
+            version="long_error_v1", agent_type="long_error_agent", target={}
+        ).results
+
+    assert result.run_id == -1
+    assert result.error is not None
+    assert result.error.startswith("RuntimeError: x")
+    assert len(result.error) == 500
+    (record,) = [r for r in caplog.records if "replay_failed" in r.getMessage()]
+    assert record.name == "pw_core.eval._runner"
+    assert record.levelno == logging.WARNING
+
+
+def _client_fails(monkeypatch) -> dict:
+    class _Client:
+        def chat(self, *, messages, model="", **kwargs):
+            raise RuntimeError("x" * 2000)
+
+    monkeypatch.setattr(
+        "pw_core.eval._runner.resolve_agent", lambda slug, **k: (_Client(), {"model": "m"}, "fake")
+    )
+    return {"compare": "structured_diff"}
+
+
+def _second_resolution_fails(monkeypatch) -> dict:
+    resolutions: list[str] = []
+
+    def _resolve(slug, **kwargs):
+        resolutions.append(slug)
+        if len(resolutions) > 1:
+            raise RuntimeError("x" * 2000)
+        return object(), {"model": "m"}, "fake"
+
+    monkeypatch.setattr("pw_core.eval._runner.resolve_agent", _resolve)
+    return {"compare": "structured_diff"}
+
+
+def _judge_fails(monkeypatch) -> dict:
+    def _boom(**kwargs):
+        raise RuntimeError("x" * 2000)
+
+    _counting_replays(monkeypatch)
+    monkeypatch.setattr(
+        "pw_core.eval._judge.resolve_agent", lambda slug, **k: (object(), {"model": "j"}, "fake")
+    )
+    monkeypatch.setattr("pw_core.eval._judge.run_judge", _boom)
+    return {"compare": "llm_judge"}
+
+
+def _comparator_fails(monkeypatch) -> dict:
+    from pw_core.eval import _compare
+
+    def _boom(golden, replay, *, context):
+        raise RuntimeError("x" * 2000)
+
+    _counting_replays(monkeypatch)
+    monkeypatch.setitem(_compare._registry, "clip_test_raises", _boom)
+    return {"compare": "clip_test_raises"}
+
+
+def _stored_error(run_id: int) -> str | None:
+    from sqlalchemy import select
+
+    from pw_core.db import transaction
+    from pw_core.llm.tracking import llm_runs
+
+    with transaction() as conn:
+        return conn.execute(select(llm_runs.c.error).where(llm_runs.c.id == run_id)).scalar_one()
+
+
+@pytest.mark.parametrize(
+    ("fail", "result_limit", "stored_limit", "event"),
+    [
+        pytest.param(_client_fails, 1000, 1000, None, id="client"),
+        pytest.param(_second_resolution_fails, 500, None, "replay_failed", id="replay"),
+        pytest.param(_judge_fails, 500, None, "judge_failed", id="judge"),
+        pytest.param(_comparator_fails, 500, None, "comparator_failed", id="comparator"),
+    ],
+)
+def test_a_failure_is_clipped_to_its_limit_on_each_path(
+    tracking_db, monkeypatch, caplog, fail, result_limit, stored_limit, event
+):
+    _record_goldens(agent_type="clip_agent", version="clip_v1", outputs=[{"answer": 1}])
+    runner = _runner_for("clip_agent", fail(monkeypatch))
+
+    with caplog.at_level(logging.WARNING, logger="pw_core.eval._runner"):
+        (result,) = runner.run(version="clip_v1", agent_type="clip_agent", target={}).results
+
+    full = "RuntimeError: " + "x" * 2000
+    assert result.error == full[:result_limit]
+    if stored_limit:
+        assert _stored_error(result.run_id) == full[:stored_limit]
+    failures = {"replay_failed", "judge_failed", "comparator_failed"}
+    logged = [
+        r.msg for r in caplog.records if isinstance(r.msg, dict) and r.msg.get("event") in failures
+    ]
+    assert [m["event"] for m in logged] == ([event] if event else [])
+    assert all(0 < len(m["error"]) <= 300 and full.startswith(m["error"]) for m in logged)
+
+
+@pytest.mark.parametrize(
+    ("diff_fields", "reads_per_golden"), [(["answer"], 2), ([], 1)], ids=["diff_fields", "none"]
+)
+def test_only_the_replay_in_flight_holds_a_payload(
+    tracking_db, monkeypatch, diff_fields, reads_per_golden
+):
+    import weakref
+    from collections import Counter
+
+    from pw_core.eval._golden import GoldenSetRepo
+
+    golden_ids = _record_goldens(
+        agent_type="payload_agent",
+        version="payload_v1",
+        outputs=[{"answer": 1}, {"answer": 2}, {"answer": 3}],
+    )
+
+    class _Payload(dict):
+        pass
+
+    reads: list[int] = []
+    held: list[weakref.ref] = []
+    real = GoldenSetRepo.get_payload
+
+    def counting(self, run_id):
+        reads.append(run_id)
+        payload = _Payload(real(self, run_id))
+        held.append(weakref.ref(payload))
+        return payload
+
+    alive_at_each_call: list[int] = []
+
+    class _Client:
+        def chat(self, *, messages, model="", **kwargs):
+            alive_at_each_call.append(sum(ref() is not None for ref in held))
+            return '{"answer": 1}', {"duration_ms": 1}
+
+    monkeypatch.setattr(GoldenSetRepo, "get_payload", counting)
+    monkeypatch.setattr(
+        "pw_core.eval._runner.resolve_agent", lambda slug, **k: (_Client(), {"model": "m"}, "fake")
+    )
+    block = {"compare": "structured_diff", "diff_fields": diff_fields}
+    runner = _runner_for("payload_agent", block)
+
+    for _ in range(2):
+        reads.clear()
+        held.clear()
+        alive_at_each_call.clear()
+        report = runner.run(version="payload_v1", agent_type="payload_agent", target={})
+        assert all(r.error is None for r in report.results)
+        assert Counter(reads) == {gid: reads_per_golden for gid in golden_ids}
+        assert alive_at_each_call == [1, 1, 1]
+        assert [ref() for ref in held] == [None] * len(held)
+
+
+@pytest.mark.parametrize("parallelism", [1, 4])
+def test_a_diff_fields_run_over_fifty_one_mib_payloads_stays_small(
+    tracking_db, monkeypatch, parallelism
+):
+    import tracemalloc
+    from collections import Counter
+
+    from pw_core.eval._golden import GoldenSetRepo
+
+    if tracemalloc.is_tracing():
+        pytest.skip("tracemalloc is already tracing; its peak would not be this run's")
+    mib = 1024 * 1024
+    golden_ids = _record_goldens(
+        agent_type="big_agent", version="big_v1", outputs=[{"answer": i} for i in range(50)]
+    )
+    reads: list[int] = []
+    real = GoldenSetRepo.get_payload
+
+    def padded(self, run_id):
+        reads.append(run_id)
+        payload = real(self, run_id)
+        return {**payload, "parsed_output": {**payload["parsed_output"], "body": "x" * mib}}
+
+    monkeypatch.setattr(GoldenSetRepo, "get_payload", padded)
+    _counting_replays(monkeypatch)
+    block = {"compare": "structured_diff", "diff_fields": ["answer"], "parallelism": parallelism}
+    runner = _runner_for("big_agent", block)
+
+    runner.run(version="big_v1", agent_type="big_agent", target={})
+    reads.clear()
+    tracemalloc.start()
+    try:
+        baseline, _ = tracemalloc.get_traced_memory()
+        tracemalloc.reset_peak()
+        report = runner.run(version="big_v1", agent_type="big_agent", target={})
+        _, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+    assert peak - baseline < (parallelism + 2) * mib
+    assert len(report.results) == 50
+    assert Counter(reads) == {gid: 2 for gid in golden_ids}
+
+
+def test_a_typoed_diff_fields_beside_a_payload_less_golden_still_fails_the_run(
+    tracking_db, monkeypatch
+):
+    from pw_foundation.exceptions import ConfigurationError
+    from pw_core.db import transaction
+    from pw_core.jobs import JobRepo
+    from pw_core.llm.tracking.schema import llm_run_payloads
+
+    _, without_payload = _record_goldens(
+        agent_type="mixed_agent", version="mixed_v1", outputs=[{"answer": 1}, {"answer": 2}]
+    )
+    with transaction() as conn:
+        conn.execute(
+            llm_run_payloads.delete().where(llm_run_payloads.c.llm_run_id == without_payload)
+        )
+    calls = _counting_replays(monkeypatch)
+    runner = _runner_for("mixed_agent", {"compare": "structured_diff", "diff_fields": ["anwser"]})
+
+    with pytest.raises(ConfigurationError, match="anwser"):
+        runner.run(version="mixed_v1", agent_type="mixed_agent", target={})
+    assert calls == []
+    assert JobRepo().find(kind="eval_replay") == []
+
+
+def _record_raw_response_golden(*, agent_type: str, version: str) -> int:
+    """A golden whose output is stored only as ``raw_response``, its ``parsed_output`` null."""
+    from pw_core.eval._golden import GoldenSetRepo
+    from pw_core.llm.tracking import LlmRunRepo
+
+    run_id = LlmRunRepo().record(
+        agent_type=agent_type,
+        model="golden-model",
+        rendered_prompts=("Be brief.", "Question"),
+        raw_response='{"answer": 1}',
+        parsed_output=None,
+    )
+    GoldenSetRepo().add(run_id, version=version)
+    return run_id
+
+
+def test_a_diff_field_found_only_in_a_raw_response_golden_replays(tracking_db, monkeypatch):
+    gid = _record_raw_response_golden(agent_type="raw_agent", version="raw_v1")
+    calls = _counting_replays(monkeypatch)
+    runner = _runner_for("raw_agent", {"compare": "structured_diff", "diff_fields": ["answer"]})
+
+    (result,) = runner.run(version="raw_v1", agent_type="raw_agent", target={}).results
+    assert len(calls) == 1
+    assert (result.run_id, result.error, result.score) == (_replay_id(gid), None, 1.0)
+
+
+def test_a_typoed_diff_fields_names_the_keys_of_a_raw_response_golden(tracking_db, monkeypatch):
+    from pw_foundation.exceptions import ConfigurationError
+
+    _record_raw_response_golden(agent_type="raw_agent", version="raw_v1")
+    calls = _counting_replays(monkeypatch)
+    runner = _runner_for("raw_agent", {"compare": "structured_diff", "diff_fields": ["anwser"]})
+
+    with pytest.raises(ConfigurationError) as exc:
+        runner.run(version="raw_v1", agent_type="raw_agent", target={})
+    assert "(golden keys: ['answer'])" in str(exc.value)
+    assert calls == []
+
+
+def test_diff_fields_preflight_skips_llm_judge(tracking_db, monkeypatch):
+    _record_goldens(agent_type="judged_typo_agent", version="judged_typo_v1", outputs=[{"a": 1}])
+    calls = _counting_replays(monkeypatch)
+
+    class _Judge:
+        def chat(self, *, messages, model="", **kwargs):
+            return '{"score": 1.0, "rationale": "-"}', {}
+
+    monkeypatch.setattr(
+        "pw_core.eval._judge.resolve_agent",
+        lambda slug, **k: (_Judge(), {"model": "judge-model"}, "fake"),
+    )
+    runner = _runner_for("judged_typo_agent", {"compare": "llm_judge", "diff_fields": ["anwser"]})
+
+    report = runner.run(version="judged_typo_v1", agent_type="judged_typo_agent", target={})
+    assert len(calls) == 1
+    assert report.results[0].error is None
+
+
+def test_diff_fields_preflight_ignores_goldens_without_payload(tracking_db, monkeypatch):
+    from pw_core.db import transaction
+    from pw_core.llm.tracking.schema import llm_run_payloads
+
+    with_payload, without_payload = _record_goldens(
+        agent_type="sidecar_agent", version="sidecar_v1", outputs=[{"answer": 1}, {"answer": 2}]
+    )
+    with transaction() as conn:
+        conn.execute(
+            llm_run_payloads.delete().where(llm_run_payloads.c.llm_run_id == without_payload)
+        )
+    _counting_replays(monkeypatch)
+    runner = _runner_for("sidecar_agent", {"compare": "structured_diff", "diff_fields": ["answer"]})
+
+    report = runner.run(version="sidecar_v1", agent_type="sidecar_agent", target={})
+    assert {r.golden_id: r.error is None for r in report.results} == {
+        with_payload: True,
+        without_payload: False,
+    }
+    (errored,) = [r for r in report.results if r.golden_id == without_payload]
+    assert "No payload stored" in errored.error
+
+
+def test_an_unreadable_payload_errors_only_its_own_replay(tracking_db, monkeypatch):
+    from pw_core.eval._golden import GoldenSetRepo
+
+    golden_ids = _record_goldens(
+        agent_type="unreadable_agent",
+        version="unreadable_v1",
+        outputs=[{"answer": i} for i in range(4)],
+    )
+    unreadable = golden_ids[1]
+    real = GoldenSetRepo.get_payload
+
+    def get_payload(self, run_id):
+        if run_id == unreadable:
+            raise ValueError("payload row is corrupt")
+        return real(self, run_id)
+
+    monkeypatch.setattr(GoldenSetRepo, "get_payload", get_payload)
+    calls = _counting_replays(monkeypatch)
+    runner = _runner_for(
+        "unreadable_agent", {"compare": "structured_diff", "diff_fields": ["answer"]}
+    )
+
+    report = runner.run(version="unreadable_v1", agent_type="unreadable_agent", target={})
+    results = {r.golden_id: r for r in report.results}
+    assert sorted(results) == sorted(golden_ids)
+    assert len(calls) == 3
+    assert results[unreadable].error == "ValueError: payload row is corrupt"
+    assert (results[unreadable].run_id, results[unreadable].passed) == (-1, False)
+    assert all(r.error is None for gid, r in results.items() if gid != unreadable)
+
+
+def test_a_comparator_registered_over_structured_diff_skips_the_preflight(tracking_db, monkeypatch):
+    from pw_core.eval import _compare
+
+    monkeypatch.setitem(_compare._registry, "structured_diff", _compare.structured_diff)
+    _compare.register_comparator("structured_diff")(lambda golden, replay, *, context: 1.0)
+    _record_goldens(agent_type="own_diff_agent", version="own_diff_v1", outputs=[{"answer": 1}])
+    calls = _counting_replays(monkeypatch)
+    runner = _runner_for(
+        "own_diff_agent", {"compare": "structured_diff", "diff_fields": ["anwser"]}
+    )
+
+    report = runner.run(version="own_diff_v1", agent_type="own_diff_agent", target={})
+    assert len(calls) == 1
+    assert (report.results[0].error, report.results[0].score) == (None, 1.0)
+
+
+def test_diff_fields_with_every_golden_payload_missing_errors_each_replay(tracking_db, monkeypatch):
+    from pw_core.db import transaction
+    from pw_core.llm.tracking.schema import llm_run_payloads
+
+    golden_ids = _record_goldens(
+        agent_type="bare_agent", version="bare_v1", outputs=[{"answer": 1}, {"answer": 2}]
+    )
+    with transaction() as conn:
+        conn.execute(llm_run_payloads.delete())
+    calls = _counting_replays(monkeypatch)
+    runner = _runner_for("bare_agent", {"compare": "structured_diff", "diff_fields": ["anwser"]})
+
+    report = runner.run(version="bare_v1", agent_type="bare_agent", target={})
+    assert calls == []
+    assert sorted(r.golden_id for r in report.results) == sorted(golden_ids)
+    assert all(r.error and "No payload stored" in r.error for r in report.results)
+
+
+@pytest.mark.parametrize("parsed_output", [[], {}], ids=["list", "dict"])
+def test_diff_fields_with_only_empty_golden_outputs_errors_each_replay(
+    tracking_db, monkeypatch, parsed_output
+):
+    from pw_core.eval._golden import GoldenSetRepo
+
+    gid = _seed_golden(tracking_db, slug="empty_agent", parsed_output=parsed_output)
+    GoldenSetRepo().add(gid, version="empty_v1")
+    calls = _counting_replays(monkeypatch)
+    runner = _runner_for("empty_agent", {"compare": "structured_diff", "diff_fields": ["anwser"]})
+
+    report = runner.run(version="empty_v1", agent_type="empty_agent", target={})
+    assert calls == []
+    (result,) = report.results
+    assert result.error and "no non-empty dict parsed_output" in result.error
+
+
+def test_golden_dict_is_empty_for_a_non_dict_output_or_a_non_str_raw_response():
+    from pw_core.eval._scoring import golden_dict
+
+    assert golden_dict({"parsed_output": [1]}) == {}
+    assert golden_dict({"parsed_output": None, "raw_response": {"a": 1}}) == {}
+    assert golden_dict({"parsed_output": None, "raw_response": '{"a": 1}'}) == {"a": 1}
 
 
 def test_eval_runner_raises_on_empty_golden_set(pw_engine):

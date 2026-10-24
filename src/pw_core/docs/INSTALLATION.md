@@ -16,7 +16,7 @@ Formerly published as pf-core (0.2.3–0.26.0); renamed at 0.27.0. The old PyPI 
 | Lightweight LLM tool — clients + anti-slop guards | `pip install pw-core[llm]` |
 | Crawl/fetch web pages — title, body, publish date, liveness | `pip install pw-core[crawl]` |
 | Active pw-core development on this machine | `pip install -e ~/projects/pw-core` |
-| New consumer project, full app framework | Pin `pw-core[full,<dialect>]~=0.27.0` in `pyproject.toml`, then `pip install -e .` |
+| New consumer project, full app framework | Pin `pw-core[full,<dialect>]~=0.28.0` in `pyproject.toml`, then `pip install -e .` |
 | Fresh machine, consumer only | `git clone <project>` → `pip install -e .` (pulls pw-core from PyPI automatically) |
 | Fresh machine, also editing the framework | Clone both → `pip install -e ~/projects/pw-foundation -e ~/projects/pw-core` (overrides the PyPI pins) |
 
@@ -42,7 +42,7 @@ Pin a compatible release in your project's `pyproject.toml`:
 ```toml
 dependencies = [
     "pw-foundation~=1.0",
-    "pw-core[full,postgres]~=0.27.0",
+    "pw-core[full,postgres]~=0.28.0",
 ]
 ```
 
@@ -136,11 +136,11 @@ Typical shapes, by project type. Anything importing `pw_core.clients` / `pw_core
 
 | Project shape | Install line |
 |---|---|
-| Full-stack web app, Postgres | `pw-core[full,llm,postgres]~=0.27.0` |
-| Full-stack web app, MySQL + article ingest | `pw-core[full,llm,mysql,articles]~=0.27.0` (+ `[redis,ratelimit]` if caching/limits are used) |
-| Full-stack web app, SQLite | `pw-core[full,llm]~=0.27.0` (SQLite driver is stdlib) |
-| Batch document pipeline (no web/db) | `pw-core[image-phash,tracking,llm]~=0.27.0` |
-| CLI on the Typer scaffold, no LLM | `pw-core[cli]~=0.27.0` |
+| Full-stack web app, Postgres | `pw-core[full,llm,postgres]~=0.28.0` |
+| Full-stack web app, MySQL + article ingest | `pw-core[full,llm,mysql,articles]~=0.28.0` (+ `[redis,ratelimit]` if caching/limits are used) |
+| Full-stack web app, SQLite | `pw-core[full,llm]~=0.28.0` (SQLite driver is stdlib) |
+| Batch document pipeline (no web/db) | `pw-core[image-phash,tracking,llm]~=0.28.0` |
+| CLI on the Typer scaffold, no LLM | `pw-core[cli]~=0.28.0` |
 | Foundation-only tool (no pw-core at all) | `pw-foundation~=1.0` alone — `bin/new-consumer --base-only` scaffolds one |
 
 Every pw-core profile also declares `pw-foundation~=1.0`.
@@ -172,7 +172,7 @@ git tag vX.Y.Z
 git push origin main --tags
 
 # 4. Bump the compatible-release pin in each consumer's pyproject.toml
-#    "pw-core[full,postgres]~=0.27.0"
+#    "pw-core[full,postgres]~=0.28.0"
 
 # 5. Reinstall in each consumer
 cd ~/projects/my-project
@@ -181,7 +181,7 @@ pip install -U -e .
 
 To smoke a rehearsal build, fetch only the wheel from TestPyPI so its dependencies resolve from PyPI, not from TestPyPI's unvetted names: `pip download --no-deps --index-url https://test.pypi.org/simple/ pw-core==X.Y.Z.devN -d rehearsal/ && pip install rehearsal/pw_core-*.whl`.
 
-PyPI versions are immutable — a published version can never be replaced, so bump the version for every release (never re-tag an existing one). A `~=0.27.0` consumer picks up `0.27.x` patches on the next reinstall with no pin change; the next minor requires a deliberate pin bump. Patch fixes land on the newest minor only — once a new minor ships, older lines are frozen, so bumping the pin is how a consumer keeps receiving fixes. If OIDC trusted publishing isn't active for the run, publish manually from the pw-core checkout: `python -m build && twine upload -u __token__ dist/*`.
+PyPI versions are immutable — a published version can never be replaced, so bump the version for every release (never re-tag an existing one). A `~=0.28.0` consumer picks up `0.28.x` patches on the next reinstall with no pin change; the next minor requires a deliberate pin bump. Patch fixes land on the newest minor only — once a new minor ships, older lines are frozen, so bumping the pin is how a consumer keeps receiving fixes. If OIDC trusted publishing isn't active for the run, publish manually from the pw-core checkout: `python -m build && twine upload -u __token__ dist/*`.
 
 ### On a fresh machine
 

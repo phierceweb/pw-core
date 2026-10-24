@@ -1,6 +1,6 @@
 # pw-core build gates. Run `pre-commit install` once per clone (from the project
 # venv) so these run on every commit. CI (.github/workflows/guards.yml) is the
-# unskippable backstop. See docs/guards.md.
+# unskippable backstop. See https://github.com/phierceweb/pw-foundation/blob/main/src/pw_foundation/docs/guards.md.
 repos:
   - repo: local
     hooks:

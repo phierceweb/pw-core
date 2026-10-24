@@ -117,7 +117,7 @@ Pin both packages in `pyproject.toml` — a pw-core consumer imports `pw_foundat
 [project]
 dependencies = [
     "pw-foundation~=1.0",          # 1.x: minor releases are additive
-    "pw-core[<extras>]~=0.27.0",   # the current release line (see its CHANGELOG)
+    "pw-core[<extras>]~=0.28.0",   # the current release line (see its CHANGELOG)
 ]
 ```
 

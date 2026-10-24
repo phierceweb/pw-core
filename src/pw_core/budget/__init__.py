@@ -38,16 +38,18 @@ from typing import TYPE_CHECKING
 from pw_core.budget.check import (  # noqa: F401
     CostBudgetExceeded,
     check_budget,
-    compute_period_end,
-    compute_period_start,
-    current_spent,
-    current_usage,
-    project_cost,
 )
 from pw_core.budget.config import (  # noqa: F401
     clear_config_cache,
     load_yaml,
 )
+from pw_core.budget.periods import (  # noqa: F401
+    compute_period_end,
+    compute_period_start,
+    current_spent,
+    current_usage,
+)
+from pw_core.budget.projection import project_cost  # noqa: F401
 
 
 # Lazy imports — these submodules pull SQLAlchemy at module top, so we

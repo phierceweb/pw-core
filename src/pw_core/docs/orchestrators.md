@@ -95,6 +95,6 @@ orch = ExportOrchestrator(config=cfg, progress=on_progress)
 
 Orchestrators **must not**:
 - Import or instantiate repositories directly — use `_service()` to get services
-- Call `transaction()` for data access — services own reads and writes. The one sanctioned use is opening a shared transaction threaded through `_service(..., conn=conn)` (above) so a multi-service step commits atomically; the orchestrator never runs SQL on it
+- Call `transaction()` for data access — services own reads and writes. The one sanctioned use is opening a shared transaction threaded through `_service(..., conn=conn)` (above) so a multi-service step commits atomically; the orchestrator never runs SQL on it. `pw-guards` flags that import under `orchestrators/`; list the orchestrator module under `[tool.pw_guards.layering_allowlist]` in `.pw-guards.toml` (`pw-guards --emit-allowlist` prints the block).
 - Contain domain logic — delegate to services
 - Grow beyond the orchestrator line budget (enforced by the `pw_foundation.guards` gate; the limit lives in `pw_foundation/guards/config.py`) — split into smaller orchestrators

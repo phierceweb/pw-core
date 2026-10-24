@@ -49,8 +49,12 @@ These are read directly from the environment by framework modules — not declar
 ## Renamed env vars (`PF_*` fallback until 1.0)
 
 These framework vars were `PF_*` before 0.27.0. pw-core reads the `PW_*` name first and falls back
-to the `PF_*` spelling, emitting one `DeprecationWarning` per variable per process; the fallback
-goes away at 1.0 (`pw_core._env_compat`).
+to the `PF_*` spelling, emitting one `FutureWarning` (shown under Python's default filters) per
+variable per process. `pw-doctor`'s `env.pw-core` row reports `PW_VERIFY_TLS`, the only renamed
+variable it lists: a value read from `PF_VERIFY_TLS`, an empty one included, shows as
+`PW_VERIFY_TLS=… (read from PF_VERIFY_TLS, deprecated)`, a `PW_VERIFY_TLS` set empty while
+`PF_VERIFY_TLS` is set non-empty shows as `PW_VERIFY_TLS= (set empty, PF_VERIFY_TLS ignored)`,
+and either turns the row WARN. The fallback goes away at 1.0 (`pw_core._env_compat`).
 
 | `PW_*` name | Read by | Fallback |
 |---|---|---|

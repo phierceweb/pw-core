@@ -891,7 +891,8 @@ def test_project_cost_warns_when_nothing_can_price_the_call(budget_db, caplog):
     with caplog.at_level(logging.WARNING, logger="pw_core.budget.check"):
         cost = project_cost(agent_type="novel", model="novel-model")
     assert cost == 0.0
-    assert any("budget_projection_unknown" in r.getMessage() for r in caplog.records)
+    (record,) = [r for r in caplog.records if "budget_projection_unknown" in r.getMessage()]
+    assert record.name == "pw_core.budget.check"
 
 
 # ---------------------------------------------------------------------------

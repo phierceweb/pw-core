@@ -56,7 +56,7 @@ pip install pw-core[llm]             # + LLM clients (includes [validate])
 pip install pw-core[full,postgres]   # the whole app framework
 ```
 
-Pin a **compatible release** for stability — e.g. `pip install "pw-core[llm]~=0.27.0"` (picks up `0.27.x` fixes, holds below the next minor; substitute the current release from the [changelog](https://github.com/phierceweb/pw-core/blob/main/CHANGELOG.md)). To track unreleased work, install from git instead — `main` is the development line and may contain work between releases:
+Pin a **compatible release** for stability — e.g. `pip install "pw-core[llm]~=0.28.0"` (picks up `0.28.x` fixes, holds below the next minor; substitute the current release from the [changelog](https://github.com/phierceweb/pw-core/blob/main/CHANGELOG.md)). To track unreleased work, install from git instead — `main` is the development line and may contain work between releases:
 
 ```bash
 pip install "pw-core[llm] @ git+https://github.com/phierceweb/pw-core.git@main"
