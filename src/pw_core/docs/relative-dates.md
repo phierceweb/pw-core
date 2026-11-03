@@ -97,7 +97,7 @@ Every successful resolution satisfies `result <= pub_date`. An article cannot de
 
 ## Error handling
 
-The function never raises on malformed input. `None` is the universal "don't know" signal:
+`None` is the universal "don't know" signal. `hint` must be a mapping whose `phrase` and `qualifier` are `str` or `None`; anything else that is not empty raises `AttributeError`, so validate LLM output first:
 
 ```python
 resolve_relative_date(pub, None)  # None

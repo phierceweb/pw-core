@@ -8,7 +8,7 @@ singleton behavior, and SDK-import failure handling.
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import ANY, MagicMock, patch
 
 import pytest
 from pw_core.clients.anthropic import (
@@ -77,7 +77,8 @@ class TestAnthropicClientInit:
             assert client.api_key == "test-key"
             assert client.model == "claude-haiku-4-5"
             assert client.request_timeout == 60
-            mock_sdk.assert_called_once_with(api_key="test-key", timeout=60, max_retries=0)
+            mock_sdk.assert_called_once_with(api_key="test-key", timeout=ANY, max_retries=0)
+            assert mock_sdk.call_args.kwargs["timeout"].read == 60
 
     def test_missing_sdk_raises_import_error(self):
         """If anthropic isn't importable, constructor raises ImportError with a clear message."""
@@ -203,10 +204,10 @@ class TestAnthropicClientChat:
             assert usage["cache_read_tokens"] == 80
             assert usage["cache_write_tokens"] == 20
             assert usage["reasoning_tokens"] == 0
-            # claude-haiku-4-5 → claude-haiku-4 prefix: $0.80/1M in, $4.0/1M out,
-            # cache read $0.08/1M, 5m cache write $1.0/1M.
-            # 100*0.80/1e6 + 50*4.0/1e6 + 80*0.08/1e6 + 20*1.0/1e6 = 0.0003064
-            assert usage["cost_usd"] == pytest.approx(0.0003064)
+            # claude-haiku-4-5 → claude-haiku-4 prefix: $1/1M in, $5/1M out,
+            # cache read $0.10/1M, 5m cache write $1.25/1M.
+            # 100*1/1e6 + 50*5/1e6 + 80*0.10/1e6 + 20*1.25/1e6 = 0.000383
+            assert usage["cost_usd"] == pytest.approx(0.000383)
             assert usage["system_fingerprint"] is None
 
     def test_chat_thinking_tokens_carried_to_reasoning_tokens(self):
@@ -220,11 +221,11 @@ class TestAnthropicClientChat:
             client = AnthropicClient(api_key="k", model="claude-opus-4-7")
             _, usage = client.chat(messages=[{"role": "user", "content": "Hi"}])
             assert usage["reasoning_tokens"] == 150
-            # claude-opus-4 prefix: $15/1M in, $75/1M out. Thinking tokens are
+            # claude-opus-4-7: $5/1M in, $25/1M out. Thinking tokens are
             # billed at the output rate and already counted in output_tokens,
             # so cost is output_tokens * output_rate (not + thinking again).
-            # 100 * 15/1e6 + 200 * 75/1e6 = 0.0015 + 0.015 = 0.0165
-            assert usage["cost_usd"] == pytest.approx(0.0165)
+            # 100 * 5/1e6 + 200 * 25/1e6 = 0.0005 + 0.005 = 0.0055
+            assert usage["cost_usd"] == pytest.approx(0.0055)
 
     def test_chat_cost_for_sonnet_family(self):
         """Prefix match resolves claude-sonnet-4-5 → claude-sonnet-4 rates."""
@@ -407,7 +408,8 @@ class TestPerCallTimeout:
 
             client = AnthropicClient(api_key="k", model="m")
             client.chat(messages=[{"role": "user", "content": "x"}], timeout=10)
-            mock_sdk.return_value.with_options.assert_called_once_with(timeout=10)
+            (call,) = mock_sdk.return_value.with_options.call_args_list
+            assert call.kwargs["timeout"].read == 10
             derived.messages.create.assert_called_once()
 
     def test_no_per_call_timeout_uses_base_client(self):
@@ -476,8 +478,9 @@ class TestPreflight:
                 client.preflight()
             assert excinfo.value.context.get("preflight") is True
 
-    def test_default_timeout_is_short(self):
+    def test_default_timeout_is_short(self, monkeypatch):
         """Preflight uses a short derived timeout — fail fast."""
+        monkeypatch.delenv("ANTHROPIC_CONNECT_TIMEOUT_S", raising=False)
         with patch("anthropic.Anthropic") as mock_sdk:
             mock_sdk.return_value.models.list.return_value = MagicMock()
             derived = MagicMock()
@@ -488,4 +491,5 @@ class TestPreflight:
             client.preflight()
             # with_options called with a short timeout (< 60s)
             (call,) = mock_sdk.return_value.with_options.call_args_list
-            assert call.kwargs["timeout"] < 60
+            assert call.kwargs["timeout"].read < 60
+            assert call.kwargs["timeout"].connect == 10

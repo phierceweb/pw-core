@@ -208,6 +208,26 @@ def test_scaffolded_app_serves_index(tmp_path):
         _purge()
 
 
+@pytest.mark.parametrize(("reload", "expected"), [("0", False), ("false", False), ("1", True)])
+def test_scaffolded_app_entry_point_reads_dotenv(tmp_path, reload, expected):
+    gen = _load_generator()
+    gen.main(["webdemo", "--layout", "app", "--dest", str(tmp_path)])
+    root = tmp_path / "webdemo"
+    (root / ".env").write_text(f"WEB_HOST=0.0.0.0\nWEB_PORT=9123\nWEB_RELOAD={reload}\n")
+    probe = (
+        "import runpy, uvicorn\n"
+        "uvicorn.run = lambda app, **kw: print(sorted(kw.items()))\n"
+        "runpy.run_module('app', run_name='__main__')\n"
+    )
+    env = {k: v for k, v in os.environ.items() if not k.startswith("WEB_")}
+    env["PYTHONPATH"] = os.pathsep.join([str(root), *sys.path])
+    run = subprocess.run(
+        [sys.executable, "-c", probe], cwd=root, env=env, capture_output=True, text=True, check=True
+    )
+    out = run.stdout.strip().splitlines()[-1]
+    assert out == str([("host", "0.0.0.0"), ("port", 9123), ("reload", expected)])
+
+
 def _deps(project: Path) -> list[str]:
     return tomllib.loads((project / "pyproject.toml").read_text())["project"]["dependencies"]
 
@@ -221,7 +241,7 @@ def test_default_lib_scaffold_pins_both_packages(tmp_path):
     _run(["my-tool", "--layout", "lib", "--dest", str(tmp_path)])
     assert _deps(tmp_path / "my-tool") == [
         "pw-foundation~=1.0",
-        f"pw-core[cli]~={_pyproject_version()}",
+        f"pw-core[cli]~={_compatible_pin()}",
     ]
 
 
@@ -278,6 +298,10 @@ def _pyproject_version() -> str:
     return tomllib.loads((PW_ROOT / "pyproject.toml").read_text())["project"]["version"]
 
 
+def _compatible_pin() -> str:
+    return ".".join(_pyproject_version().split(".")[:2])
+
+
 def _scaffold_pytest(proj: Path) -> subprocess.CompletedProcess:
     return subprocess.run(
         [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "tests"],
@@ -289,9 +313,17 @@ def _scaffold_pytest(proj: Path) -> subprocess.CompletedProcess:
 
 
 def test_core_pin_tracks_the_checkout_version():
-    """The scaffold pins the version this checkout is, so a bump cannot leave it behind."""
+    """The scaffold pins this checkout's major.minor, which admits the checkout and every later minor."""
+    from packaging.specifiers import SpecifierSet
+    from packaging.version import Version
+
     gen = _load_generator()
-    assert gen.core_pin("cli") == f"pw-core[cli]~={_pyproject_version()}"
+    pin = gen.core_pin("cli")
+    assert pin == f"pw-core[cli]~={_compatible_pin()}"
+    spec = SpecifierSet(pin.split("]", 1)[1])
+    release = Version(_pyproject_version())
+    assert release.base_version in spec  # an rc/dev tree's pin admits its final release
+    assert f"{release.major}.99.0" in spec and f"{release.major + 1}.0.0" not in spec
     assert "0.27" not in GENERATOR.read_text()
 
 

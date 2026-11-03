@@ -113,7 +113,7 @@ A support assistant keeps its project values in `project.yaml`:
 | Controlled-tag vocabulary | `project.yaml:tags` |
 | Category vocabulary | `project.yaml:categories` |
 
-Projects scaffolded by pw-core's `bin/new-consumer` carry a rule codifying these bindings (`no-hardcoded-project-values`) in their own rules directory, linking back to this doc as the source of the principle.
+The scaffold ships no rule for this; a project that wants one adds it to its own `.ai/rules/`, linking back to this page.
 
 ## See also
 

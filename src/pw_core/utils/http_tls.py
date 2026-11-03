@@ -9,7 +9,6 @@ exists only for deliberately probing hosts with known-broken certs.
 
 from __future__ import annotations
 
-from pw_core._env_compat import env_name
 from pw_foundation.utils.env import resolve_bool
 
 _VERIFY_TLS_ENV_VAR = "PW_VERIFY_TLS"
@@ -24,4 +23,4 @@ def verify_tls(override: bool | None = None) -> bool:
     deliberately probing a broken-cert host.
     """
     legacy = resolve_bool(None, _LEGACY_ENV_VAR, default=True)
-    return resolve_bool(override, env_name(_VERIFY_TLS_ENV_VAR), default=legacy)
+    return resolve_bool(override, _VERIFY_TLS_ENV_VAR, default=legacy)

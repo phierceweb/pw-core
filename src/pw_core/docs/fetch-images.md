@@ -12,6 +12,7 @@ Download the remote image refs in a markdown (or HTML-derived markdown) document
 - [Resumable file mode](#resumable-file-mode)
 - [Failure containment](#failure-containment)
 - [Injection seams](#injection-seams)
+- [Other public names](#other-public-names)
 
 ## Quick usage
 
@@ -32,17 +33,17 @@ while localize_file(doc_path, doc_path.parent / "images"):
 
 ## What gets localized
 
-- Markdown image refs `![alt](https://…)` and HTML `<img src="https://…">`.
+- Markdown image refs `![alt](https://…)`, with or without a title (`![alt](https://… "title")`), and HTML `<img src="https://…">` in any letter case. A ref whose host or port cannot be read (`https://[x/b.png`, `https://example.com:99999/b.png`) is skipped and stays as written.
 - **Relative refs** (`../assets/figure.png`) only when `base_url` is given — they resolve via `urljoin`. Without `base_url` they are left for the browser.
 - Refs already under `images/`, absolute filesystem paths, and `data:` URIs are never touched.
 - A ref with a **non-image extension** is skipped; an image extension or **no extension at all** qualifies (opaque CDN URLs) — extensionless downloads get their extension sniffed from magic bytes (`sniff_image_ext`; png/jpg/gif/webp/svg/avif/heic/bmp/tiff/ico/jxl).
 - **The body must actually be an image.** `sniff_image_ext` returns `None` for anything it doesn't recognize — an HTML interstitial, a JSON error, a login page — and that is a per-URL failure: the ref stays remote and counts in `failed`. This applies to extensioned URLs too, so a CDN path ending `.png` that 200s with a sign-in wall is not written to disk and reported as saved. An XML body counts as SVG only when `<svg` appears within the first 4 KiB, which clears a DOCTYPE and an embedded license header but not an arbitrarily long preamble.
 
-Rewrites are anchor-safe — `]({url})` and `src="{url}"` forms only — so a bare URL in prose is never rewritten. Duplicate refs are fetched once and retargeted everywhere.
+Rewrites are anchor-safe — `]({url})`, `]({url} "title")` and `src="{url}"` forms only, the attribute name in any case — so a bare URL in prose is never rewritten. Duplicate refs are fetched once and retargeted everywhere.
 
 ## Naming and reuse
 
-`default_namer` derives a deterministic, collision-resistant local name by dash-joining the URL path segments after the first `images` component (`…/images/getting-started/interface.png` → `getting-started-interface.png`), falling back to the last two segments. Deterministic names are what make `reuse_existing=True` (the default) safe: a re-run probes `images_dir` for the name and reuses the file without refetching.
+`default_namer` derives a deterministic, collision-resistant local name by dash-joining the URL path segments after the first `images` component (`…/images/getting-started/interface.png` → `getting-started-interface.png`), falling back to the last two segments. Deterministic names are what make `reuse_existing=True` (the default for `localize_images`; `localize_file` defaults to `False`) safe: a re-run probes `images_dir` for the name and reuses the file without refetching.
 
 A URL with a query gets a 10-hex-digit digest of the query before its image extension (`…/media/image?id=101` → `media-image-03e79b3674`, then the sniffed extension), so images served from one path and told apart only by the query get one file each instead of all reusing the first. The fragment is ignored. A query-less URL's name is unchanged. `with_query_digest(name, url)` applies the same rule inside a custom `namer`.
 
@@ -60,7 +61,7 @@ With `reuse_existing=False`, existing files are never probed; new names take `-2
 
 ## Failure containment
 
-A per-URL failure — HTTP error, network error, SSRF block, size-cap `ClientError`, corrupt or truncated body, non-image response body, disk error — counts in `failed`, logs a warning, **keeps the remote ref** (it still resolves in a browser), and the loop continues. `localize_images` never raises for an individual URL; it raises only for programmer errors (bad arguments, missing parent directories).
+A per-URL failure — HTTP error, network error, SSRF block, size-cap `ClientError`, corrupt or truncated body, non-image response body, disk error — counts in `failed`, logs a warning, **keeps the remote ref** (it still resolves in a browser), and the loop continues. `localize_images` never raises for an individual URL's failure of those kinds — an injected `fetcher=` that raises anything else propagates — and otherwise raises only for programmer errors (bad arguments, missing parent directories).
 
 ## Injection seams
 
@@ -69,3 +70,9 @@ A per-URL failure — HTTP error, network error, SSRF block, size-cap `ClientErr
 - `link_prefix=` — the retarget prefix (default `images/`).
 
 Wrap this module rather than forking it: keep project-specific env toggles and defaults in your wrapper and pass them here as explicit arguments.
+
+## Other public names
+
+From `pw_core.fetch.images`:
+
+- `LocalizeResult` — what one localize pass returns: the rewritten document, the local files (downloaded or reused) and the failure count.

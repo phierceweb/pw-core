@@ -43,6 +43,16 @@ for r in results:
     print(r["page_age"])  # ISO date if Brave knows publish date
 ```
 
+### `search()` parameters
+
+| Parameter | Default | Meaning |
+|---|---|---|
+| `count` | `10` | Results to return, clamped to 1–20 |
+| `freshness` | `None` | `"pd"` / `"pw"` / `"pm"` / `"py"` (past day, week, month, year) or `"YYYY-MM-DDtoYYYY-MM-DD"` |
+| `country` | `"us"` | Two-letter country code for localization |
+| `safesearch` | `"moderate"` | `"off"`, `"moderate"` or `"strict"` |
+| `extra_params` | `None` | Raw query params merged onto the request |
+
 ### With recency filter
 
 ```python
@@ -96,13 +106,14 @@ Each result dict has:
 | `url` | `str` | The result URL |
 | `title` | `str` | Page title |
 | `description` | `str` | Snippet (may contain HTML highlight tags `<strong>`) |
-| `age` | `str | None` | Human-readable, e.g. "2 days ago" |
-| `page_age` | `str | None` | ISO-8601 publish date if Brave knows it |
+| `age` | `str \| None` | Human-readable, e.g. "2 days ago" |
+| `page_age` | `str \| None` | ISO-8601 publish date if Brave knows it |
 
 ## Errors
 
 Every failure raises `BraveSearchError` (subclass of `pw_foundation.exceptions.ClientError`):
 
+- No API key at construction
 - Empty query
 - Network timeout (after `request_timeout` seconds, no retry)
 - Transport error (DNS, connection refused, etc.)
@@ -149,6 +160,14 @@ Brave free tier is **1 query per second**. The client never auto-sleeps — call
 | `BRAVE_COST_PER_CALL_USD` | `0.005` | Logged cost per call |
 
 Resolved through [`utils.env`](https://github.com/phierceweb/pw-foundation/blob/main/src/pw_foundation/docs/env.md): an explicit `get_client(...)` argument wins over the env var, which wins over the default. A malformed value warns and falls back to the default rather than raising.
+
+## Other public names
+
+From `pw_core.clients.brave`:
+
+- `BraveSearchClient` — the client class `get_client()` returns.
+- `BraveSearchError` — every failure above.
+- `reset_client()` — drops the module-level singleton.
 
 ## See also
 

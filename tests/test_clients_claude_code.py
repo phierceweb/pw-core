@@ -1242,7 +1242,7 @@ class TestModelOverride:
     @patch("pw_core.clients.claude_code.subprocess.run")
     @patch("pw_core.clients.claude_code.shutil.which")
     def test_openrouter_style_model_translated(self, mock_which, mock_run, monkeypatch):
-        """`get_routed_client` claims backend transparency: callers should
+        """Backends are interchangeable under the router: callers should
         not have to know whether they're hitting OpenRouter or Claude Code.
         OpenRouter wants ``provider/model`` (e.g. ``anthropic/claude-3.7-sonnet``);
         Claude Code's ``--model`` wants the bare id. We strip the prefix

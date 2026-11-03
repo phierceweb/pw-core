@@ -46,7 +46,7 @@ my_project/
 │   └── versions/
 ├── config/                     # YAML configs (prompts, domain config)
 ├── .ai/                        # AI assistant context
-│   ├── rules/                  # Copied/adapted from pw-core .ai/rules/
+│   ├── rules/                  # Installed by pw-setup from pw-foundation and pw-core
 │   ├── plans/
 │   └── docs/
 ├── .env                        # Environment variables (not committed)
@@ -117,7 +117,7 @@ Pin both packages in `pyproject.toml` — a pw-core consumer imports `pw_foundat
 [project]
 dependencies = [
     "pw-foundation~=1.0",          # 1.x: minor releases are additive
-    "pw-core[<extras>]~=0.28.0",   # the current release line (see its CHANGELOG)
+    "pw-core[<extras>]~=1.0",      # 1.x: minor releases are additive
 ]
 ```
 

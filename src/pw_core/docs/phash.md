@@ -12,7 +12,7 @@ Optional dependency — install the extra:
 pip install 'pw-core[image-phash]'
 ```
 
-Pulls in `ImageHash` and `Pillow`. The pure-stdlib helpers (`hamming_distance_hex`, `cluster_phashes`) work without the extra; only `compute_phash` and `detect_decoration_basenames` require it.
+Pulls in `ImageHash` and `Pillow`. The pure-stdlib helpers (`hamming_distance_hex`, `cluster_phashes`) work without the extra; only `compute_phash` and `detect_decoration_basenames` require it. Without the extra `compute_phash` raises `ImportError`, but `detect_decoration_basenames` catches it per image, logs `decoration_phash_failed` and returns an empty set.
 
 ## High-level usage
 
@@ -44,12 +44,12 @@ Images extracted from documents are untrusted input. The restriction keeps a cra
 
 ## Tuning the thresholds
 
-| Knob | Sensible default | What it controls |
+| Knob | Starting value | What it controls |
 |---|---|---|
 | `hamming_distance` | `12` | Bit-distance below which two phashes are considered the same image. Tighter values (4–8) cluster only near-pixel-perfect duplicates; looser values (16+) start grouping visually similar but distinct figures. |
 | `threshold` | depends on N pages | Minimum cluster size to flag as decoration. For a 100-page document, `10` finds anything that appears on ~10% of pages. |
 
-Both depend on the corpus. Start with the defaults; tighten `hamming_distance` if distinct figures are getting clustered together, loosen if a known recurring decoration is being missed.
+Both are required arguments and depend on the corpus. Start from these values; tighten `hamming_distance` if distinct figures are getting clustered together, loosen if a known recurring decoration is being missed.
 
 ## Lower-level helpers
 

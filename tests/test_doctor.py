@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import os
 import sqlite3
 import subprocess
 
 import pytest
 
-from pw_core import _env_compat, doctor
+from pw_core import doctor
 from pw_core.doctor import check_deps, check_env, check_extras, check_router, checks, db_checks
 from pw_core.llm import _router_loader
 
@@ -19,13 +20,6 @@ def _router_cache_reset():
     _router_loader.clear_cache()
 
 
-@pytest.fixture
-def _fresh_legacy_warnings():
-    _env_compat._warned.clear()
-    yield
-    _env_compat._warned.clear()
-
-
 class TestCheckExtras:
     def test_lists_installed_extras(self):
         (res,) = check_extras()
@@ -33,6 +27,12 @@ class TestCheckExtras:
         # dev env has pydantic + sqlalchemy installed
         assert "validate" in res.detail
         assert "db" in res.detail
+
+
+@pytest.fixture(autouse=True)
+def _no_pf_names(monkeypatch):
+    for name in [n for n in os.environ if n.startswith("PF_")]:
+        monkeypatch.delenv(name)
 
 
 class TestCheckEnv:
@@ -69,54 +69,60 @@ class TestCheckEnv:
         (res,) = check_env()
         assert "WEB_HOST=FROM_SHELL" in res.detail
 
-    @pytest.mark.usefixtures("_fresh_legacy_warnings")
-    def test_names_the_legacy_variable_and_warns(self, monkeypatch, tmp_path):
-        monkeypatch.chdir(tmp_path)
-        monkeypatch.delenv("PW_VERIFY_TLS", raising=False)
-        monkeypatch.setenv("PF_VERIFY_TLS", "0")
-        with pytest.warns(FutureWarning, match="PF_VERIFY_TLS"):
-            (res,) = check_env()
-        assert res.status == "WARN"
-        assert "PW_VERIFY_TLS=0 (read from PF_VERIFY_TLS, deprecated)" in res.detail
-
-    @pytest.mark.usefixtures("_fresh_legacy_warnings")
-    def test_names_an_empty_legacy_variable(self, monkeypatch, tmp_path):
-        monkeypatch.chdir(tmp_path)
-        monkeypatch.delenv("PW_VERIFY_TLS", raising=False)
-        monkeypatch.setenv("PF_VERIFY_TLS", "")
-        with pytest.warns(FutureWarning, match="PF_VERIFY_TLS"):
-            (res,) = check_env()
-        assert res.status == "WARN"
-        assert "; PW_VERIFY_TLS= (read from PF_VERIFY_TLS, deprecated);" in res.detail
-        assert "PW_VERIFY_TLS unset" not in res.detail
-
-    @pytest.mark.usefixtures("_fresh_legacy_warnings")
-    def test_an_empty_pw_name_hiding_a_legacy_value_warns(self, monkeypatch, tmp_path):
+    def test_an_empty_pw_name_shows_as_set_empty(self, monkeypatch, tmp_path):
         monkeypatch.chdir(tmp_path)
         monkeypatch.setenv("PW_VERIFY_TLS", "")
-        monkeypatch.setenv("PF_VERIFY_TLS", "0")
-        (res,) = check_env()
-        assert res.status == "WARN"
-        assert "PW_VERIFY_TLS= (set empty, PF_VERIFY_TLS ignored)" in res.detail.split("; ")
-        assert "PW_VERIFY_TLS unset" not in res.detail
-
-    @pytest.mark.parametrize("legacy", [None, ""], ids=["legacy-unset", "legacy-empty"])
-    def test_an_empty_pw_name_shows_as_set_empty(self, monkeypatch, tmp_path, legacy):
-        monkeypatch.chdir(tmp_path)
-        monkeypatch.setenv("PW_VERIFY_TLS", "")
-        if legacy is None:
-            monkeypatch.delenv("PF_VERIFY_TLS", raising=False)
-        else:
-            monkeypatch.setenv("PF_VERIFY_TLS", legacy)
         (res,) = check_env()
         assert res.status == "PASS"
         assert "PW_VERIFY_TLS= (set empty)" in res.detail.split("; ")
-        assert "PW_VERIFY_TLS unset" not in res.detail and "ignored" not in res.detail
+
+    @pytest.mark.parametrize("pw_name", doctor._RENAMED)
+    @pytest.mark.parametrize("value", ["0", ""], ids=["set", "set-empty"])
+    def test_a_still_set_pf_spelling_is_flagged_not_read(
+        self, monkeypatch, tmp_path, recwarn, pw_name, value
+    ):
+        old = "PF_" + pw_name[3:]
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.delenv(pw_name, raising=False)
+        monkeypatch.setenv(old, value)
+        (res,) = check_env()
+        assert res.status == "WARN"
+        assert f"{old} is set but not read (use {pw_name})" in res.detail.split("; ")
+        assert not [
+            w for w in recwarn if issubclass(w.category, (DeprecationWarning, FutureWarning))
+        ]
+
+    def test_both_spellings_set_says_remove_the_old_one(self, monkeypatch, tmp_path):
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setenv("PW_VERIFY_TLS", "1")
+        monkeypatch.setenv("PF_VERIFY_TLS", "0")
+        (res,) = check_env()
+        rows = res.detail.split("; ")
+        assert res.status == "WARN" and "PW_VERIFY_TLS=1" in rows
+        assert (
+            "PF_VERIFY_TLS is set but not read (PW_VERIFY_TLS is set, so remove PF_VERIFY_TLS)"
+            in rows
+        )
+
+    def test_renamed_list_matches_the_config_table_and_the_readers(self):
+        from pathlib import Path
+
+        import re as _re
+
+        src = Path(doctor.__file__).parent
+        table = (src / "docs" / "config.md").read_text(encoding="utf-8")
+        documented = set(_re.findall(r"^\| `(PW_[A-Z_]+)` \|", table, _re.M))
+        read = {
+            m
+            for p in src.rglob("*.py")
+            if p.name not in ("doctor.py", "workers.py")
+            for m in _re.findall(r"[\"'](PW_[A-Z_]+)[\"']", p.read_text(encoding="utf-8"))
+        }
+        assert set(doctor._RENAMED) == documented - {"PW_JOB_ID"} == read
 
     @pytest.mark.parametrize("name", ["DATABASE_URL", "REDIS_URL", "PW_VERIFY_TLS"])
     def test_any_listed_variable_set_empty_shows_as_set_empty(self, monkeypatch, tmp_path, name):
         monkeypatch.chdir(tmp_path)
-        monkeypatch.delenv("PF_VERIFY_TLS", raising=False)
         monkeypatch.delenv("WEB_HOST", raising=False)
         monkeypatch.setenv(name, "")
         (res,) = check_env()
@@ -129,17 +135,8 @@ class TestCheckEnv:
     def test_an_unset_pw_name_is_unset(self, monkeypatch, tmp_path):
         monkeypatch.chdir(tmp_path)
         monkeypatch.delenv("PW_VERIFY_TLS", raising=False)
-        monkeypatch.delenv("PF_VERIFY_TLS", raising=False)
         (res,) = check_env()
         assert "PW_VERIFY_TLS unset" in res.detail.split("; ")
-
-    def test_pw_name_set_means_no_legacy_note(self, monkeypatch, tmp_path):
-        monkeypatch.chdir(tmp_path)
-        monkeypatch.setenv("PW_VERIFY_TLS", "1")
-        monkeypatch.setenv("PF_VERIFY_TLS", "0")
-        (res,) = check_env()
-        assert res.status == "PASS"
-        assert "PW_VERIFY_TLS=1" in res.detail and "read from" not in res.detail
 
 
 class TestCheckRouter:

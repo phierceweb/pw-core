@@ -4,7 +4,7 @@ SQLAlchemy-based database layer supporting SQLite, MySQL/MariaDB, and PostgreSQL
 
 ## Installation
 
-Database support is included in the base `pw-core` install (SQLAlchemy). For MySQL/MariaDB add `pw-core[mysql]` (PyMySQL); bare `mysql://` (and `mariadb://`) URLs resolve to PyMySQL at engine creation, so an explicit `mysql+pymysql://` driver suffix is optional. For PostgreSQL add `pw-core[postgres]` (psycopg 3 with the binary wheel). SQLite needs no extra.
+Database support needs the `[db]` extra (`pip install 'pw-core[db]'`: SQLAlchemy and Alembic). For MySQL/MariaDB add `pw-core[mysql]` (PyMySQL); bare `mysql://` (and `mariadb://`) URLs resolve to PyMySQL at engine creation, so an explicit `mysql+pymysql://` driver suffix is optional. For PostgreSQL add `pw-core[postgres]` (psycopg 3 with the binary wheel). SQLite needs no extra.
 
 ## Engine setup
 
@@ -56,6 +56,8 @@ ddl = f"payload {json_col_type(dialect_of())} NOT NULL"
 
 Each accepts an optional explicit URL (`is_postgres("postgresql+psycopg://...")`); without one they resolve from `DATABASE_URL`. `dialect_of()` raises `ConfigurationError` for an unsupported dialect.
 
+The `json_compat` raw-DDL helpers each take a dialect string from `SUPPORTED_DIALECTS` (`"mysql"`, `"postgresql"`, `"sqlite"`) and return SQL text: `json_col_type`, `json_extract_sql(dialect, col, path)`, `now_expr`, `timestamp_type`, `autoinc_pk`, `small_autoinc_pk`, `tiny_autoinc_pk`, `fk_int_type(dialect, size=...)`, `mediumtext_type`, `decimal_type(dialect, precision, scale)`, `bool_type` and `on_update_now_clause`. `pw_core.db` re-exports them.
+
 ### SQLite pragmas
 
 When using SQLite, the engine automatically enables:
@@ -81,7 +83,7 @@ Only the TCP/handshake phase is bounded. Statement execution and pool checkout h
 
 ### MySQL foreign keys
 
-When using MySQL, the engine enables `SET foreign_key_checks = 1` on each connection.
+On MySQL each connection runs `SET time_zone = '+00:00'`, so `TIMESTAMP` values round-trip as naive UTC, and `SET foreign_key_checks = 1`.
 
 ### PostgreSQL
 
@@ -226,11 +228,11 @@ dumps_json({"name": "Café Müller"})  # '{"name": "Café Müller"}'
 
 ### now_iso
 
-Current UTC time as ISO 8601 string. Canonical home is `pw_foundation.utils.dates`; re-exported here for backward compatibility.
+Current UTC time as an ISO 8601 string. It is `pw_foundation.utils.dates.now_iso`, also importable from `pw_core.db`.
 
 ```python
-from pw_core.db import now_iso  # works (backward compat)
-from pw_foundation.utils.dates import now_iso  # preferred
+from pw_core.db import now_iso
+from pw_foundation.utils.dates import now_iso  # the same function
 
 now_iso()  # "2026-04-14T14:30:00Z"
 ```
@@ -251,8 +253,11 @@ item = row_to_dict(row)  # plain dict or None
 Cross-dialect column types the framework's own tables are built from. Use them when defining tables adjacent to (or extending) the framework schema so DDL matches on MySQL, PostgreSQL, and SQLite:
 
 ```python
+from sqlalchemy import Column, ForeignKey, MetaData, Table
+
 from pw_core.db.types import FK_INT, PK_INT, TIMESTAMP_US, server_now
 
+metadata = MetaData()
 my_refs = Table(
     "my_refs",
     metadata,
@@ -355,3 +360,9 @@ ping()  # raises if database is unreachable
 ## Testing
 
 See [testing.md](testing.md) for database test fixtures (`pw_engine`, `pw_connection`, `pw_tables`).
+
+## Other public names
+
+From `pw_core.db.connection`:
+
+- `DEFAULT_CONNECT_TIMEOUT_S` — the connect timeout in seconds when none is configured.

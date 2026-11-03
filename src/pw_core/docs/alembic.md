@@ -42,7 +42,7 @@ from pw_core.alembic import run_migrations_online
 run_migrations_online(fallback_sqlite="app.db")
 ```
 
-Uses `DATABASE_URL` if set, otherwise falls back to `sqlite:///app.db`.
+Uses `DATABASE_URL` if set, otherwise falls back to a SQLite file at `app.db`, resolved against the working directory.
 
 ### PostgreSQL project
 

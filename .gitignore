@@ -44,6 +44,7 @@ logs/
 .claude/settings.local.json
 .claude/scheduled_tasks.lock
 .claude/worktrees/
+.cbmignore
 
 # Editor/tool backups — never part of a release
 *.bak

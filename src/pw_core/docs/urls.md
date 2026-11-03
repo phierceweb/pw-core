@@ -173,7 +173,7 @@ check_url_cached(url, disabled=os.environ.get("URL_LIVENESS_DISABLED") == "1")
 ### What this adds over `check_url`
 
 - **403/401 fallback.** Many real sites return 403 to bare HEAD even though their content is real. `check_url_cached` re-issues the request as GET with a browser User-Agent and `follow_redirects=True`, so a 200 via GET correctly downgrades the verdict from "forbidden" to "ok". Distinguishes a real bot-block from a dead link.
-- **Two-tier caching.** Result cached at `cache_key_prefix + url`. A stable verdict (`ok`, `not_found`, `gone`, `forbidden`) keeps `cache_ttl_seconds` — `None` reads `URL_LIVENESS_TTL_SECONDS`, default 24h. A **transient** verdict — `timeout`, `error`, or a retryable status (408, 425, 429, 5xx) — gets `negative_cache_ttl_seconds` instead: `None` reads `URL_LIVENESS_NEGATIVE_TTL_SECONDS`, default 300s. Without the split, a 30-second network interruption marks every URL checked in that window dead for a day. Transient verdicts are still cached, not skipped, so a hard-down host stays throttled. Cache failures (corrupt value, backend exception) silently fall through to a fresh network check — never throws.
+- **Two-tier caching.** Result cached at `cache_key_prefix + url`. A stable verdict (`ok`, `not_found`, `gone`, `forbidden`) keeps `cache_ttl_seconds` — `None` reads `URL_LIVENESS_TTL_SECONDS`, default 24h. A **transient** verdict — `timeout`, `error`, or a retryable status (408, 425, 429, 500, 502, 503, 504) — gets `negative_cache_ttl_seconds` instead: `None` reads `URL_LIVENESS_NEGATIVE_TTL_SECONDS`, default 300s. Without the split, a 30-second network interruption marks every URL checked in that window dead for a day. Transient verdicts are still cached, not skipped, so a hard-down host stays throttled. Cache failures (corrupt value, backend exception) silently fall through to a fresh network check — never throws.
 - **Kill switch.** `disabled=True` returns `(0, "disabled")` with no network or cache activity. Useful during incidents.
 
 ### CacheBackend protocol
@@ -206,7 +206,7 @@ A "trusted domain" short-circuit (skipping liveness for known-good trusted sites
 | `url` | `str` | *(required)* | HTTP(S) URL to check. Empty string returns `(0, "error")`. |
 | `cache` | `CacheBackend \| None` | `None` | Optional cache backend. `None` disables caching. |
 | `cache_ttl_seconds` | `int \| None` | `None` | TTL for stable verdicts. `None` reads `URL_LIVENESS_TTL_SECONDS` (default `86400`). |
-| `negative_cache_ttl_seconds` | `int \| None` | `None` | TTL for transient verdicts (`timeout`, `error`, 408/425/429/5xx). `None` reads `URL_LIVENESS_NEGATIVE_TTL_SECONDS` (default `300`). |
+| `negative_cache_ttl_seconds` | `int \| None` | `None` | TTL for transient verdicts (`timeout`, `error`, 408/425/429/500/502/503/504). `None` reads `URL_LIVENESS_NEGATIVE_TTL_SECONDS` (default `300`). |
 | `cache_key_prefix` | `str` | `"url_liveness:"` | Prefix prepended to URL to form the cache key. |
 | `disabled` | `bool` | `False` | When `True`, returns `(0, "disabled")` without network or cache activity. |
 
@@ -325,23 +325,13 @@ Uses only stdlib `html.parser` — no beautifulsoup / readability dependency. Th
 
 Returns `dict[str, str]` with keys `title`, `description`, `og_title`, `og_description`, `twitter_title`, `twitter_description`, `first_paragraph`. Missing fields are empty strings (never absent keys).
 
+## Other public names
+
+- `pw_core.utils.url_safety.guarded_get(client, url, *, max_redirects=5)` — GET through `client`, validating the target and every redirect hop; `guarded_head` and `guarded_stream` do the same for HEAD and a streamed GET.
+- `pw_core.utils.url_liveness.DEFAULT_CACHE_TTL_SECONDS` — how long a liveness result is cached; `DEFAULT_NEGATIVE_CACHE_TTL_SECONDS` for a failed check.
+
 ## Related
 
 - [LLM URL Check](llm-validation.md) — uses these utilities to detect hallucinated URLs
 - [Article Fetch](article-fetch.md) — composes `fetch_url_content`, `wayback_exists_at`, `canonical_url`, `domain_of`, and `extract_path_date` into a fetch-and-extract pipeline with Wayback fallback
 
-## Migrating from consumer projects
-
-**Example** — a project's URL helpers module re-exports from pw-core:
-
-```python
-# Before
-def domain_of(url): ...
-def archive_timestamp_is_round(url): ...
-
-
-# After
-from pw_core.utils import archive_timestamp_is_round, domain_of  # noqa: F401
-```
-
-No downstream caller changes needed — callers keep importing from the project's module.

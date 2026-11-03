@@ -111,7 +111,7 @@ def make_jobs_router(
             "scope": scope or {},
         }
 
-    @router.get("", response_model=None)
+    @router.get("", response_model=None, name="jobs_admin_jobs_list")
     def jobs_list(
         request: Request,
         page: int = Query(1, ge=1),
@@ -151,14 +151,14 @@ def make_jobs_router(
             },
         )
 
-    @router.get("/api/{job_id}")
+    @router.get("/api/{job_id}", name="jobs_admin_job_bundle")
     def job_bundle(job_id: int):
         bundle = JobRepo().get_with_steps(job_id)
         if bundle is None:
             raise HTTPException(404, f"job {job_id} not found")
         return safe_json_response(_split_bundle(bundle))
 
-    @router.post("/api/{job_id}/cancel")
+    @router.post("/api/{job_id}/cancel", name="jobs_admin_cancel_job")
     def cancel_job(job_id: int, body: _CancelBody | None = None):
         reason = (body.reason if body else None) or "canceled from web"
         if terminate_hook is not None:
@@ -175,7 +175,7 @@ def make_jobs_router(
             return safe_json_response({"ok": True})
         return safe_json_response(_split_bundle(bundle))
 
-    @router.get("/{job_id}", response_model=None)
+    @router.get("/{job_id}", response_model=None, name="jobs_admin_job_detail")
     def job_detail(request: Request, job_id: int):
         bundle = JobRepo().get_with_steps(job_id)
         if bundle is None:

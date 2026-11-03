@@ -6,7 +6,7 @@ Make the same call N times with non-zero temperature, then majority-vote the res
 
 - High-stakes classifications (safety labels, category labels, binary flags)
 - Tasks where being right most of the time at 5x cost beats being right most of the time at 1x cost
-- Agents whose outputs you'd validate with `validate/_semantic.py` anyway — self-consistency front-runs the disagreement instead of discovering it post-hoc
+- Agents whose outputs you'd validate with the [built-in semantic validators](../llm-schema-validation.md#built-in-semantic-validators) anyway — self-consistency front-runs the disagreement instead of discovering it post-hoc
 
 ## When NOT to use
 

@@ -29,6 +29,8 @@ _HELP = "Golden-set replay and regression gate."
 
 app = typer.Typer(name="eval", help=_HELP, no_args_is_help=True, add_completion=False)
 
+__all__ = ["app", "main"]
+
 _stdout = Console()
 _stderr = Console(stderr=True)
 

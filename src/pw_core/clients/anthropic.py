@@ -53,7 +53,7 @@ from pw_core.clients._anthropic_retry import (
     _RETRY_BACKOFF_BASE as _RETRY_BACKOFF_BASE,
     _RETRYABLE_STATUS_CODES as _RETRYABLE_STATUS_CODES,
     _is_retryable as _is_retryable,
-    _timeout_left_the_client as _timeout_left_the_client,
+    _request_left_the_client as _request_left_the_client,
 )
 
 _log = get_logger(__name__)
@@ -67,6 +67,19 @@ DEFAULT_MAX_TOKENS = 4096
 DEFAULT_PREFLIGHT_TIMEOUT_SECONDS = 30
 
 _VALID_CACHE_TTLS = ("5m", "1h")
+
+_CONNECT_TIMEOUT_S_DEFAULT = 10
+_CONNECT_TIMEOUT_ENV_VAR = "ANTHROPIC_CONNECT_TIMEOUT_S"
+
+
+def _sdk_timeout(total: float | None) -> Any:
+    """``total`` seconds per request, at most ``ANTHROPIC_CONNECT_TIMEOUT_S`` of them to connect."""
+    from anthropic import Timeout
+
+    connect = resolve_int(None, _CONNECT_TIMEOUT_ENV_VAR, default=_CONNECT_TIMEOUT_S_DEFAULT)
+    if connect <= 0:
+        return Timeout(total)
+    return Timeout(total, connect=connect if total is None else min(connect, total))
 
 
 class AnthropicClient:
@@ -110,7 +123,9 @@ class AnthropicClient:
         self.retry = retry
         # max_retries=0: the SDK's own default (2) would multiply with the
         # retry loop in chat(), turning one logical request into up to six.
-        self._client = Anthropic(api_key=api_key, timeout=request_timeout, max_retries=0)
+        self._client = Anthropic(
+            api_key=api_key, timeout=_sdk_timeout(request_timeout), max_retries=0
+        )
 
     def chat(
         self,
@@ -166,7 +181,11 @@ class AnthropicClient:
             raise AnthropicError(f"cache_ttl must be one of {_VALID_CACHE_TTLS}, got {cache_ttl!r}")
 
         # Per-call timeout via SDK's with_options derived-client pattern.
-        sdk = self._client if timeout is None else self._client.with_options(timeout=timeout)
+        sdk = (
+            self._client
+            if timeout is None
+            else self._client.with_options(timeout=_sdk_timeout(timeout))
+        )
 
         # Build the kwargs sent to messages.create. Sampling params are
         # conditional: `temperature` is sent by default (opt out with
@@ -306,7 +325,7 @@ class AnthropicClient:
                 should complete in single-digit seconds; if it doesn't,
                 something is worth knowing about.
         """
-        sdk = self._client.with_options(timeout=timeout)
+        sdk = self._client.with_options(timeout=_sdk_timeout(timeout))
         try:
             sdk.models.list()
         except Exception as e:

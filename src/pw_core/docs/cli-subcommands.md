@@ -73,8 +73,10 @@ Registers a Typer subcommand group on `app` with three subcommands:
 | Subcommand | Wraps | Notes |
 |---|---|---|
 | `save` | [`save_baseline`](pipeline.md#baseline) | Optional `--label`. Default label: `<version>-<YYYYMMDD-HHMMSS>` |
-| `list` | [`list_baselines`](pipeline.md#baseline) | Tabular output with version, preset, sections, images |
-| `diff` | [`diff_baseline`](pipeline.md#baseline_diff) | `--show-section <path>` and `--show-consolidated` for drill-in unified diffs |
+| `list` | [`list_baselines`](pipeline.md#baseline) | Tabular output: label, version, preset, saved-at, sections, images |
+| `diff` | [`diff_baseline`](pipeline.md#baseline_diff) | `--show-section <path>` or `--show-consolidated` (not both — a usage error, exit 2) for drill-in unified diffs |
+
+A `ValueError` from `save_baseline` or `diff_baseline`, and an unknown `invalidate` stage, surface as `typer.BadParameter` (exit 2).
 
 | Parameter | Default | Description |
 |---|---|---|

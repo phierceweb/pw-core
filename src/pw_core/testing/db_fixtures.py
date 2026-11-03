@@ -25,8 +25,8 @@ pw_engine_teardown
     callable run before ``engine.dispose()`` (e.g. drain worker threads).
 
 pw_connection
-    A SQLAlchemy ``Connection`` inside a SAVEPOINT. Rolled back after each
-    test so tests never see each other's data.
+    A SQLAlchemy ``Connection`` with an open outer transaction, rolled back
+    after each test; ``commit()`` on it persists for the rest of the test.
 
 pw_tables
     DDL runner. Use the ``@pytest.mark.pw_tables("CREATE TABLE ...")`` marker
@@ -150,8 +150,7 @@ def framework_ddl(
     Importing :mod:`pw_core.llm.tracking` registers all four table groups on
     the shared metadata. Never hand-copy these CREATE TABLE statements —
     copies drift when the framework schema changes. Requires the
-    ``[tracking]`` closure; a jobs-only consumer can pass
-    ``pw_core.jobs._schema``'s ``metadata`` to :func:`metadata_ddl` instead.
+    ``[tracking]`` closure, which ``[jobs]`` includes.
 
     ``only`` restricts output to the named tables (for projects whose own
     migrations extend the others).
@@ -230,8 +229,7 @@ def pw_connection(pw_engine: Engine) -> Iterator[Connection]:
     """A connection with an active transaction, rolled back after each test.
 
     This gives each test a clean slate without the cost of recreating tables.
-    Tests can commit within savepoints, but the outer transaction is always
-    rolled back.
+    Calling ``commit()`` on it ends that transaction early, so don't.
     """
     with pw_engine.connect() as conn:
         trans = conn.begin()

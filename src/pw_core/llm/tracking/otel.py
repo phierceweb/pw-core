@@ -1,5 +1,6 @@
 """
-Export ``llm_runs`` to an OpenTelemetry backend as GenAI client spans.
+Export ``llm_runs`` to an OpenTelemetry backend as GenAI client spans. Experimental: outside the
+1.0 stability promise; its API can change in any release.
 
 One span per run. The runs of a job share one trace; a run without a job is a
 trace of its own. Span and trace ids are derived from the run and job ids

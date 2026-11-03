@@ -7,6 +7,8 @@ alongside the built-in three.
 
 from __future__ import annotations
 
+from unittest.mock import patch
+
 import pytest
 
 from pw_core.clients import claude_code, openrouter
@@ -14,7 +16,6 @@ from pw_core.clients.routing import (
     BUILTIN_BACKENDS,
     clear_client_cache,
     get_client_for_backend,
-    get_routed_client,
     register_client,
     registered_backends,
     unregister_client,
@@ -174,18 +175,13 @@ def test_new_client_returns_fresh_env_resolved_instances(monkeypatch):
     assert a is not openrouter.get_client()
 
 
-# ---------------------------------------------------------------------------
-# Deprecated boolean shim
-# ---------------------------------------------------------------------------
-
-
-def test_get_routed_client_warns_and_still_routes(monkeypatch):
+def test_openrouter_does_not_touch_claude_code(monkeypatch):
+    """Routing to openrouter never acquires the Claude Code client."""
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
-
-    with pytest.warns(DeprecationWarning, match="resolve_agent"):
-        client = get_routed_client(False)
+    with patch.object(
+        claude_code,
+        "get_client",
+        side_effect=AssertionError("claude_code.get_client should not run"),
+    ):
+        client = get_client_for_backend("openrouter")
     assert isinstance(client, openrouter.OpenRouterClient)
-
-    with pytest.warns(DeprecationWarning):
-        client = get_routed_client(True)
-    assert isinstance(client, claude_code.ClaudeCodeClient)

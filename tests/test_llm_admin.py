@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 from pw_core.budget._schema import llm_budgets
 from pw_core.budget.repo import BudgetSnapshotRepo
 from pw_core.db.connection import transaction
-from pw_core.jobs._schema import job_events, jobs
+from pw_core.jobs._schema import job_events, job_steps, jobs
 from pw_core.llm.cache import cache_store
 from pw_core.llm.tracking import (
     LlmRunRepo,
@@ -219,6 +219,65 @@ def test_job_detail_404(admin_db):
     client = _make_client(admin_db)
     r = client.get("/admin/llm/job/99999")
     assert r.status_code == 404
+
+
+def test_job_detail_public_shape(admin_db):
+    from pw_core.web.llm_admin.queries import job_detail
+
+    base = dt.datetime(2026, 1, 1)
+    with transaction() as conn:
+        jid = conn.execute(
+            jobs.insert().values(kind="demo_draft", status="running")
+        ).inserted_primary_key[0]
+        for idx in (1, 0):
+            conn.execute(job_steps.insert().values(job_id=jid, step_index=idx, name=f"s{idx}"))
+        conn.execute(
+            job_events.insert(),
+            [
+                {
+                    "job_id": jid,
+                    "event_type": "e",
+                    "message": f"m{i}",
+                    "created_at": base + dt.timedelta(seconds=i),
+                }
+                for i in range(201)
+            ],
+        )
+    repo = LlmRunRepo()
+    for cost in (0.25, 0.5):
+        repo.record(agent_type="drafter", model="m", usage={"cost_usd": cost}, job_id=jid)
+    repo.record(agent_type="drafter", model="m", usage={"cost_usd": 9.0})
+
+    detail = job_detail(jid)
+    assert detail["id"] == jid and detail["kind"] == "demo_draft"
+    assert [s["step_index"] for s in detail["steps"]] == [0, 1]
+    assert len(detail["events"]) == 200
+    assert detail["events"][0]["message"] == "m200" and detail["events"][-1]["message"] == "m1"
+    assert detail["runs_summary"]["runs"] == 2
+    assert float(detail["runs_summary"]["total_cost"]) == pytest.approx(0.75)
+    assert job_detail(jid + 1000) is None
+
+
+def test_job_detail_breaks_event_time_ties_by_id(admin_db):
+    from pw_core.web.llm_admin.queries import job_detail
+
+    at = dt.datetime(2026, 1, 1)
+    with transaction() as conn:
+        jid = conn.execute(
+            jobs.insert().values(kind="demo_draft", status="running")
+        ).inserted_primary_key[0]
+        for msg in ("first", "second"):
+            conn.execute(
+                job_events.insert().values(job_id=jid, event_type="e", message=msg, created_at=at)
+            )
+    assert [e["message"] for e in job_detail(jid)["events"]] == ["second", "first"]
+
+
+def test_run_without_provider_shows_a_dash(admin_db):
+    run_id = LlmRunRepo().record(agent_type="drafter", model="m", usage={})
+    r = _make_client(admin_db).get(f"/admin/llm/run/{run_id}")
+    assert r.status_code == 200
+    assert "<th>provider</th><td>—</td>" in r.text
 
 
 def test_cache_page_renders(admin_db):

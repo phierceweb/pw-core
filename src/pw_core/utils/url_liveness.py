@@ -178,7 +178,7 @@ def check_url_cached(
         cache_ttl_seconds: TTL for stable verdicts. ``None`` reads
             ``URL_LIVENESS_TTL_SECONDS`` (default 24h).
         negative_cache_ttl_seconds: TTL for transient verdicts — ``timeout``,
-            ``error``, and retryable status codes (408, 425, 429, 5xx).
+            ``error``, and the retryable statuses in ``_TRANSIENT_STATUS_CODES``.
             ``None`` reads ``URL_LIVENESS_NEGATIVE_TTL_SECONDS`` (default 300).
             Short enough that a DNS blip doesn't pin a live URL as dead for a
             day, long enough that a hard-down host isn't re-probed every call.

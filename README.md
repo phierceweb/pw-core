@@ -4,13 +4,13 @@
 
 Formerly published as pf-core (0.2.3–0.26.0); renamed at 0.27.0. The old PyPI releases remain but receive no updates.
 
-A Python foundation for building LLM applications whose prompts and spend you can actually see: every prompt lives in versioned configuration, and every call is recorded — prompt version, model, provider, response, tokens, cost — and replayable, in your choice of SQLite, MySQL, or Postgres. The base install is dependency-light (structured logging, an exception hierarchy, config-from-env, a service/repo architecture); opt-in extras add the LLM clients, output validation, cost tracking and budgets, an eval harness, and a FastAPI + SQLAlchemy app framework. Capabilities compose orthogonally — the foundation alone, the LLM layer without a database, or the web layer without LLMs.
+A Python foundation for building LLM applications whose prompts and spend you can see: every prompt lives in versioned configuration, and every call is recorded — prompt version, model, provider, response, tokens, cost — and replayable, in your choice of SQLite, MySQL, or Postgres. The base install is dependency-light (structured logging, an exception hierarchy, config-from-env, a service/repo architecture); opt-in extras add the LLM clients, output validation, cost tracking and budgets, an eval harness, and a FastAPI + SQLAlchemy app framework. Capabilities compose orthogonally — the foundation alone, the LLM layer without a database, or the web layer without LLMs.
 
 ## Why pw-core
 
-The LLM tooling landscape solves each concern separately: one product routes calls across providers, another traces and meters them, another versions prompts, another runs evals, another repairs malformed JSON, another lints repo structure. Stitch several together and the seams show — every tool brings its own config, its own storage, its own id space, and no shared key joins a prompt version to the tokens it burned or the validation it failed. pw-core is those concerns designed as one system; the integration is the feature.
+pw-core keeps prompts, calls, costs, validations and eval results in one schema, so a prompt version joins to the tokens it used and the validation it failed through the same run id.
 
-It started as the shared core of several AI-assisted projects that fanned multithreaded LLM calls out to external providers. Each was built differently, with the important details — config, prompts, clients, methodology — buried in whichever file the AI found closest: working software, unreadable data, mounting tech debt. pw-core solves the five problems those projects kept hitting:
+It started as the shared core of several AI-assisted projects that fanned multithreaded LLM calls out to external providers. Each was built differently, with config, prompts, clients and methodology buried in whichever file the AI found closest. pw-core addresses the five problems those projects kept hitting:
 
 1. **Prompts buried in code.** Every prompt lives in versioned YAML configuration — seen, diffed, and tuned. Change one materially and you bump its version; old and new both stay in the registry.
 2. **Calls unrecorded.** Every call lands as one database row: prompt version, model, provider, sampling, response, tokens, cost. Each run links to the exact prompt version it used.
@@ -22,9 +22,9 @@ Deep dives on each: [prompts](https://github.com/phierceweb/pw-core/blob/main/sr
 
 All five land in the same place: one `llm_runs` row per call, plus sidecar tables for payloads, validations, tags, metrics, and run-to-run links. The dashboard, the cache, the budget checks, and the eval harness all read those same tables — which is what makes prompt-and-model combinations tunable in aggregate: in a dozen-step pipeline, each step with its own prompt and model, every combination is queryable side by side.
 
-In a complex data pipeline the stakes are higher, because prompts feed prompts: step 3 consumes what steps 1 and 2 produced, so an upstream prompt or model change ripples through everything downstream. The same tables answer that too. Every call in a pipeline run shares a job id, and every run records the exact prompt version and model it used — so whole pipeline runs can be grouped by their upstream configuration and compared on their downstream results. Concretely: run the pipeline with steps 1 and 2 on prompt v2 and one model, run it again with the same prompts on a different model, leave every later step unchanged, and compare the later steps' validations and metrics between the two groups. The question being answered is not "which prompt is better in isolation" but "which upstream choice produced better results three steps later" — and it's answerable with a query, because everything landed in one schema.
+In a complex data pipeline the stakes are higher, because prompts feed prompts: step 3 consumes what steps 1 and 2 produced, so an upstream prompt or model change ripples through everything downstream. The same tables answer that too. Every call in a pipeline run shares a job id, and every run records the exact prompt version and model it used — so whole pipeline runs can be grouped by their upstream configuration and compared on their downstream results. Concretely: run the pipeline with steps 1 and 2 on prompt v2 and one model, run it again with the same prompts on a different model, leave every later step unchanged, and compare the later steps' validations and metrics between the two groups. That shows which upstream choice produced better results three steps later, and the comparison is a query over the same tables.
 
-Dialect portability is structural rather than incidental: queries are SQLAlchemy constructs where one exists, the hand-written SQL that remains is parameterized, and the places where the databases genuinely differ are handled in a few modules (`pw_core.db.dialect`, `types`, `json_compat`, `upsert`, and the session setup in `connection`) — code built on pw-core need not branch on dialect. MySQL and Postgres sessions are pinned to UTC with cutoffs computed server-side. CI runs the full suite on SQLite across Python 3.12–3.13, then again against real PostgreSQL and MySQL servers with each test in its own schema or database, plus a bare-install job that proves the foundation imports with none of the extras present; provider clients are tested against mocked transports, not live APIs. Misconfiguration fails at deploy time: an unresolvable eval judge or an invalid router entry raises `ConfigurationError` rather than silently picking a default.
+Queries are SQLAlchemy constructs where one exists, the hand-written SQL that remains is parameterized, and the places where the databases genuinely differ are handled in a few modules (`pw_core.db.dialect`, `types`, `json_compat`, `upsert`, and the session setup in `connection`) — code built on pw-core need not branch on dialect. MySQL and Postgres sessions are pinned to UTC with cutoffs computed server-side. CI runs the full suite on SQLite across Python 3.12–3.14, then again against real PostgreSQL and MySQL servers with each test in its own schema or database, plus a bare-install job that proves the foundation imports with none of the extras present; provider clients are tested against mocked transports, not live APIs. Misconfiguration fails at deploy time: an unresolvable eval judge or an invalid router entry raises `ConfigurationError` rather than silently picking a default.
 
 ## One interface over multiple LLM backends — including Claude Code
 
@@ -40,29 +40,64 @@ One API over SQLite, MySQL, and PostgreSQL — develop on SQLite, deploy on a se
 
 ## The application framework
 
-pw-core is a framework, not just a client library. Consumer apps follow a layered architecture — entry points → orchestrators → services → repositories, no layer importing from above — with a `Service` base class carrying config injection, logging, and repo access. Around that: a FastAPI app factory with self-contained error pages and content negotiation; a job tracker with a state machine, idempotent step history, and worker leases so multi-step work survives restarts; a mountable admin dashboard for runs, costs, and budgets; and pipeline helpers for run-records, baselines, and stage-cascade cache invalidation. See **[docs/modules.md](https://github.com/phierceweb/pw-core/blob/main/src/pw_core/docs/modules.md)** for the full index.
+Apps built on pw-core follow a layered architecture — entry points → orchestrators → services → repositories, no layer importing from above — with a `Service` base class carrying config injection, logging, and repo access. Around that: a FastAPI app factory with self-contained error pages and content negotiation; a job tracker with a state machine, idempotent step history, and worker leases so multi-step work survives restarts; a mountable admin dashboard for runs, costs, and budgets; and pipeline helpers for run-records, baselines, and stage-cascade cache invalidation. See **[docs/modules.md](https://github.com/phierceweb/pw-core/blob/main/src/pw_core/docs/modules.md)** for the full index.
 
 ## Built for AI coding agents
 
-pw-core is built to be worked on by AI coding agents as much as by people — and that part pays off even when a project has no LLM calls of its own. The conventions that keep a codebase legible to an agent are enforced, not suggested: a build gate fails CI when a file grows past its line budget (small files stay within a model's working context and edit cleanly), a companion checker flags imports that cross the layered architecture the wrong way, and logging, errors, config, and data access each have one obvious way to do them — so generated code lands in the same shapes as hand-written code instead of drifting. The testing bootstrap ships in the framework itself as an auto-registered pytest plugin (fixtures, framework-table DDL, hermetic test env), and the consumer scaffold stamps a runnable smoke test into every new project.
+The conventions that keep a codebase legible to an AI coding agent are enforced in CI, whether or not the project makes LLM calls: a build gate fails CI when a file grows past its line budget (small files stay within a model's working context and edit cleanly), a companion checker flags imports that cross the layered architecture the wrong way, and logging, errors, config, and data access each have one obvious way to do them — so generated code lands in the same shapes as hand-written code instead of drifting. The testing bootstrap ships in the framework itself as an auto-registered pytest plugin (fixtures, framework-table DDL, hermetic test env), and the consumer scaffold stamps a runnable smoke test into every new project.
 
 ## Install
 
 ```bash
 pip install pw-foundation            # the foundation alone: logging, exceptions, config, utils, pw-guards
 pip install pw-core                  # + pw-core's base (pulls pw-foundation) — no LLM, no DB, no web
-pip install pw-core[validate]        # + output guards (no clients/HTTP)
-pip install pw-core[llm]             # + LLM clients (includes [validate])
-pip install pw-core[full,postgres]   # the whole app framework
+pip install 'pw-core[validate]'      # + output guards (no clients/HTTP)
+pip install 'pw-core[llm]'           # + LLM clients (includes [validate])
+pip install 'pw-core[full,postgres]' # the whole app framework
 ```
 
-Pin a **compatible release** for stability — e.g. `pip install "pw-core[llm]~=0.28.0"` (picks up `0.28.x` fixes, holds below the next minor; substitute the current release from the [changelog](https://github.com/phierceweb/pw-core/blob/main/CHANGELOG.md)). To track unreleased work, install from git instead — `main` is the development line and may contain work between releases:
+pw-core follows semantic versioning from 1.0: pin `~=1.0` (`pip install "pw-core[llm]~=1.0"`) to take fixes and additive releases and stay below 2.0. The stable surface is what the [module index](https://github.com/phierceweb/pw-core/blob/main/src/pw_core/docs/modules.md) documents; [CONTRIBUTING.md](https://github.com/phierceweb/pw-core/blob/main/CONTRIBUTING.md#versioning--deprecations) has the policy. To track unreleased work, install from git instead — `main` is the development line and may contain work between releases:
 
 ```bash
 pip install "pw-core[llm] @ git+https://github.com/phierceweb/pw-core.git@main"
 ```
 
 Extras compose orthogonally (`[db]` without LLM, `[web]` without `[db]`, `[llm]` standalone); importing a gated module without its extra raises an `ImportError` naming the extra and the pip command. Full matrix and release/update flow: **[docs/INSTALLATION.md](https://github.com/phierceweb/pw-core/blob/main/src/pw_core/docs/INSTALLATION.md)**.
+
+## Quickstart
+
+Create the framework tables (tracking, jobs, cache, budgets) in a local SQLite file, then record one call:
+
+```bash
+pip install "pw-core[llm,db]~=1.0"
+export DATABASE_URL=sqlite:///runs.db OPENROUTER_API_KEY=...
+python -c "from pw_core.db import get_engine; from pw_core.llm.tracking import metadata; metadata.create_all(get_engine())"
+```
+
+```python
+from pw_core.clients.openrouter import get_client
+from pw_core.llm.tracking import track_run
+
+
+@track_run(agent_type="summarizer", provider="openrouter")
+def summarize(*, model, messages):
+    return get_client().chat(model=model, messages=messages)
+
+
+content, usage = summarize(
+    model="anthropic/claude-sonnet-4.6",
+    messages=[{"role": "user", "content": "Summarize the plot of Hamlet in one sentence."}],
+)
+print(usage["_llm_run_id"], usage.get("cost_usd"))
+```
+
+The call is now a row:
+
+```bash
+sqlite3 runs.db "SELECT r.id, m.name, r.prompt_tokens, r.completion_tokens, r.cost_usd FROM llm_runs r JOIN llm_models m ON m.id = r.model_id"
+```
+
+From there, [prompts](https://github.com/phierceweb/pw-core/blob/main/src/pw_core/docs/prompts.md) moves the prompt into versioned YAML and the [model router](https://github.com/phierceweb/pw-core/blob/main/src/pw_core/docs/model-router.md) moves the model choice into config.
 
 ## Documentation
 
@@ -118,8 +153,8 @@ python -c "import pw_core, pathlib; print(pathlib.Path(pw_core.__file__).parent 
 - [model-router](https://github.com/phierceweb/pw-core/blob/main/src/pw_core/docs/model-router.md)
 - [modules](https://github.com/phierceweb/pw-core/blob/main/src/pw_core/docs/modules.md)
 - [openrouter](https://github.com/phierceweb/pw-core/blob/main/src/pw_core/docs/openrouter.md)
-- [orchestrators](https://github.com/phierceweb/pw-core/blob/main/src/pw_core/docs/orchestrators.md)
-- [otel](https://github.com/phierceweb/pw-core/blob/main/src/pw_core/docs/otel.md)
+- [orchestrators](https://github.com/phierceweb/pw-core/blob/main/src/pw_core/docs/orchestrators.md) (experimental)
+- [otel](https://github.com/phierceweb/pw-core/blob/main/src/pw_core/docs/otel.md) (experimental)
 - [pagination](https://github.com/phierceweb/pw-core/blob/main/src/pw_core/docs/pagination.md)
 - [parsers](https://github.com/phierceweb/pw-core/blob/main/src/pw_core/docs/parsers.md)
 - [phash](https://github.com/phierceweb/pw-core/blob/main/src/pw_core/docs/phash.md)
@@ -156,6 +191,10 @@ Pytest fixtures auto-register as a plugin via the `pw_core` entry point — no `
 ## Project history
 
 pw-core was developed privately from early April 2026 and first published on June 14, 2026, with the pre-publication history squashed. Public releases are tagged (`v*`) and published to PyPI by CI via OIDC trusted publishing ([publish.yml](https://github.com/phierceweb/pw-core/blob/main/.github/workflows/publish.yml)); `main` is the development line and is pushed with each release.
+
+## If pw-core stops being maintained
+
+pw-core has one maintainer. A project built on it keeps two things if that changes. Its data is ordinary tables in its own database — `llm_runs` and its sidecars, documented in [llm-tracking.md](https://github.com/phierceweb/pw-core/blob/main/src/pw_core/docs/llm-tracking.md) — readable with any SQL client. The code is Apache-2.0 and has no hosted service behind it, so a pinned release keeps working; to keep changing it, fork it or vendor the packages you use. Importing the tracking and eval code loads parts of `pw_core.db`, `pw_core.jobs`, `pw_core.budget` and `pw_core.utils` as well, so vendoring them means copying those too. The build gate (`pw-guards`) is in pw-foundation.
 
 ## License
 

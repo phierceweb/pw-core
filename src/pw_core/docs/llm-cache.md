@@ -12,6 +12,7 @@ It is an **exact cache**, keyed by `input_hash` (SHA256 of model + prompts + sam
 from pw_core.llm.cache import cache_lookup, cache_store, record_cache_hit
 from pw_core.llm.tracking import compute_input_hash, track_run
 from pw_core.llm.router import get_agent_config
+from pw_core.llm.parse import parse_llm_json
 from pw_core.clients.openrouter import get_client
 
 
@@ -141,7 +142,7 @@ Returns `None` on miss or when caching is disabled for the agent. On hit, return
 | `input_hash` | `str` | The SHA256 key |
 | `hit_type` | `str` | Always `"exact"` |
 | `similarity` | `float` | Always `1.0` |
-| `created_at` | `datetime` | When the cache entry was created |
+| `created_at` | `datetime \| None` | When the cache entry was created |
 
 ## cache_store()
 
@@ -176,7 +177,7 @@ hit_run_id = record_cache_hit(hit=hit, duration_ms=2)
 Creates:
 - `llm_runs` row: `status='cache_hit'`, zero tokens, zero cost
 - `llm_run_links` row: `parent_run_id=source_run_id`, `relation='cache'`
-- `llm_run_tags` rows: `cache:exact` and `cache_age:<bucket>`
+- `llm_run_tags` rows: `cache:exact` and `cache_age:<fresh|<1d|<7d|>7d|unknown>` (`unknown` when the entry has no `created_at`)
 
 ## Invalidation
 
@@ -209,7 +210,7 @@ Registered on the shared `pw_core.llm.tracking.schema.metadata`, and the only ta
 | Column | Type | Notes |
 |--------|------|-------|
 | `id` | INT PK | |
-| `input_hash` | CHAR(64) | SHA256 hex — unique with `agent_type_id` |
+| `input_hash` | VARCHAR(64) | SHA256 hex — unique with `agent_type_id` |
 | `agent_type_id` | SMALLINT FK | → `llm_agent_types.id` |
 | `model_id` | SMALLINT FK | → `llm_models.id` |
 | `source_run_id` | BIGINT FK | → `llm_runs.id` ON DELETE CASCADE |
@@ -244,6 +245,7 @@ when it exists.
 ### cache_stats() — the key-volatility diagnostic
 
 ```python
+from pw_core.db.dialect import utc_cutoff
 from pw_core.llm.cache import cache_stats
 
 rows = cache_stats()  # every agent with entries or runs
@@ -307,6 +309,14 @@ Enabling the exact cache for a consumer project requires:
 4. **Update each service** to call `cache_lookup` before the LLM call and `cache_store` after (see Quick start above).
 
 No `pyproject.toml` changes needed — the cache module uses only dependencies already declared in `pw-core`.
+
+## Other public names
+
+From `pw_core.llm.cache`:
+
+- `AgentCacheConfig` — one agent's resolved policy; `get_agent_cache_config(agent_type)` returns it.
+- `ExactCacheRepo` — reads and writes `llm_cache_entries` rows (`store`, `lookup`).
+- `clear_config_cache()` — drop the cached `cache.yaml` and the once-per-process warning set (tests).
 
 ## See also
 

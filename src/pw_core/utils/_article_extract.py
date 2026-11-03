@@ -14,7 +14,6 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
-from pw_core._env_compat import env_name
 from pw_foundation.log import get_logger
 from pw_foundation.utils.env import resolve_str
 from pw_core.utils.url_parse import extract_path_date
@@ -35,7 +34,7 @@ def _quiet_extractor_loggers() -> None:
     name = (
         resolve_str(
             None,
-            env_name(_EXTRACTOR_LOG_LEVEL_ENV),
+            _EXTRACTOR_LOG_LEVEL_ENV,
             default=_EXTRACTOR_LOG_LEVEL_DEFAULT,
         )
         or _EXTRACTOR_LOG_LEVEL_DEFAULT

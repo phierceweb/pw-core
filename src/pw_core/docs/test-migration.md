@@ -1,6 +1,6 @@
 # Test Migration
 
-Checklist for verifying a consumer project after upgrading pw-core or migrating code to use framework APIs. Run steps in order; report pass/fail for each.
+Checklist for verifying a consumer project after moving its own code onto pw-core APIs, or after a pw-core major upgrade. Run steps in order; report pass/fail for each.
 
 ## Identifying changes
 
@@ -102,4 +102,4 @@ Skip if the migration was purely service/repo layer.
 
 - Clear module-level caches in tests that touch cached state (run ID caches, model ID caches). See [testing.md](testing.md) for reset helpers.
 - Check function signatures before writing tests — repo functions may take different parameter shapes.
-- Tests use file-backed SQLite via pw_core fixtures (`pw_tables`); use `transaction()` for raw SQL in tests. The DB fixtures are opt-in — add `pytest_plugins = ["pw_core.testing.db_fixtures"]` to your `conftest.py`. See [testing.md](testing.md) for reset helpers.
+- Tests use file-backed SQLite via pw_core fixtures (`pw_tables`); use `transaction()` for raw SQL in tests. The DB fixtures are opt-in — add `pytest_plugins = ["pw_core.testing.db_fixtures"]` to your `conftest.py`.

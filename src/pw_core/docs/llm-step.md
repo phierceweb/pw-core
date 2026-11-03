@@ -36,7 +36,7 @@ else:
     persist(item, result.value, result.run_id)     # persistence is yours
 ```
 
-`StepResult` unpacks as `(value, content, run_id, cache_hit, validation)`. Every `tracked_messages_call` kwarg passes through under the same name.
+`StepResult` unpacks as `(value, content, run_id, cache_hit, validation)`. Every `tracked_messages_call` kwarg except `repo` passes through under the same name.
 
 ## Semantics
 

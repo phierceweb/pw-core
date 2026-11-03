@@ -13,7 +13,7 @@ from pw_core.llm.tracking import track_run
 from pw_core.clients.openrouter import get_client
 
 
-@track_run(agent_type="summarizer")
+@track_run(agent_type="summarizer", provider="openrouter")
 def _tracked_chat(*, model, messages, **sampling):
     return get_client().chat(model=model, messages=messages, **sampling)
 
@@ -122,14 +122,13 @@ Spent per dimension is the same snapshot-plus-live-delta figure (`current_usage(
 
 `llm_budget_snapshots` carries `spent_usd`, `spent_tokens`, and `run_count` — `refresh_snapshots()` writes all three from one aggregate at one cutoff.
 
-### Consumer migration
+### Upgrading a database created before 0.22.0
 
-pw-core ships no migration mechanism; add an alembic revision in each consumer for:
+pw-core ships no migration mechanism; add an alembic revision in each consumer that:
 
-- `llm_budgets.limit_tokens` — new, `BigInteger`, nullable
-- `llm_budgets.limit_calls` — new, `Integer`, nullable
-- `llm_budgets.limit_usd` — now **nullable** (was NOT NULL)
-- `llm_budget_snapshots.spent_tokens` — new, `BigInteger`, NOT NULL, server default `0`
+- adds `llm_budgets.limit_tokens` (`BigInteger`, nullable) and `llm_budgets.limit_calls` (`Integer`, nullable)
+- makes `llm_budgets.limit_usd` nullable
+- adds `llm_budget_snapshots.spent_tokens` (`BigInteger`, NOT NULL, server default `0`)
 
 ### When the config cannot be read
 
@@ -174,7 +173,7 @@ Checks in order: **global → agent → job_kind → job_id → tag**, each budg
 
 When *no* enabled row matches any of those scopes the call is uncapped, and that is reported rather than passed over: `budget_no_scopes_matched` logs at WARNING the first time a given `(agent_type, job_kind, tags)` combination goes unmatched and at DEBUG thereafter. `job_id` is excluded from the dedupe key as unbounded, and the set is capped (`_NO_SCOPE_WARN_LIMIT` in `budget/check.py`) so caller-supplied tags cannot grow it without limit; a process restart re-arms. Note that `list_for_scopes` always includes the `global` scope, so any deployment with a global budget never reaches this path.
 
-`CostBudgetExceeded` attributes: `scope_kind`, `scope_value`, `period`, `limit_value`, `spent_value`, `projected_value`, and `dimension` (`'usd' | 'tokens' | 'calls'`, default `'usd'`). The `*_value` attributes are floats in the **tripping dimension's** unit — dollars when `dimension == 'usd'`, token or call counts otherwise — and the message names the dimension. A handler that formats dollars should read the `*_value` attributes and branch on `dimension`. The legacy `limit_usd` / `spent_usd` / `projected_usd` names remain and always carry USD, whichever dimension tripped, so an existing handler that renders them as currency needs no change. They are not aliases of the `*_value` attributes: on a token or call block they report the scope's USD figures, and `limit_usd` is `0.0` when the scope sets no USD cap.
+`CostBudgetExceeded` attributes: `scope_kind`, `scope_value`, `period`, `limit_value`, `spent_value`, `projected_value`, and `dimension` (`'usd' | 'tokens' | 'calls'`, default `'usd'`). The `*_value` attributes are floats in the **tripping dimension's** unit — dollars when `dimension == 'usd'`, token or call counts otherwise — and the message names the dimension. A handler that formats dollars should read the `*_value` attributes and branch on `dimension`. `limit_usd` / `spent_usd` / `projected_usd` also remain and always carry USD, whichever dimension tripped, so a handler that renders them as currency needs no change. They are not aliases of the `*_value` attributes: on a token or call block they report the scope's USD figures, and `limit_usd` is `0.0` when the scope sets no USD cap.
 
 `CostBudgetExceeded` is a `FlowException` subclass — an expected domain failure, not a bug. In a `create_app()` web app, a budget block that reaches the HTTP boundary renders as a **429** domain response (JSON or HTML per the `Accept` header — see [exceptions.md](https://github.com/phierceweb/pw-foundation/blob/main/src/pw_foundation/docs/exceptions.md)).
 
@@ -182,7 +181,7 @@ When *no* enabled row matches any of those scopes the call is uncapped, and that
 
 Per budget: snapshot value + live delta from `llm_runs`. Runs with `status IN ('cache_hit', 'budget_blocked')` are excluded. `pw_core.budget.current_usage(budget)` is that figure across all three dimensions (`current_spent(budget)` is its USD view) — the guard and every reporting surface (including the admin `/budgets` page) read it rather than the snapshot alone.
 
-`current_usage()` is built on `pw_core.budget.aggregate_usage(budget=, period_start=, period_end=, cutoff=None, conn=None)`, which runs that aggregate directly against `llm_runs` and returns the same `{"usd", "tokens", "calls"}` dict; `refresh_snapshots()` calls it with a `cutoff` to write a snapshot. `aggregate_spent()` is its `(usd, calls)` tuple view, kept for existing callers.
+`current_usage()` is built on `pw_core.budget.aggregate_usage(budget=, period_start=, period_end=, cutoff=None, conn=None)`, which runs that aggregate directly against `llm_runs` and returns the same `{"usd", "tokens", "calls"}` dict; `refresh_snapshots()` calls it with a `cutoff` to write a snapshot. `aggregate_spent()` returns the same aggregate as a `(usd, calls)` tuple.
 
 The two halves meet at one cutoff. `refresh_snapshots()` reads the DB server clock once, aggregates `created_at < cutoff`, and stores that same value as the snapshot's `last_updated`; the live delta then sums `created_at >= last_updated`. Every run falls in exactly one half — nothing is lost to the window between aggregating and writing.
 
@@ -307,3 +306,15 @@ Sequential, defensively:
 4. **Stale projection.** If `llm_cost_rates` drifts from actual costs, run a projection-accuracy query weekly (compare projected vs actual `cost_usd` on recent `llm_runs`) and update rates when `|mean_delta| > 5%`.
 5. **Missing rate.** When a model has no row, projection falls back to the shared price list, then the 24h mean — slow to adapt but never fails closed on missing data. A model none of them knows projects at `0.0` and records `0.0`: the cap goes blind to it, loudly (`budget_projection_unknown`, `pricing_unknown_model`).
 6. **Unarmed guard.** A deployment whose budgets were never synced — or whose `budgets.yaml` cannot be read — runs uncapped. Nothing raises; the state is reported instead (`budget_config_unreadable`, `budget_sync_refused_mass_disable`, `budget_no_scopes_matched`). Alert on those events; a silent log is an unenforced cap.
+
+## Other public names
+
+From `pw_core.budget`:
+
+- `compute_period_end(period, start)` — the exclusive end date of the `daily`/`monthly` period that starts on `start`; the counterpart of `compute_period_start`.
+- `BudgetSnapshotRepo` — reads and writes `llm_budget_snapshots` rows.
+- `ALL_BUDGET_TABLES` — the budget tables' SQLAlchemy `Table` objects, for DDL in tests and migrations.
+- `clear_config_cache()` — drop the cached budget config (tests).
+- `BudgetRepo` — reads and writes `llm_budgets` rows.
+- `CostRateRepo` — reads and writes `llm_cost_rates` rows.
+- `aggregate_usage(*, budget, period_start, period_end, ...)` — aggregate the runs matching a budget's scope in `[period_start, period_end)`.

@@ -26,9 +26,9 @@ p = paginate_params(
 |-----------|------|---------|-------------|
 | `page` | `int` | — | Current page (1-based). Clamped to minimum 1. |
 | `per_page` | `int` | — | Items per page. Clamped to 1–`max_per_page`. |
-| `sort` | `str \| None` | `None` | Sort field. Falls back to `default_sort` if missing or not in `allowed_sorts`. |
+| `sort` | `str \| None` | `None` | Sort field, stripped and lowercased. Falls back to `default_sort` if missing or not in `allowed_sorts`. |
 | `dir` | `str \| None` | `None` | Sort direction. Accepts `"asc"` (case-insensitive); anything else falls back to `default_dir`. |
-| `allowed_sorts` | `set[str] \| None` | `None` | Valid sort fields. If `None`, any sort value is accepted. |
+| `allowed_sorts` | `set[str] \| None` | `None` | Valid sort fields, in lowercase (`sort` is lowercased before the check). If `None` or empty, any value is accepted — pass a non-empty set whenever the value reaches an `ORDER BY`. |
 | `default_sort` | `str` | `"id"` | Fallback sort field. |
 | `default_dir` | `str` | `"desc"` | Fallback sort direction. |
 | `max_per_page` | `int \| None` | `None` | Upper bound for `per_page`. Reads `MAX_PER_PAGE` from env (default 200) when not provided. |

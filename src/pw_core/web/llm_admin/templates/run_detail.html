@@ -16,7 +16,7 @@
 <h2>Sampling</h2>
 <table>
   <tr><th>temperature</th><td>{{ run.temperature }}</td><th>top_p</th><td>{{ run.top_p }}</td><th>max_tokens</th><td>{{ run.max_tokens }}</td></tr>
-  <tr><th>seed</th><td>{{ run.seed }}</td><th>provider</th><td>{{ run.provider }}</td><th>fingerprint</th><td>{{ run.model_fingerprint or '—' }}</td></tr>
+  <tr><th>seed</th><td>{{ run.seed }}</td><th>provider</th><td>{{ run.provider or '—' }}</td><th>fingerprint</th><td>{{ run.model_fingerprint or '—' }}</td></tr>
   <tr><th>input_hash</th><td colspan="5"><code>{{ run.input_hash or '—' }}</code></td></tr>
 </table>
 

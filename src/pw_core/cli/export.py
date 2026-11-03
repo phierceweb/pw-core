@@ -16,7 +16,7 @@ from rich.console import Console
 from pw_core.cli import create_cli, run_cli
 from pw_core.llm.tracking.otel import export_runs
 
-_HELP = "Export tracked LLM runs to an observability backend."
+_HELP = "Export tracked LLM runs to an observability backend (experimental)."
 
 app = typer.Typer(name="export", help=_HELP, no_args_is_help=True, add_completion=False)
 
@@ -54,7 +54,7 @@ def otel(
     ),
     dry_run: bool = typer.Option(False, "--dry-run", help="Count the spans; send nothing."),
 ) -> None:
-    """Send llm_runs as OpenTelemetry GenAI spans to the OTEL_EXPORTER_OTLP_* endpoint."""
+    """Send llm_runs as OpenTelemetry GenAI spans to the OTEL_EXPORTER_OTLP_* endpoint (experimental)."""
     agents = [a.strip() for value in include_bodies or [] for a in value.split(",") if a.strip()]
     summary = export_runs(
         since=_iso(since, "--since"),

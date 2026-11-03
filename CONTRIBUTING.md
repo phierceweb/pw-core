@@ -45,9 +45,10 @@ bin/run python -m mypy                  # type check (config in [tool.mypy])
 bin/run python -m pw_foundation.guards        # structural gate (reads .pw-guards.toml)
 ```
 
-`bin/test` and `bin/run` dispatch through `.venv/` — the same wrappers
-`bin/new-consumer` scaffolds into consumer projects. With the venv activated the
-bare `pytest` / `ruff` commands work too.
+`bin/test` and `bin/run` dispatch through `.venv/`. `bin/test` is the same
+wrapper `bin/new-consumer` scaffolds into consumer projects; `bin/run` here runs
+any `.venv/bin` executable, while the scaffolded one starts the project's own CLI
+or app. With the venv activated the bare `pytest` / `ruff` commands work too.
 
 And hold the change to these standards:
 
@@ -62,7 +63,11 @@ And hold the change to these standards:
   [`.ai/rules/code-style.md`](.ai/rules/code-style.md).
 - **Layering.** Respect the layered architecture (repository → service →
   orchestrator → entry point); no layer imports from a layer above it. See
-  [`.ai/rules/layering.md`](.ai/rules/layering.md).
+  [`.ai/rules/layering.md`](.ai/rules/layering.md). The layering check reads
+  layers from a consumer's `app/<layer>/` tree, so it does not run on pw-core
+  itself; here the enforced contract is import tiers —
+  `tests/test_extras_tiers.py` and the `bare` CI job keep each extra importable
+  without the others.
 
 ## Coding conventions
 
@@ -76,16 +81,11 @@ The full set lives in [`.ai/rules/`](.ai/rules/). The essentials:
 
 ## Versioning & deprecations
 
-Stability lives in **tags**. `main` may contain unreleased work between version tags — pin to a tagged release (or a published version) for production use.
+pw-core follows [semantic versioning](https://semver.org): a patch release is fixes only, a minor release is additive and backward-compatible, and a major release may break. Pin to a release (`pw-core~=1.0`), not `main`, which carries unreleased work between tags.
 
-- **Pre-1.0** (now): a minor bump (`0.X.0`) may include breaking changes, always called out in `CHANGELOG.md`; a patch bump (`0.0.X`) is fixes only.
-- **From 1.0**: semantic versioning — patch = fixes, minor = additive and backward-compatible, major = breaking. Anything documented under `docs/` is the stable surface that contract covers.
+The stable surface is what the docs indexed in [`docs/modules.md`](src/pw_core/docs/modules.md) show: those modules and the names they document, imported from the paths they show. Anything else — an undocumented submodule, a `_`-prefixed module or name, a doc marked **Experimental**, `pw_core.guards_rules`, the admin dashboard's `api`, `pages` and `queries` modules apart from `queries.job_detail` — may change in any release. `tests/test_public_surface.py` checks that an indexed page names every public module or a package above it, and that every exported name — a module's `__all__`, else its lazy re-exports, else its public top-level defs and constants — appears on an indexed page that also shows its module.
 
-A deprecated API keeps working and emits a `DeprecationWarning` naming its replacement, for at least one minor release (pre-1.0) or until the next major (post-1.0) before removal. Current deprecations:
-
-- `pw_core.clients.routing.get_routed_client(use_claude_code)` → use `pw_core.llm.router.resolve_agent` or `get_client_for_backend`.
-- `pw_core.llm.tracking.track_run()` without an explicit `provider=` → pass the backend (e.g. `resolve_agent(...).backend`) or `provider=None`.
-- `PF_*` env vars → set the `PW_*` spelling. This fallback warns with a `FutureWarning`, which Python shows by default.
+A deprecated API keeps working and emits a `DeprecationWarning` naming its replacement until the next major release.
 
 ## License
 

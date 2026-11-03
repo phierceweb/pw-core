@@ -15,9 +15,9 @@ re-fetch could change the verdict (only :data:`PERMANENT_FETCH_STATUSES`
 members are final). One URL per call; callers parallelize. The
 extraction chain lives in ``_article_extract``.
 
-Requires the ``articles`` extra (``pip install 'pw-core[articles]'``);
-without it the import works and :func:`fetch_article` raises a helpful
-``ImportError`` at first call. For project-side caching, key on
+Requires the ``crawl`` extra (``pip install 'pw-core[crawl]'``). Without httpx
+or tenacity the import raises ``ImportError``; without trafilatura or htmldate
+the import works and :func:`fetch_article` raises it at first call. For project-side caching, key on
 :data:`FETCHER_VERSION` — it bumps when extraction changes invalidate
 cached results.
 
@@ -44,7 +44,6 @@ except ImportError as e:  # pragma: no cover - exercised by bare-install CI
 
     raise extra_import_error("articles", "tenacity", feature="pw_core.utils.article_fetch") from e
 
-from pw_core._env_compat import env_name
 from pw_foundation.log import get_logger
 from pw_foundation.utils.env import resolve_bool
 from pw_core.utils._article_extract import (  # noqa: F401 — helpers re-exported
@@ -145,7 +144,7 @@ def fetch_article(
         A :class:`FetchedArticle`. Check ``fetch_status`` to branch.
 
     Raises:
-        ImportError: when the ``articles`` extra is not installed.
+        ImportError: when trafilatura or htmldate (the ``articles`` deps) is missing.
             Raised at first call, not at import time.
     """
     _require_deps()
@@ -157,9 +156,7 @@ def fetch_article(
     canon = canonical_url(url) or url
     outlet = domain_of(url)
 
-    wayback_fallback = resolve_bool(
-        wayback_fallback, env_name("PW_ARTICLE_WAYBACK_FALLBACK"), default=True
-    )
+    wayback_fallback = resolve_bool(wayback_fallback, "PW_ARTICLE_WAYBACK_FALLBACK", default=True)
 
     # ── live fetch with retry ──
     fetch_status, body_text = _live_fetch_with_retry(url)

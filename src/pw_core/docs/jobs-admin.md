@@ -51,9 +51,11 @@ pw-core does not bundle authentication. Supply a FastAPI dependency via `auth_de
 | `GET {prefix}/api/{id}` | JSON bundle `{job, steps, events}` (404 unknown). |
 | `POST {prefix}/api/{id}/cancel` | Body `{"reason": "..."}` optional. See below. |
 
+For `url_path_for`, the routes are named, in order, `jobs_admin_jobs_list`, `jobs_admin_job_detail`, `jobs_admin_job_bundle` and `jobs_admin_cancel_job`. The prefix keeps them apart from the [LLM admin](llm-admin.md#pages)'s routes and the consumer's own.
+
 ## Cancel semantics
 
-Cancel is soft: the row transitions to `canceled` (a `canceled` event is recorded); an already-terminal job returns **409** — the UI treats that as "refresh state", not an error. When `terminate_hook` is provided it is invoked *first*, so subprocess-mode consumers (see [jobs-runtime](jobs-runtime.md)) also kill the process; the runtime's canceled-check keeps the two paths from fighting over the terminal state. Thread-mode consumers pass no hook — their in-flight step finishes and the worker exits on its next transition.
+Cancel is soft: the row transitions to `canceled` (a `canceled` event is recorded); an already-terminal job returns **409** — the UI treats that as "refresh state", not an error. An unknown id also returns 409 (unlike [llm-admin](llm-admin.md), which returns 404); the default reason is `canceled from web`. When `terminate_hook` is provided it is invoked *first*, so subprocess-mode consumers (see [jobs-runtime](jobs-runtime.md)) also kill the process; the runtime's canceled-check keeps the two paths from fighting over the terminal state. Thread-mode consumers pass no hook — their in-flight step finishes and the worker exits on its next transition.
 
 ## Customization
 

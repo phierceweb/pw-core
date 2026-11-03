@@ -4,7 +4,9 @@
 the connection you already hold.
 
 ```python
-from pw_core.db import now_sql, row_lock_suffix, utc_cutoff, transaction
+from sqlalchemy import text
+
+from pw_core.db import now_sql, transaction
 
 with transaction() as conn:
     conn.execute(
@@ -106,6 +108,8 @@ would render a trailing offset that breaks the ordering either way.
 
 ```python
 from sqlalchemy import DateTime, bindparam, text
+
+from pw_core.db import utc_cutoff
 
 stmt = text("SELECT id FROM jobs WHERE updated_at < :cutoff").bindparams(
     bindparam("cutoff", type_=DateTime())

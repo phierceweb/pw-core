@@ -122,7 +122,7 @@ Conservative: exact body sha256 match (similarity 1.0) OR same-folder
 
 ## cache
 
-Stage-cascade cache invalidation. Re-run from a specific stage, deleting that stage's cache plus every downstream stage's structural files — while preserving downstream content-keyed caches that self-invalidate via their own key.
+Stage-cascade cache invalidation. Re-run from a specific stage, deleting that stage's content-keyed cache and structural files plus every downstream stage's structural files — while preserving downstream content-keyed caches that self-invalidate via their own key.
 
 ### StageDefinition + StageRegistry
 
@@ -168,8 +168,9 @@ deleted = invalidate_caches(
     registry=REGISTRY,
     source_stem="my-doc",
 )
-# Deleted: enrich-cache + every downstream stage's structural files
-# Preserved: extract structural files, enrich structural file from extract
+# Deleted: .enrich-cache, enrich's own structural file (my-doc.enrich.md), and every
+#          downstream stage's structural files (sections, INDEX.md, my-doc.md)
+# Preserved: extract's structural file (my-doc.raw.md)
 ```
 
 `files_to_invalidate(...)` is the dry-run variant — returns the path list without deleting.
@@ -180,7 +181,7 @@ File templates use `{stem}` as the only placeholder (the source input's filename
 
 Walking from the target stage forward in the registry:
 
-- **Target stage's own** content-keyed files → busted (the user asked for it)
+- **Target stage's own** content-keyed and structural files → busted (the stage is being re-run)
 - **Every downstream stage's** structural files → busted (they depend on upstream)
 - **Every downstream stage's** content-keyed files → preserved (self-invalidating)
 
@@ -291,6 +292,12 @@ Omit `skip_fresh` (the default) for explicit-slice-only pipelines whose phases h
 ### Stage identity
 
 A phase's `name` is the slice handle *and* the key it shares with [`StageDefinition`](#stagedefinition--stageregistry) in `cache`. Use the same string in both so ordering, invalidation, and execution agree on what a stage is.
+
+## Other public names
+
+- `pw_core.pipeline.run_record.RunRecord` — the typed form of a written run record.
+- `pw_core.pipeline.baseline_diff.SectionRename` — one detected section rename: `old_path`, `new_path`, `similarity`.
+- `pw_core.pipeline.run_record.DEFAULT_FILENAME` — the run record's default file name.
 
 ## See also
 

@@ -35,7 +35,7 @@ _MOVED: dict[str, dict[str, str]] = {
         "_RETRY_BACKOFF_BASE": "pw_core.clients._anthropic_retry",
         "_RETRYABLE_STATUS_CODES": "pw_core.clients._anthropic_retry",
         "_is_retryable": "pw_core.clients._anthropic_retry",
-        "_timeout_left_the_client": "pw_core.clients._anthropic_retry",
+        "_request_left_the_client": "pw_core.clients._anthropic_retry",
     },
     "pw_core.budget.check": {
         "compute_period_end": "pw_core.budget.periods",

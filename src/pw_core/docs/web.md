@@ -24,7 +24,7 @@ app = create_app(
 | `cors_origins` | `list[str]` | `None` | Allowed CORS origins (empty = no CORS). `"*"` is refused while credentials are on |
 | `cors_allow_credentials` | `bool` | `True` | Send `Access-Control-Allow-Credentials` |
 | `static_dir` | `Path \| str` | `None` | Static files directory (mounted at `/static`) |
-| `template_dir` | `Path \| str` | `None` | Jinja2 templates directory |
+| `template_dir` | `Path \| str` | `None` | Recorded on `app.state.template_dir` only; call `setup_templates(app, template_dir=...)` to build the Jinja2 environment |
 | `log_requests` | `bool` | `True` | Enable request logging middleware |
 | `rate_limit` | `bool` | `True` | Enable rate limiting. Reads `API_RATE_LIMIT_PER_MINUTE` from env (default 60). Requires `pw-core[ratelimit]`. |
 
@@ -58,16 +58,16 @@ Exceptions are mapped to HTTP responses automatically. Each `FlowException` subc
 | A validation error wrapping a validator's `InvalidInputError` | That of the `InvalidInputError` | pydantic's `ValidationError`, or FastAPI's `RequestValidationError` / `WebSocketRequestValidationError` / `ResponseValidationError`: answered by the handler for the `InvalidInputError`'s class (→ 422), whatever else it holds |
 | Any other validation error | As without pw-core | FastAPI's own answer for request and websocket errors; a `ValidationError` goes to the app's `ValueError` handler if it has one, else 500 |
 | `AppError` | 500 | Logged with traceback; generic message shown to user |
-| `HTTPException` | Status from exception | Standard FastAPI behavior |
+| `HTTPException` | Status from exception | Its `headers` (`Retry-After`, `Allow`, …) are sent on the JSON, built-in HTML and project-template responses alike, apart from those that describe a body (`Content-Type`, `Content-Length`, `Content-Encoding`, `Transfer-Encoding`), since the rendered page has its own |
 | Unhandled `Exception` | 500 | Logged with traceback; generic message shown |
 
 pydantic wraps a validator's `InvalidInputError` because it is a `ValueError` (see [exceptions.md](https://github.com/phierceweb/pw-foundation/blob/main/src/pw_foundation/docs/exceptions.md#builtin-bases-valueerror-and-runtimeerror)). The handlers for the four validation-error classes are wrapped when the app builds its middleware stack, so a handler you register for one of them — before or after `create_app`, or through `exception_handlers=` — still receives only the ordinary ones.
 
 ### Error pages
 
-Built-in self-contained HTML error pages for: 400, 403, 404, 405, 422, 429, 500, 502, 503.
+Built-in self-contained HTML error pages for: 400, 403, 404, 405, 409, 422, 429, 500, 502, 503.
 
-**Custom template override**: If your project has `shared/error.html` in the template directory, the framework uses it instead of the built-in page. The template receives: `title`, `code`, `heading`, `message`.
+**Custom template override**: If your project has `shared/error.html` in the template directory passed to `setup_templates`, the framework uses it instead of the built-in page (`create_app(template_dir=...)` alone does not enable it). The template receives: `title`, `code`, `heading`, `message`.
 
 **API-aware**: Requests with `Accept: application/json` get JSON responses:
 
@@ -151,7 +151,7 @@ limiter = setup_rate_limit(app)
 async def expensive(request: Request): ...
 ```
 
-Storage backend: Redis if `REDIS_URL` is set, otherwise in-memory. If `slowapi` is not installed, rate limiting is silently skipped.
+Storage backend: Redis if `REDIS_URL` is set, otherwise in-memory; an unreachable Redis falls back to in-memory with a `rate_limit_redis_unreachable` warning. If `slowapi` is not installed, rate limiting is skipped with a `rate_limit_skipped` warning.
 
 ## LLM admin sub-app
 
@@ -184,7 +184,7 @@ app.include_router(health_router())
 {"status": "ok", "checks": {"db": "ok"}}
 ```
 
-Returns 200 if all checks pass, 503 if any check fails (with `"status": "degraded"`).
+Returns 200 if all checks pass, 503 if any check fails (with `"status": "degraded"`). A failing check reports `"error"`, never the exception text; `check_redis=True` with `REDIS_URL` unset reports `"skipped: REDIS_URL not set"` and counts as a failure.
 
 ### require_db dependency
 

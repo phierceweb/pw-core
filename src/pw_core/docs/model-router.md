@@ -24,6 +24,7 @@ This is not the LLM tracking backbone. Tracking (`pw_core.llm.tracking`) records
 - [Integration with tracking](#integration-with-tracking)
 - [Operational rollout](#operational-rollout)
 - [Adding a new agent](#adding-a-new-agent)
+- [Other public names](#other-public-names)
 
 ---
 
@@ -218,7 +219,7 @@ cfg = get_agent_config("summarizer")
 content, usage = client.chat(messages=msgs, **cfg)
 ```
 
-Returns a fresh `dict` per call — mutating it does not affect the cache. Always contains a `model` key plus sampling kwargs; never contains `backends`, `default_backend`, `fallback`, `client_kwargs`, or declared `non_chat_keys`.
+Returns a fresh `dict` per call — mutating it does not affect the cache. Always contains a `model` key plus sampling kwargs. In the nested form it never contains `backends`, `default_backend`, `fallback`, `client_kwargs`, or declared `non_chat_keys`; a flat agent's block is returned as written minus `non_chat_keys`.
 
 ### `resolve_backend(slug, *, backend=None) -> str`
 
@@ -292,8 +293,7 @@ agents:
 - Custom factories are called on every acquisition with the backend block's `client_kwargs` (if any) and own their lifecycle (fresh per call, cached, pooled — their choice).
 - Built-ins are lifecycle-managed by the registry: no kwargs returns the module singleton (`get_client()`); with kwargs, a fresh instance is constructed via the module's `new_client()` and cached per `(backend, kwargs)` signature — so two agents tuning the same backend differently get distinct clients, re-resolution reuses them, and the kwargs-less singleton is never poisoned. (`new_client()` on `openrouter` / `claude_code` / `anthropic` is also directly callable — same env resolution as `get_client()`, no caching.)
 - Registering a built-in name overrides it for the process — useful in tests.
-- `get_client_for_backend(name, **kwargs)` is the direct acquisition path for callers that don't use the YAML router; `registered_backends()` lists what's routable; `clear_client_cache()` drops the per-signature instances (tests).
-- `get_routed_client(use_claude_code: bool)` is **deprecated** (removed in v1.0): the boolean shape baked in OpenRouter as the silent default. Use `resolve_agent` or `get_client_for_backend`.
+- `get_client_for_backend(name, **kwargs)` is the direct acquisition path for callers that don't use the YAML router; `registered_backends()` lists what's routable; `unregister_client(name)` removes a registration (`ConfigurationError` if `name` was never registered); `clear_client_cache()` drops the per-signature instances (tests).
 
 ---
 
@@ -342,6 +342,8 @@ All failures raise `pw_foundation.exceptions.ConfigurationError` — operator-fi
 | All fallback candidates unavailable | `agent '<slug>': no available backend — tried <backend>: <error>; …` |
 | Empty slug passed to `get_agent_config` | `agent slug is required` |
 | `pyyaml` not installed | `pyyaml is required to load model_router.yaml` |
+| `assert_agents_registered` finds slugs missing | `agents missing from <path>: <slugs>` |
+| A backend entry is not a mapping | `agent '<slug>' backend '<backend>' entry must be a mapping` |
 
 `FlowException` is the wrong base class here — these are not normal domain failures, they are deployment-time misconfigurations. The app should refuse to serve traffic until they are fixed.
 
@@ -394,7 +396,7 @@ Or, when using the `@track_run` decorator, pass `**cfg` through the wrapped call
 from pw_core.llm.tracking import track_run
 
 
-@track_run(agent_type="summarizer")
+@track_run(agent_type="summarizer", provider="openrouter")
 def tracked_chat(*, model, messages, **sampling):
     return get_client().chat(model=model, messages=messages, **sampling)
 
@@ -469,3 +471,8 @@ GROUP BY m.name;
    ```
 
 4. **No DB work needed.** Tracking auto-inserts the `llm_agent_types` row on the first call via `resolve_agent_type_id()`. If you want a human-facing description, pre-seed the row in your project's data migration.
+
+## Other public names
+
+- `pw_core.clients.routing.BUILTIN_BACKENDS` — the names of the built-in backends.
+- `pw_core.llm.clear_router_cache` — `pw_core.llm.router.clear_cache`, re-exported at the package root.

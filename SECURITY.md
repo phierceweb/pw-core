@@ -14,9 +14,10 @@ reproduce. You can expect an initial acknowledgement within a few days.
 
 ## Supported versions
 
-pw-core is pre-1.0 and under active development. Security fixes land in the
-latest tagged release; there is no long-term-support branch yet. Pin to a
-tagged release and upgrade promptly when a fix ships.
+pw-core follows semantic versioning. Security fixes land in the latest release
+of the current major line (1.x); there is no long-term-support branch for an
+older line. Pin `~=1.0` so a patch release reaches you, and upgrade promptly
+when a fix ships.
 
 ## Scope
 
@@ -26,7 +27,11 @@ security-relevant surfaces are:
 - **`pw_core.clients`** — the LLM transport layer (HTTP requests, subprocess
   invocation, API-key handling).
 - **`pw_core.web`** — the FastAPI app factory and its error-page and
-  rate-limit middleware.
+  rate-limit middleware, and the mountable admin routers, which refuse to
+  mount without an `auth_dep` unless `allow_unauthenticated=True` is passed.
+- **`pw_core.fetch`** — outbound HTTP: the SSRF guard on every URL and
+  redirect hop (`pw_core.utils.url_safety`), response-size caps, and
+  `pw_core.fetch.images`, which writes downloaded files to disk.
 - **`pw_core.db`** — the database/connection layer.
 
 API keys and other secrets are read from the environment and must never be

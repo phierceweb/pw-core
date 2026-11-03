@@ -128,7 +128,14 @@ def register_error_handlers(app: FastAPI) -> None:
         if code >= 500:
             logger.error("http_error", status=code, detail=exc.detail, path=request.url.path)
 
-        return render_error(request, code, heading=heading, message=message, app=app)
+        return render_error(
+            request,
+            code,
+            heading=heading,
+            message=message,
+            app=app,
+            headers=getattr(exc, "headers", None),
+        )
 
     # Register for both FastAPI and Starlette HTTPException (they're different classes)
     app.exception_handler(HTTPException)(_handle_http_exc)

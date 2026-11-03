@@ -24,6 +24,7 @@ This doc is the implementation reference.
 - [Three-dialect support](#three-dialect-support)
 - [Datetime handling](#datetime-handling)
 - [Adding a new job kind](#adding-a-new-job-kind)
+- [Other public names](#other-public-names)
 
 ---
 
@@ -261,9 +262,9 @@ if claimed is not None:
         # ... run it ...
 ```
 
-**Ordering:** `status='pending' AND claimed_by IS NULL`, ordered by `priority DESC, created_at ASC`.
+**Eligibility:** `status='pending'` and either unclaimed (`claimed_by IS NULL`) or claimed longer ago than the lease (the claimer died before starting), ordered by `priority DESC, created_at ASC`.
 
-**Atomicity:** Implemented as `SELECT ... LIMIT 1 → UPDATE ... WHERE id=? AND claimed_by IS NULL`. If the UPDATE's rowcount is 0 (another worker won the race), the claim returns `None`. Portable across SQLite (no `FOR UPDATE SKIP LOCKED`), MySQL, and Postgres.
+**Atomicity:** Implemented as `SELECT ... LIMIT 1 → UPDATE ... WHERE id=? AND status='pending' AND (claimed_by IS NULL OR claimed_at < cutoff)`. If the UPDATE's rowcount is 0 (another worker won the race), the claim returns `None`. Portable across SQLite (no `FOR UPDATE SKIP LOCKED`), MySQL, and Postgres.
 
 **Lease expiry:**
 
@@ -324,7 +325,7 @@ All three tables live on the shared `pw_core.llm.tracking.metadata` — `metadat
 Admin CLI, installed as the `pw-jobs` console script with the `[jobs]` extra. Reads from whatever DB the consumer project configures.
 
 ```
-pw-jobs list [--kind X] [--status Y] [--since 24h] [--limit 20]
+pw-jobs list [--kind X] [--status Y] [--since 24h] [--created-by Z] [--limit 20]
 pw-jobs show <id>
 pw-jobs retry <id>
 pw-jobs cancel <id> [--reason "..."]
@@ -375,7 +376,7 @@ Every datetime column on `jobs`, `job_steps`, and `job_events` is UTC. `JobRepo`
 **Inputs** — methods that accept a datetime (`find(since=...)`) take either aware or naive values:
 
 - Aware datetimes are converted to UTC before binding.
-- Naive datetimes are assumed to already be UTC (the v0.7.0 contract).
+- Naive datetimes are assumed to already be UTC.
 
 **Outputs** — every datetime column returned from `get`, `get_with_steps`, `find`, `descendants`, `find_step`, `get_events`, and `claim_next` is stamped with `tzinfo=timezone.utc`. You can compare against `datetime.now(timezone.utc)` directly, no `.replace(tzinfo=...)` wrapping needed.
 
@@ -393,3 +394,13 @@ Every datetime column on `jobs`, `job_steps`, and `job_events` is UTC. `JobRepo`
 4. Wrap the worker body in `with Job(job_id) as job:` and `with job.step(name):`.
 5. Transition the job through the registered states; the repo rejects invalid moves with `PreconditionError`.
 6. If the kind will be picked up by distributed workers, ensure the process calls `JobRepo().claim_next(kinds=[...])` in its loop and runs `pw-jobs reclaim` (or `JobRepo().reclaim_stale()`) on a cadence.
+
+## Other public names
+
+From `pw_core.jobs`, unless a path is shown:
+
+- `JobKind` — the descriptor `register_kind` stores; `get_kind(name)` returns one, `all_kinds()` lists them sorted by name.
+- `TERMINAL_STATES` — the states that end a job.
+- `get_current_job_id()` — the active job id, or `None` when no `Job` is open.
+- `ALL_JOB_TABLES` — the jobs tables' SQLAlchemy `Table` objects, for DDL in tests and migrations.
+- `pw_core.cli.jobs.parse_duration(value)` — parse `90d` / `24h` / `30m` / `60s` / `2w` into a `timedelta`, as `pw-jobs` flags do.

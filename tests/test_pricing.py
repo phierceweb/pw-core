@@ -29,25 +29,25 @@ def _reset_pricing_state():
 
 
 def test_known_anthropic_model_cost():
-    # opus: input 15/1M, output 75/1M -> 1M each = 90.0
+    # opus 4.7: input 5/1M, output 25/1M -> 1M each = 30.0
     cost = estimate_cost(
         "anthropic",
         "claude-opus-4-7",
         prompt_tokens=1_000_000,
         completion_tokens=1_000_000,
     )
-    assert cost == pytest.approx(90.0)
+    assert cost == pytest.approx(30.0)
 
 
 def test_prefix_match_handles_date_and_dot_suffixes():
-    # date-suffixed id resolves to the haiku-4 prefix (0.80/1M input)
+    # date-suffixed id resolves to the haiku-4 prefix (1.00/1M input)
     a = estimate_cost(
         "anthropic",
         "claude-haiku-4-5-20251001",
         prompt_tokens=1_000_000,
         completion_tokens=0,
     )
-    assert a == pytest.approx(0.80)
+    assert a == pytest.approx(1.00)
     # dotted version resolves to the sonnet-4 prefix (15.0/1M output)
     b = estimate_cost(
         "anthropic",
@@ -65,12 +65,12 @@ def test_openrouter_namespace_strips_to_underlying_provider():
         prompt_tokens=1_000_000,
         completion_tokens=0,
     )
-    assert cost == pytest.approx(15.0)
+    assert cost == pytest.approx(5.0)
 
 
 def test_get_rates_returns_modelrates_or_none():
     assert get_rates("anthropic", "claude-opus-4-7") == ModelRates(
-        input=15.0, output=75.0, cache_read=1.5, cache_write=18.75, cache_write_1h=30.0
+        input=5.0, output=25.0, cache_read=0.5, cache_write=6.25, cache_write_1h=10.0
     )
     assert get_rates("anthropic", "no-such-model") is None
 
@@ -222,3 +222,127 @@ def test_cache_ttl_1h_falls_back_to_5m_rate_when_1h_undefined():
 
 def test_modelrates_cache_write_1h_defaults_none():
     assert ModelRates(input=1.0, output=2.0).cache_write_1h is None
+
+
+# Published first-party rates per 1M tokens: input, output, cache read, 5m write, 1h write.
+_PUBLISHED = {
+    "claude-fable-5-1": (10.0, 50.0, 0.25, 12.5, 20.0),
+    "claude-mythos-5-1": (10.0, 50.0, 0.25, 12.5, 20.0),
+    "claude-fable-5": (10.0, 50.0, 1.0, 12.5, 20.0),
+    "claude-mythos-5": (10.0, 50.0, 1.0, 12.5, 20.0),
+    "claude-opus-5-5": (4.0, 20.0, 0.2, 5.0, 8.0),
+    "claude-opus-5": (5.0, 25.0, 0.5, 6.25, 10.0),
+    "claude-opus-4-8": (5.0, 25.0, 0.5, 6.25, 10.0),
+    "claude-opus-4-7": (5.0, 25.0, 0.5, 6.25, 10.0),
+    "claude-opus-4-6": (5.0, 25.0, 0.5, 6.25, 10.0),
+    "claude-opus-4-5-20251101": (5.0, 25.0, 0.5, 6.25, 10.0),
+    "claude-opus-4-1-20250805": (15.0, 75.0, 1.5, 18.75, 30.0),
+    "claude-opus-4-20250514": (15.0, 75.0, 1.5, 18.75, 30.0),
+    "claude-sonnet-5-5": (2.0, 10.0, 0.1, 2.5, 4.0),
+    "claude-sonnet-5": (2.0, 10.0, 0.2, 2.5, 4.0),
+    "claude-sonnet-4-6": (3.0, 15.0, 0.3, 3.75, 6.0),
+    "claude-sonnet-4-5-20250929": (3.0, 15.0, 0.3, 3.75, 6.0),
+    "claude-sonnet-4-20250514": (3.0, 15.0, 0.3, 3.75, 6.0),
+    "claude-haiku-5-5": (0.1, 0.5, 0.01, 0.125, 0.2),
+    "claude-haiku-4-5": (1.0, 5.0, 0.1, 1.25, 2.0),
+    "claude-3-5-haiku-20241022": (0.8, 4.0, 0.08, 1.0, 1.6),
+}
+
+
+@pytest.mark.parametrize(("model", "published"), list(_PUBLISHED.items()))
+def test_builtin_rates_match_the_published_table(model, published):
+    rates = get_rates("anthropic", model)
+    assert rates is not None
+    got = (rates.input, rates.output, rates.cache_read, rates.cache_write, rates.cache_write_1h)
+    assert got == pytest.approx(published)
+
+
+@pytest.mark.parametrize(
+    ("dotted", "dashed"),
+    [
+        ("anthropic/claude-opus-4.5", "claude-opus-4-5"),
+        ("anthropic/claude-opus-4.1", "claude-opus-4-1-20250805"),
+        ("anthropic/claude-opus-5.5", "claude-opus-5-5"),
+        ("anthropic/claude-sonnet-5.5", "claude-sonnet-5-5"),
+        ("anthropic/claude-haiku-5.5", "claude-haiku-5-5"),
+        ("anthropic/claude-3.5-haiku", "claude-3-5-haiku-20241022"),
+    ],
+)
+def test_dotted_ids_price_like_their_dashed_form(dotted, dashed):
+    assert get_rates("openrouter", dotted) == get_rates("anthropic", dashed)
+
+
+def test_a_registered_dotted_prefix_matches_as_written():
+    register_rates("openai", "gpt-4.1", ModelRates(input=2.0, output=8.0))
+    assert get_rates("openai", "gpt-4.1-mini") == ModelRates(input=2.0, output=8.0)
+    assert get_rates("openai", "gpt-4-1106-preview") is None
+
+
+class TestLongPromptRates:
+    """Haiku 5.5 bills a prompt over 100,000 tokens — cache reads and writes included — at
+    its long-prompt rates, for every token of that request."""
+
+    def test_at_the_threshold_base_rates_apply(self):
+        cost = estimate_cost(
+            "anthropic", "claude-haiku-5-5", prompt_tokens=100_000, completion_tokens=1_000
+        )
+        assert cost == pytest.approx(100_000 * 0.1 / 1e6 + 1_000 * 0.5 / 1e6)
+
+    def test_over_the_threshold_every_token_pays_the_long_rate(self):
+        cost = estimate_cost(
+            "anthropic",
+            "claude-haiku-5-5",
+            prompt_tokens=60_000,
+            completion_tokens=1_000,
+            cache_read_tokens=30_000,
+            cache_write_tokens=10_001,
+        )
+        assert cost == pytest.approx(
+            (60_000 * 0.5 + 1_000 * 2.5 + 30_000 * 0.05 + 10_001 * 0.625) / 1e6
+        )
+
+    def test_one_hour_writes_use_the_long_one_hour_rate(self):
+        cost = estimate_cost(
+            "anthropic", "claude-haiku-5-5", cache_write_tokens=200_000, cache_ttl="1h"
+        )
+        assert cost == pytest.approx(200_000 * 1.0 / 1e6)
+
+    def test_other_models_have_no_long_prompt_tier(self):
+        cost = estimate_cost("anthropic", "claude-sonnet-5-5", prompt_tokens=900_000)
+        assert cost == pytest.approx(900_000 * 2.0 / 1e6)
+
+    @pytest.mark.parametrize(
+        "kwargs",
+        [
+            {"long_prompt_threshold": 100_000},
+            {"long_prompt": ModelRates(input=2.0, output=2.0)},
+            {"long_prompt_threshold": 0, "long_prompt": ModelRates(input=2.0, output=2.0)},
+            {"long_prompt_threshold": "100", "long_prompt": ModelRates(input=2.0, output=2.0)},
+            {"long_prompt_threshold": True, "long_prompt": ModelRates(input=2.0, output=2.0)},
+            {"long_prompt_threshold": 10.5, "long_prompt": ModelRates(input=2.0, output=2.0)},
+            {"long_prompt_threshold": 10, "long_prompt": {"input": 2.0, "output": 2.0}},
+            {
+                "long_prompt_threshold": 10,
+                "long_prompt": ModelRates(
+                    input=2.0,
+                    output=2.0,
+                    long_prompt_threshold=20,
+                    long_prompt=ModelRates(input=3.0, output=3.0),
+                ),
+            },
+        ],
+    )
+    def test_an_invalid_tier_is_refused(self, kwargs):
+        with pytest.raises(PricingError):
+            ModelRates(input=1.0, output=1.0, **kwargs)
+
+    @pytest.mark.parametrize("name", ["cache_read", "cache_write", "cache_write_1h"])
+    def test_a_tier_must_price_every_cache_rate_the_base_does(self, name):
+        with pytest.raises(PricingError, match=name):
+            ModelRates(
+                input=1.0,
+                output=1.0,
+                **{name: 0.1},
+                long_prompt_threshold=10,
+                long_prompt=ModelRates(input=2.0, output=2.0),
+            )

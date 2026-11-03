@@ -872,7 +872,7 @@ def test_project_cost_falls_back_to_shared_pricing_table(budget_db):
         estimated_prompt_tokens=1_000_000,
         estimated_completion_tokens=0,
     )
-    assert cost == pytest.approx(15.0)
+    assert cost == pytest.approx(5.0)
 
 
 def test_check_budget_blocks_call_priced_only_by_shared_table(budget_db):
@@ -880,9 +880,10 @@ def test_check_budget_blocks_call_priced_only_by_shared_table(budget_db):
     projected = project_cost(
         agent_type="drafter",
         model="claude-opus-4-7",
-        estimated_prompt_tokens=1_000_000,
+        estimated_prompt_tokens=3_000_000,
         estimated_completion_tokens=0,
     )
+    assert projected == pytest.approx(15.0)
     with pytest.raises(CostBudgetExceeded):
         check_budget(agent_type="drafter", projected_cost_usd=projected)
 

@@ -1,6 +1,59 @@
 # Changelog
 
-Notable changes to pw-core, newest first. The project is pre-1.0 — pin to a tagged release; `main` is the development line.
+Notable changes to pw-core, newest first.
+
+## v1.0.0 — 2026-11-02
+
+pw-core follows semantic versioning from this release; `CONTRIBUTING.md` defines the stable surface. The PyPI
+classifier is `Development Status :: 5 - Production/Stable`.
+
+### Removed
+- `pw_core.clients.routing.get_routed_client(use_claude_code)` — use `pw_core.llm.router.resolve_agent`
+  or `get_client_for_backend`.
+- The `PF_*` env-var fallback: only the `PW_*` names are read, job subprocesses no longer receive
+  `PF_JOB_ID`, and `pw-doctor`'s `env.pw-core` row WARNs when an old `PF_*` name is still set, naming
+  its `PW_*` replacement.
+
+### Changed
+- `track_run()` without `provider=` leaves `llm_runs.provider` unset instead of writing `"openrouter"`
+  with a `DeprecationWarning`; the admin run page shows `—` for an unset provider.
+- `bin/new-consumer` pins `pw-core[...]~=<major>.<minor>` (`~=1.0`) instead of the full version.
+- Experimental, outside the stability promise: orchestrators (`pw_core.orchestrators`) and the
+  OpenTelemetry export (`pw-export otel`, `pw_core.llm.tracking.otel`).
+- `pw_core.web.llm_admin.queries` is internal except `job_detail`, which is public; `job_detail` orders
+  tied events by id, newest first.
+- Route names carry their router's prefix: `llm_admin_` for `make_admin_router`, `jobs_admin_` for
+  `make_jobs_router`.
+- `pw_core.eval.cli` declares `__all__ = ["app", "main"]`.
+- The Anthropic client bounds connecting apart from the request timeout, by default;
+  `ANTHROPIC_CONNECT_TIMEOUT_S` sets the bound or turns it off.
+- The Anthropic client retries a connection failure only when the request was never sent; a
+  connection dropped or garbled after sending raises on the first attempt.
+
+### Added
+- Built-in prices for the Claude 5.x models.
+- `ModelRates.long_prompt` and `long_prompt_threshold`: rates for a prompt over a token threshold, used
+  for Claude Haiku 5.5.
+- Python 3.14 support.
+
+### Fixed
+- `pw_core.fetch.images` skips a ref whose host or port cannot be read instead of ending the pass,
+  localizes a markdown image with a title, and re-points an uppercase `SRC=`.
+- `pw_core.fetch` trims a URL, IDNA-encodes and lowercases a non-ASCII host as a browser does and
+  percent-encodes the spaces, control and non-ASCII characters after it, in the requested URL and in
+  each redirect `Location`, instead of raising or sending raw bytes; the final URL returned, and
+  checked by the SSRF guard, is the encoded one. A URL whose host, port or other part it cannot send
+  (including a non-ASCII host that is not a DNS name once encoded), or a host a browser might send
+  elsewhere (`faß.de`, which the standard codec turns into `fass.de`), raises `InvalidInputError`.
+- `pw_core.fetch` refuses a redirect to a URL that is not `http` or `https`, with or without
+  `require_public`; an unreadable `Location` raises `InvalidInputError`.
+- Error responses keep an `HTTPException`'s headers (`Retry-After`, `Allow`), apart from those that
+  describe a body.
+- The app template `bin/new-consumer` scaffolds applies `WEB_HOST`, `WEB_PORT` and `WEB_RELOAD` from
+  `.env`, reading `WEB_RELOAD` as a boolean (`1`/`true`/`yes`/`on`), and the generated `pyproject.toml` comment says the pw-core pin takes every later release of
+  its major.
+- Built-in Anthropic prices: Opus 4.5–4.8 at their own rates instead of Opus 4's, Haiku 4.5 and Haiku 3.5
+  corrected, and a dotted id (`claude-opus-4.5`) priced like its dashed form.
 
 ## v0.28.0 — 2026-10-23
 

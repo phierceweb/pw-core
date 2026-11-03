@@ -5,7 +5,7 @@ Redis-backed caching via [dogpile.cache](https://dogpilecache.sqlalchemy.org/) (
 ## Installation
 
 ```bash
-pip install pw-core[redis]
+pip install 'pw-core[redis]'
 ```
 
 This installs `dogpile.cache` and `redis`.
@@ -167,12 +167,14 @@ db.update_item(item_id, data)
 redis_cache.invalidate_api_cache()
 ```
 
-## Backward compatibility
+## `RedisCache` wrapper
 
-The module also exports `RedisCache` — a wrapper class that delegates to a dogpile region internally. This exists for projects that already import `RedisCache` and haven't migrated to regions yet. New code should use `create_region()` directly.
+`RedisCache` wraps a region behind a string `get` / `set` / `delete` / `cached_json` interface, with the same degradation. For anything richer, use `create_region()` directly.
 
 | Method | Behavior |
 |---|---|
+| `available` | `False` when the region runs on the null backend (caching off). |
+| `get(key)` | The stored string, or `None` on a miss or a degraded backend. |
 | `set(key, value)`, `delete(key)` | `False` when a configured backend dropped the write — degradation absorbs the error, so the return value is the only signal. `True` with the null backend, where caching is off by config. |
 | `cached_json(key_parts, variant, fn, ttl=None)` | `get_or_create()` under a key built from the parts plus a hash of `variant`; `ttl` overrides the region TTL for that value. |
 | `bump_generation()` | `invalidate()` on this process's region — process-local, as above. Always returns 0; there is no shared generation counter. |
@@ -211,3 +213,9 @@ else:
     except Exception:
         ...  # unreachable
 ```
+
+## Other public names
+
+From `pw_core.cache.redis`:
+
+- `get_cache(url=None, default_ttl=300, key_prefix="")` — the module-level `RedisCache` singleton; `reset_cache()` drops it.

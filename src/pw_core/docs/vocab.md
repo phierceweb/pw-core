@@ -27,7 +27,7 @@ normalizer.normalize("kerfuffle")  # None  (unknown free-text)
 
 A `SlugNormalizer` decides what to return by checking three sets in order:
 
-1. **Pass-through** — the input is already in the canonical slug set (case-insensitive, whitespace-tolerant). Returned unchanged. Also tolerates space-for-underscore swaps: `"press release"` → `"press_release"` if the latter is canonical.
+1. **Pass-through** — the input is already in the canonical slug set (case-insensitive, whitespace-tolerant). Returned in its normalized form — lowercased, whitespace collapsed — so declare `canonical_slugs` in lowercase; a synonym's target is returned as written. Also tolerates space-for-underscore swaps: `"press release"` → `"press_release"` if the latter is canonical.
 2. **Explicit reject** — the input is a category that should drop the row entirely. Returns `None`. Use `is_explicit_reject(raw)` to distinguish these from unknown inputs (which also return `None`).
 3. **Synonym lookup** — the input is a known free-text variant. Returns the canonical slug it maps to.
 

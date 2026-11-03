@@ -10,10 +10,10 @@ Renders a controlled subset of markdown to sanitized HTML using an escape-first 
 | `*italic*` | `<em>italic</em>` |
 | `` `code` `` | `<code>code</code>` |
 | `[label](url)` | `<a href="url" rel="nofollow noopener" target="_blank">label</a>` |
-| `# Heading` | `<h3>Heading</h3>` (offset configurable) |
+| `# Heading` to `#### Heading` | `<h3>` to `<h6>` (offset configurable); deeper `#`s render as text |
 | `- item` or `* item` | `<ul><li>item</li></ul>` |
 | `1. item` | `<ol><li>item</li></ol>` |
-| Blank line | Paragraph break |
+| Blank line | Paragraph break; lines within a paragraph are joined with `<br>` |
 
 Links support nested parentheses in URLs (e.g. Wikipedia links). Bold, italic, and code apply to the link *label* only — a URL containing `*` or a backtick is passed through untouched.
 
@@ -87,6 +87,7 @@ The escape-first approach means:
 - Only the specific markdown patterns above produce HTML tags
 - No raw HTML passes through — `<script>` becomes `&lt;script&gt;`
 - Links get `rel="nofollow noopener" target="_blank"` automatically
+- A link whose URL is not relative and does not start with a lowercase `http://`, `https://` or `mailto:` (`javascript:`, `data:`, `HTTP://`) is dropped; its label stays as text
 - No external sanitizer library is required
 
 ## Migration

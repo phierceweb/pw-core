@@ -1,6 +1,6 @@
 # Claude Code Client
 
-Thin wrapper around the local `claude --print` CLI. Implements the same `.chat(messages, model, ...) -> (content, usage)` interface as [`OpenRouterClient`](openrouter.md), so the two are drop-in interchangeable. Uses the machine's active Claude Max session and consumes no API credits.
+Thin wrapper around the local `claude --print` CLI. Implements the same `.chat(messages, model, ...) -> (content, usage)` interface as [`OpenRouterClient`](openrouter.md) and [`AnthropicClient`](anthropic.md), so the three are drop-in interchangeable. Uses the machine's active Claude Max session and consumes no API credits.
 
 By default each call is a **plain completion**: no tools, and your `system` messages as the system prompt in place of Claude Code's own agent prompt. That matches what the other backends send and keeps the call to your prompt's tokens (see [Tools and the system prompt](#tools-and-the-system-prompt)). `tools` and `agent_prompt` turn a call back into an agent turn.
 
@@ -250,6 +250,7 @@ Each is cached independently; subsequent calls with the same args return the sam
 - The messages list yields no usable user content.
 - `claude --print` returns a non-zero exit code.
 - `claude --print` exceeds the wall-clock timeout.
+- In JSON envelope mode, stdout is an unreadable envelope, or the envelope reports `is_error` (see [Truncation reporting](#truncation-reporting)).
 
 Catching `pw_foundation.exceptions.ClientError` (or `AppError`) catches every `ClaudeCodeError`; the construction-time `ConfigurationError` is a `FlowException` and is not among them.
 
@@ -277,13 +278,19 @@ All backends satisfy the `pw_core.clients.ChatClient` protocol — same `.chat()
 
 Each backend entry declares its own model string in its own format (claude_code accepts aliases like `sonnet` or bare ids; the client also strips a `provider/` prefix at cmd-build time for legacy single-string configs). The Claude Code module is imported **lazily** — only when an agent actually routes to it — so consumers that never opt in don't need the `claude` CLI installed and don't pay any import cost for it.
 
-`pw_core.clients.routing.get_routed_client(use_claude_code: bool)` — the old boolean dispatch — is **deprecated** (removed in v1.0): it baked in OpenRouter as the silent default. Use `resolve_agent`, or `pw_core.clients.routing.get_client_for_backend("claude_code")` for direct acquisition.
+For direct acquisition without the YAML router, use `pw_core.clients.routing.get_client_for_backend("claude_code")`.
 
 ### Practical caveats
 
 - **Throughput**: subprocess invocation is much slower per call than an HTTP request. A `claude --print` call takes 5–15× longer than the same call against OpenRouter. With per-agent parallelism (e.g. via [`pw_foundation.parallel.run_parallel`](https://github.com/phierceweb/pw-foundation/blob/main/src/pw_foundation/docs/parallel.md)) you can mostly mask this, but expect longer wall times even at `-j 4`.
 - **Per-agent model selection works on the Claude Code backend** — pass `model=` per call (or per-instance via `get_client`) to pin different agents to `haiku` vs `sonnet` vs `opus`. Without it the CLI falls through to the active interactive session model.
 - **Concurrency**: each `chat()` call spawns a subprocess. The CLI itself may have an internal session lock; if you see serialized calls despite parallel workers, that's why.
+
+## Other public names
+
+From `pw_core.clients.claude_code`:
+
+- `DEFAULT_PREFLIGHT_TIMEOUT_SECONDS` — `preflight()`'s default timeout.
 
 ## See also
 

@@ -4,24 +4,20 @@ import re
 import tomllib
 from pathlib import Path
 
+
 ROOT = Path(__file__).resolve().parents[1]
 
-PIN_RE = re.compile(r"~=\s*(\d+)\.(\d+)\.\d+")
+PIN_RE = re.compile(r"pw-core(?:\[[^\]]*\])?\s*(~=|>=|==)\s*(\d+)\.(\d+)(\.\d+)?")
+FINAL_ZERO_MINOR = 28  # the 0.x line closed at v0.28.0
 
-# Version-ish tokens on the 0.x line: v-prefixed (v0.M), the pre-0.M idiom, or
-# bare three-component (0.M.P). Bare two-component decimals (scores like 0.85,
-# temperature 0.2) are deliberately not matched. A token offends when M exceeds
-# the released minor from pyproject: the public line can never be referenced
-# ahead of itself, and pre-publication internal numbering is exactly such
-# out-of-line minors. The boundary is read at run time, so the gate self-heals
-# as new minors ship.
+# 0.x tokens: v0.M, pre-0.M, 0.M.P. Bare two-part decimals (a 0.85 score) are not versions.
 _VERSIONISH_RE = re.compile(
     r"(?<![\w.])v0\.(\d{1,3})(?!\d)"
     r"|(?<![\w.])pre-0\.(\d{1,3})(?!\d)"
     r"|(?<![\d.])0\.(\d{1,3})\.\d"
 )
-# Real dependency versions share these shapes; a line is exempt when the match
-# sits next to one of these package names.
+# Real dependency versions share these shapes; a match is exempt when one of these
+# names sits directly before it (``httpx>=0.28``, ``pw-foundation 1.0.1``).
 _DEP_VERSIONS = (
     "ruff",
     "httpx",
@@ -31,7 +27,56 @@ _DEP_VERSIONS = (
     "json-repair",
     "typer",
     "slowapi",
+    "alembic",
+    "pw-foundation",
+    "semconv",
+    "semconv version",
+    "semantic-conventions",
+    "opentelemetry.io/schemas",
 )
+
+
+_DEP_BEFORE = re.compile(
+    r"(?<![\w-])(?:" + "|".join(re.escape(d) for d in _DEP_VERSIONS) + r")(?:\[[^\]]*\])?\W{0,3}$"
+)
+
+
+def _offending_starts(
+    line: str, zero_minor: int, major: int, minor: int, current: bool
+) -> list[int]:
+    """Start offsets of version tokens ahead of the released line, dependency versions excluded."""
+    starts = [
+        m.start()
+        for m in _VERSIONISH_RE.finditer(line)
+        if _offending_minors(m.group(0), zero_minor)
+    ]
+    if current and major:
+        starts += [
+            m.start()
+            for m in _current_line_re(major).finditer(line)
+            if _offending_current_line(m.group(0), major, minor)
+        ]
+    return [s for s in starts if not _DEP_BEFORE.search(line[:s])]
+
+
+def _zero_line_headings() -> list[int]:
+    return [
+        int(m) for m in re.findall(r"^## v0\.(\d+)\.\d+", (ROOT / "CHANGELOG.md").read_text(), re.M)
+    ]
+
+
+def _current_line_re(major: int) -> re.Pattern[str]:
+    return re.compile(rf"(?<![\w.])v{major}\.(\d{{1,3}})(?!\d)|(?<![\d.]){major}\.(\d{{1,3}})\.\d")
+
+
+def _offending_current_line(line: str, major: int, minor: int) -> list[int]:
+    """Minors on the current ``major`` line (``vX.M``, ``X.M.P``) ahead of the released one."""
+    if major == 0:
+        return []
+    found = [
+        int(g) for m in _current_line_re(major).finditer(line) for g in m.groups() if g is not None
+    ]
+    return [m for m in found if m > minor]
 
 
 def _current_version() -> tuple[int, int]:
@@ -45,9 +90,19 @@ def _offending_minors(line: str, released_minor: int) -> list[int]:
     return [m for m in minors if m > released_minor]
 
 
+def _text(path: Path) -> str:
+    try:
+        return path.read_text()
+    except (UnicodeDecodeError, OSError):
+        return ""
+
+
 def _pin_example_files() -> list[Path]:
     return [
         ROOT / "README.md",
+        ROOT / "CONTRIBUTING.md",
+        *sorted((ROOT / "src/pw_core/rules").glob("*.md")),
+        *sorted(p for p in (ROOT / "bin").iterdir() if p.is_file() and not p.name.startswith(".")),
         *sorted((ROOT / "src/pw_core/docs").rglob("*.md")),
         *sorted((ROOT / ".ai/rules").glob("*.md")),
         *sorted(ROOT.glob("templates/*/pyproject.toml")),
@@ -60,17 +115,21 @@ def test_pin_examples_track_current_minor():
     major, minor = _current_version()
     offenders = []
     for path in _pin_example_files():
-        for lineno, line in enumerate(path.read_text().splitlines(), 1):
-            if "pw-core" not in line:
-                continue
+        for lineno, line in enumerate(_text(path).splitlines(), 1):
             for m in PIN_RE.finditer(line):
-                if (int(m.group(1)), int(m.group(2))) != (major, minor):
-                    offenders.append(
-                        f"{path.relative_to(ROOT)}:{lineno}: ~={m.group(1)}.{m.group(2)}.x"
-                    )
+                op, pinned, patch = m.group(1), (int(m.group(2)), int(m.group(3))), m.group(4)
+                # On 0.x a pin holds the minor (~=0.M.P); from 1.0 it holds only the
+                # major (~=X.0), so a three-part pin would shut out later minors.
+                if op != "~=":
+                    ok = pinned[0] == major and pinned <= (major, minor)
+                elif major == 0:
+                    ok = pinned == (major, minor)
+                else:
+                    ok = not patch and pinned == (major, 0)
+                if not ok:
+                    offenders.append(f"{path.relative_to(ROOT)}:{lineno}: {m.group(0)}")
     assert not offenders, (
-        f"pw-core pin examples not on the current minor ({major}.{minor}.x):\n"
-        + "\n".join(offenders)
+        f"pw-core pin examples not on the current line ({major}.{minor}):\n" + "\n".join(offenders)
     )
 
 
@@ -89,12 +148,34 @@ def test_prepub_detector_semantics():
     assert _offending_minors(f"released 0.{cur + 1}.0", cur + 1) == []
 
 
+def test_current_line_detector_semantics():
+    nxt = 2
+    assert _offending_current_line(f"see v1.{nxt} for details", 1, 0) == [nxt]
+    assert _offending_current_line(f"added in 1.{nxt}.0", 1, 0) == [nxt]
+    assert _offending_current_line("shipped in 1.0.0, see v1.0", 1, 0) == []
+    assert _offending_current_line(f"released 1.{nxt}.0", 1, nxt) == []
+    assert _offending_current_line(f"v0.{nxt + 40}", 0, 5) == []
+
+
+def test_dependency_versions_are_exempt_only_when_adjacent():
+    nxt, high = 2, FINAL_ZERO_MINOR + 1
+    assert _offending_starts(f"pw-core v1.{nxt} adds a command", high - 1, 1, 0, current=True)
+    assert _offending_starts(f"pw-core 1.{nxt}.0 with pw-foundation", high - 1, 1, 0, current=True)
+    assert _offending_starts(f"a scruffy 1.{nxt}.0 release", high - 1, 1, 0, current=True)
+    assert not _offending_starts(f"needs pw-foundation 1.{nxt}.0", high - 1, 1, 0, current=True)
+    assert not _offending_starts(f"uvicorn[standard]>=0.{high}.0", high - 1, 1, 0, current=True)
+
+
+def test_final_zero_minor_is_the_last_zero_line_heading():
+    assert max(_zero_line_headings()) == FINAL_ZERO_MINOR
+
+
 def test_no_prepublication_version_references():
     """The shipped tree must not reference versions ahead of the released
     line. Scans prose, source, scripts, workflows, and templates; skips this
-    file (it manufactures version tokens) and dependency-version lines."""
+    file (it manufactures version tokens) and dependency versions."""
     major, minor = _current_version()
-    assert major == 0, "1.x reached: pin the final 0-line minor in this gate"
+    zero_line_minor = minor if major == 0 else FINAL_ZERO_MINOR
     scan = [
         ROOT / "README.md",
         ROOT / "CONTRIBUTING.md",
@@ -117,10 +198,10 @@ def test_no_prepublication_version_references():
             text = path.read_text()
         except (UnicodeDecodeError, OSError):
             continue
+        # Test fixtures use arbitrary 1.x versions and IP addresses.
+        in_tests = path.is_relative_to(ROOT / "tests")
         for lineno, line in enumerate(text.splitlines(), 1):
-            if not _offending_minors(line, minor):
-                continue
-            if any(dep in line for dep in _DEP_VERSIONS):
+            if not _offending_starts(line, zero_line_minor, major, minor, current=not in_tests):
                 continue
             offenders.append(f"{path.relative_to(ROOT)}:{lineno}: {line.strip()}")
     assert not offenders, (
@@ -147,33 +228,11 @@ def test_no_backup_or_debris_files_are_tracked():
     assert not debris, f"debris committed: {debris}"
 
 
-# ``0.M.x`` prose (e.g. "picks up 0.M.x fixes") sits next to a ``~=`` pin but is
-# neither a pin nor a three-component version, so neither gate above sees it.
-_LINE_X_RE = re.compile(r"(?<![\w.])0\.(\d{1,3})\.x(?![\w])")
-
-
 def _requires_python() -> tuple[int, int]:
     spec = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]["requires-python"]
     m = re.search(r">=\s*(\d+)\.(\d+)", spec)
     assert m, f"cannot parse requires-python: {spec!r}"
     return int(m.group(1)), int(m.group(2))
-
-
-def test_pin_prose_tracks_current_minor():
-    """A ``~=`` bump is a two-part edit: the pin token and the ``0.M.x`` line it
-    is described by. Only the token was gated, so the prose drifted a minor
-    behind in the README — which is also the PyPI long description."""
-    _, minor = _current_version()
-    offenders = [
-        f"{path.relative_to(ROOT)}:{lineno}: 0.{m.group(1)}.x"
-        for path in _pin_example_files()
-        for lineno, line in enumerate(path.read_text().splitlines(), 1)
-        for m in _LINE_X_RE.finditer(line)
-        if int(m.group(1)) != minor
-    ]
-    assert not offenders, f"pin prose not on the current minor (0.{minor}.x):\n" + "\n".join(
-        offenders
-    )
 
 
 def test_templates_track_requires_python():

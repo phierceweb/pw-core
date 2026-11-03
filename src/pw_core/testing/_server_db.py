@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -10,7 +11,6 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.engine import URL, Engine, make_url
 from sqlalchemy.pool import NullPool
 
-from pw_core._env_compat import env_name, getenv
 from pw_foundation.exceptions import ConfigurationError
 from pw_foundation.utils.env import resolve_int
 
@@ -31,7 +31,7 @@ _SHARED_SHOWN = 5
 
 def configured_url() -> str:
     """The operator's server test URL, or ``""`` for the per-test SQLite default."""
-    return (getenv(URL_ENV_VAR) or "").strip()
+    return (os.environ.get(URL_ENV_VAR) or "").strip()
 
 
 def backend_dialect(url: str) -> str:
@@ -49,7 +49,7 @@ def active_dialect() -> str:
 
 def _lock_timeout_s() -> int:
     """Seconds a namespace statement may wait for a lock; 0 waits forever."""
-    n: int = resolve_int(None, env_name(_LOCK_TIMEOUT_ENV_VAR), default=_LOCK_TIMEOUT_S_DEFAULT)
+    n: int = resolve_int(None, _LOCK_TIMEOUT_ENV_VAR, default=_LOCK_TIMEOUT_S_DEFAULT)
     return n if n >= 0 else _LOCK_TIMEOUT_S_DEFAULT
 
 

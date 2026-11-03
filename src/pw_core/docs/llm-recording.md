@@ -64,22 +64,22 @@ window; `record_call` is public for composing it manually.
 
 ## Thread pools
 
-A ContextVar window is invisible to pool workers unless the task is
-submitted through a copied context:
+A ContextVar window is invisible to pool workers unless each task is
+submitted through its own copy of the context (one `Context` cannot be
+entered by two threads at once, so a shared `ctx.run` raises `RuntimeError`):
 
 ```python
 import contextvars
 from concurrent.futures import ThreadPoolExecutor
 
 begin_call_recording(session_metadata={"source_name": "report.pdf"})
-ctx = contextvars.copy_context()
 with ThreadPoolExecutor() as pool:
-    futures = [pool.submit(ctx.run, work, item) for item in items]
+    futures = [pool.submit(contextvars.copy_context().run, work, item) for item in items]
 ```
 
-Worker appends land in the shared window because the copied context holds
-the same list object; `list.append` is GIL-atomic, so no lock is needed.
-Capture `ctx` **after** `begin_call_recording`.
+Worker appends land in the shared window because every copy holds the same
+list object; `list.append` is GIL-atomic, so no lock is needed. Copy the
+context **after** `begin_call_recording`.
 
 ---
 

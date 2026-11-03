@@ -74,6 +74,8 @@ For the key-volatility tell on `/cache`, see [llm-cache.md](llm-cache.md).
 
 Each HTML page has a matching `/api/*.json` endpoint returning `{data, meta}`. Drives shell scripts, Grafana (JSON datasource), external dashboards.
 
+Every route name starts with `llm_admin_` (`llm_admin_jobs_list` for `/jobs`, `llm_admin_runs_json` for `/api/runs.json`), so `url_path_for` never resolves to the [jobs dashboard](jobs-admin.md#routes)'s route or a consumer's route of the same name.
+
 ## Window parameters
 
 Every aggregate page accepts `?since=&until=` (ISO-8601). Default window is the last 7 days.
@@ -137,7 +139,7 @@ Example response:
 {
   "data": [
     {"model": "claude-opus-4-7", "runs": 4820, "total_cost": 248.13, "avg_cost": 0.0515,
-     "prompt_tokens": 5_800_000, "completion_tokens": 2_100_000}
+     "prompt_tokens": 5800000, "completion_tokens": 2100000}
   ],
   "meta": {"since": "2026-04-01T00:00:00+00:00", "until": "2026-04-15T00:00:00+00:00"}
 }
@@ -173,6 +175,8 @@ The `reason` body field is optional; default is `"canceled via admin"`. Project 
 
 ## Layering note
 
-`pw_core.web.llm_admin` is pw-core's first web sub-app. It counts as an entry point in the layering rules:
+`pw_core.web.llm_admin` counts as an entry point in the layering rules:
 - Reads through domain repos (`pw_core.llm.tracking`, `pw_core.jobs`, `pw_core.llm.cache`, `pw_core.budget`) — via `queries.py` helpers, no direct `transaction()` in pages.
 - Contains no business logic — shape queries, pass to templates / JSON.
+
+`pw_core.web.llm_admin.api`, `.pages` and `.queries` are the dashboard's internal routes and data layer, not part of the stable API — except `job_detail(job_id)`, which is public: the `jobs` row as a dict plus `steps` (by step index), `events` (the newest 200, newest first) and `runs_summary` — `runs`, the count of `llm_runs` rows attributed to the job, and `total_cost`, their summed `cost_usd` (`0` when there are none) — or `None` for an unknown id.

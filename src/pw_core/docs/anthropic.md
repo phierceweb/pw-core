@@ -63,7 +63,7 @@ OpenRouter and Claude Code don't take this exact payload shape, so a service tha
 
 | You pass | What happens |
 |---|---|
-| `{"type": "json_schema", "schema": {...}}` — or the OpenAI nesting `{"type": "json_schema", "json_schema": {"schema": {...}}}` | Native structured outputs: `output_config={"format": {"type": "json_schema", "schema": ...}}`. Response text is API-guaranteed valid JSON matching the schema. |
+| `{"type": "json_schema", "schema": {...}}` — or the OpenAI nesting `{"type": "json_schema", "json_schema": {"schema": {...}}}` | Native structured outputs: `output_config={"format": {"type": "json_schema", "schema": ...}}`. Response text is API-guaranteed valid JSON matching the schema. Without a schema in either place, `chat()` raises `AnthropicError`. |
 | `{"type": "json_object"}` | No native equivalent (Anthropic schemas require `additionalProperties: false`, so a permissive object schema is inexpressible). Enforced by appending a JSON-only instruction to the system prompt; logged once per process (`anthropic_json_object_prompt_enforced`). Pair with `pw_core.llm.parse` downstream. |
 | Any other `type` | Warned once (`anthropic_response_format_ignored`), then ignored. |
 
@@ -71,7 +71,7 @@ Schema restrictions (API-side): every object needs `additionalProperties: false`
 
 ## System messages and prompt caching
 
-Leading `{"role": "system", ...}` messages are extracted into the API's top-level `system=` parameter (Anthropic rejects a system role inside `messages`), so OpenAI-style message lists work unchanged across all three transports.
+Leading `{"role": "system", ...}` messages with string content are extracted into the API's top-level `system=` parameter (Anthropic rejects a system role inside `messages`; a system message with list content ends the extraction and stays in `messages`), so OpenAI-style message lists work unchanged across all three transports.
 
 Prompt caching is opt-in per call:
 
@@ -79,12 +79,12 @@ Prompt caching is opt-in per call:
 content, usage = client.chat(
     messages=[{"role": "system", "content": BIG_SYSTEM}, {"role": "user", "content": q}],
     cache_system=True,  # mark the system prompt as a cache breakpoint
-    cache_ttl="5m",  # or "1h" (2x write premium, longer reuse window)
+    cache_ttl="5m",  # or "1h" (2x write premium, longer reuse window); anything else raises AnthropicError
 )
 ```
 
-- Caches tools+system as the stable prefix — the right shape for batch runs (shared system prompt, varying user content). Cache reads bill ~0.1x the input rate; writes ~1.25x (`5m`) / 2x (`1h`).
-- Verify via the returned usage dict: `cache_write_tokens` on the first call, `cache_read_tokens` on later calls inside the TTL. `usage["cost_usd"]` includes cache read/write costs — the built-in Anthropic rates carry cache pricing (read 0.1x input; write 1.25x input for `5m`, 2x for `1h`), and the call's `cache_ttl` selects the write rate. Override per model with `pw_core.pricing.register_rates()`.
+- Caches tools+system as the stable prefix — the right shape for batch runs (shared system prompt, varying user content). Cache reads bill a fraction of the input rate (0.1x on most models, less on some); writes 1.25x (`5m`) / 2x (`1h`).
+- Verify via the returned usage dict: `cache_write_tokens` on the first call, `cache_read_tokens` on later calls inside the TTL. `usage["cost_usd"]` includes cache read/write costs — the built-in Anthropic rates carry each model's published cache pricing (writes 1.25x input for `5m`, 2x for `1h`), and the call's `cache_ttl` selects the write rate. Override per model with `pw_core.pricing.register_rates()`.
 - Silently no-ops below the model-dependent minimum prefix (1024–4096 tokens). Any byte change before the breakpoint invalidates the cache.
 - `cache_system=True` with no system message is a no-op — safe to set per-agent in router config across agents with and without system prompts.
 
@@ -106,8 +106,8 @@ AnthropicClient(
 |---|---|---|---|
 | `api_key` | `str` | required | Anthropic API key |
 | `model` | `str \| None` | `None` | Default model passed on every call. Per-call `chat(model=...)` overrides this. If neither is set, `chat()` raises `AnthropicError` |
-| `request_timeout` | `int` | `120` | Per-request socket timeout in seconds (set on the SDK client at construction time). Per-call `chat(timeout=N)` overrides for one call via the SDK's `with_options(timeout=N)` derived-client. |
-| `retry` | `int` | `0` | Auto-retry count on transient failures, with backoff between attempts. The SDK's own retries are disabled (`max_retries=0`) so this is the only retry loop. Deterministic failures (4xx other than 408/429, validation errors, read timeouts) are NOT retried — see **Retry on transient failure** below. |
+| `request_timeout` | `int` | `120` | Per-request socket timeout in seconds (set on the SDK client at construction time). Per-call `chat(timeout=N)` overrides for one call via the SDK's `with_options` derived-client. Connecting gets at most `ANTHROPIC_CONNECT_TIMEOUT_S` of either timeout (`0` or less = no separate bound), so an unreachable network fails fast. |
+| `retry` | `int` | `0` | Auto-retry count on transient failures, with backoff between attempts. The SDK's own retries are disabled (`max_retries=0`) so this is the only retry loop. Deterministic failures (4xx other than 408/429, validation errors) and failures after the request was sent are NOT retried — see **Retry on transient failure** below. |
 
 #### chat
 
@@ -117,7 +117,7 @@ client.chat(
     model: str = "",
     temperature: float | None = 0.2,      # pass None to omit (reasoning models)
     max_tokens: int = 4096,
-    top_p: float | None = 1.0,            # pass None to omit (reasoning models)
+    top_p: float | None = None,           # opt-in: sent only when set
     response_format: dict | None = None,  # json_schema / json_object — see below
     timeout: int | None = None,           # per-call override (honored)
     cache_system: bool = False,           # opt in to an Anthropic prompt-cache breakpoint
@@ -126,7 +126,7 @@ client.chat(
 ) -> tuple[str, dict]
 ```
 
-`temperature` and `top_p` are sent only when non-`None`. Pass `None` for either to omit it from the request — needed for reasoning models (Opus 4.7+) that reject these params. Per-model sampling knobs belong in the caller's config (the consumer's `model_router.yaml`), not hardcoded.
+`temperature` defaults to 0.2 and is sent unless you pass `None`; `top_p` defaults to `None` and is sent only when you set it (Claude 4+ rejects the two together). Pass `temperature=None` for reasoning models (Opus 4.7+) that reject sampling params. Per-model sampling knobs belong in the caller's config (the consumer's `model_router.yaml`), not hardcoded.
 
 Returns `(content, usage)`. `content` is the concatenation of all text blocks in the response (non-text blocks like tool_use are skipped — callers needing them should call the SDK directly). `usage` carries the same key set as [`OpenRouterClient.chat`](openrouter.md):
 
@@ -148,7 +148,7 @@ Returns `(content, usage)`. `content` is the concatenation of all text blocks in
 
 `reasoning_tokens` is populated from `response.usage.thinking_tokens` for reasoning models (Opus 4.7+); older SDK responses lack the field and it falls back to `0`. These tokens are billed at the output rate and the SDK already counts them inside `output_tokens`, so the cost estimate does not add them a second time.
 
-`cost_usd` is a best-effort estimate from [`pw_core.pricing`](pricing.md): the model id is matched against a prefix pricing table (`claude-opus-4`, `claude-sonnet-4`, `claude-haiku-4`, plus legacy 3.x families) using input + output rates per 1M tokens. Cache-read/write costs are modeled TTL-aware via the built-in cache rates — see the [prompt-caching section](#system-messages-and-prompt-caching); batch pricing is not modeled. A model id matching no prefix yields `cost_usd == 0.0` and a one-shot `pricing_unknown_model` WARNING — callers can treat `0.0` as "unpriced". Add or correct rates with `pw_core.pricing.register_rates(...)`, no framework edit needed.
+`cost_usd` is a best-effort estimate from [`pw_core.pricing`](pricing.md): the model id is matched against the built-in table of Claude model prefixes using input + output rates per 1M tokens. Cache-read/write costs are modeled TTL-aware via the built-in cache rates — see the [prompt-caching section](#system-messages-and-prompt-caching); batch pricing is not modeled. A model id matching no prefix yields `cost_usd == 0.0` and a one-shot `pricing_unknown_model` WARNING — callers can treat `0.0` as "unpriced". Add or correct rates with `pw_core.pricing.register_rates(...)`, no framework edit needed.
 
 `response_format` maps onto Anthropic-native features — see [Structured output](#structured-output-response_format) below.
 
@@ -185,8 +185,8 @@ Only failures that can plausibly succeed on a re-send are retried:
 |---|---|---|
 | 408, 429, 500, 502, 503, 504, 529 (Anthropic's "overloaded") | yes | Transient server/rate-limit state |
 | Other 4xx and 5xx (400, 401, 403, 404, 409, 422, 501, 505, 507, …) | no | Deterministic — fails identically every attempt, burning budget |
-| Connect / pool timeout, connection error | yes | Request never reached the model |
-| Read or write timeout | no | The request was on the wire; a completion may already be generated **and billed**, so a retry pays for the same prompt twice |
+| Connect failure, connect or pool timeout | yes | The request never reached the server |
+| Any other connection failure — a read or write timeout, a connection dropped or garbled once sent (`ReadError`, `RemoteProtocolError`), or one not shown to come before sending | no | The request may have reached the server; a completion may already be generated **and billed**, so a retry pays for the same prompt twice |
 | Validation errors (no model specified) | no | Raised before any request |
 | Anything else (non-SDK exception) | yes | Unclassifiable — assumed transient |
 
@@ -215,6 +215,14 @@ The singleton requires `ANTHROPIC_API_KEY` to be set somewhere (env var or first
 `AnthropicError` (subclass of `pw_foundation.exceptions.ClientError`) wraps any failure in the SDK call, the API call, or constructor validation. Carries `context={"model": ...}` for diagnostic logging via [`log_exception`](https://github.com/phierceweb/pw-foundation/blob/main/src/pw_foundation/docs/logging.md).
 
 The constructor raises `ImportError` (not `AnthropicError`) when the `anthropic` SDK isn't installed — that's a config problem, not a runtime client error. The error message names the install command: `pip install 'pw-core[anthropic]'`.
+
+## Other public names
+
+From `pw_core.clients.anthropic`:
+
+- `DEFAULT_TIMEOUT_SECONDS` — the per-request timeout when none is passed.
+- `DEFAULT_MAX_TOKENS` — `max_tokens` when the call passes none.
+- `DEFAULT_PREFLIGHT_TIMEOUT_SECONDS` — `preflight()`'s default timeout.
 
 ## See also
 

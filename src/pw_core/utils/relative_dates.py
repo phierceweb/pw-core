@@ -36,8 +36,8 @@ Design rules:
     year unless that would put the date in the future, then fall back
     to prior year.
 
-The function never raises on malformed input — callers use ``None`` as
-the "don't know" signal.
+Callers use ``None`` as the "don't know" signal. ``hint`` must be a mapping
+whose ``phrase`` and ``qualifier`` are strings or ``None``.
 """
 
 from __future__ import annotations
@@ -198,8 +198,9 @@ def resolve_relative_date(
         phrase is empty, unresolvable, or would require guessing beyond
         what the text supports.
 
-    The function never raises on malformed input — callers use ``None``
-    as the "don't know" signal.
+    ``None`` is the "don't know" signal. ``hint`` must be a mapping whose
+    ``phrase`` and ``qualifier`` are ``str`` or ``None``; anything else raises
+    ``AttributeError``.
     """
     if not hint:
         return None

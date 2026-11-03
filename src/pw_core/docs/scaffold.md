@@ -2,7 +2,7 @@
 
 `bin/new-consumer` stamps a new pw-core consumer project from a template — a runnable, conformant skeleton, so a project adopts the framework's conventions from day one instead of rebuilding into them later.
 
-It's a **from-checkout** dev tool: the generator reads `templates/` from the pw-core source tree (these aren't shipped in the wheel). The generated project then depends on pw-core however it likes — a git tag now, a PyPI version later.
+It's a **from-checkout** dev tool: the generator reads `templates/` from the pw-core source tree (these aren't shipped in the wheel). The generated project pins `pw-core` from PyPI (`~=<major>.<minor>` of the checkout that generated it); `bin/setup` installs a sibling checkout instead when one exists.
 
 ## Usage
 
@@ -37,7 +37,7 @@ checkout — `bin/setup` runs `pw-setup`, which installs pw-foundation's starter
 - `.ai/` stubs; `bin/setup` runs `pw-setup`, which installs the starter rules (pw-foundation's seven and pw-core's three), links both packages' docs at `docs/pw-foundation/` and `docs/pw-core/`, and points `.claude/` and `.cursor/` at `.ai/`
 - `tests/` with a smoke test, plus `.env.example`, `.gitignore`, and a `CLAUDE.md` that names what each package provides and where its docs are linked.
 
-A template file with a base-only twin — `cli_base.py`, `config_base.py`, `test_smoke_base.py`, `CLAUDE.base.md`, `README.base.md` — replaces its sibling under `--base-only`, so a foundation-only project says only what is true of pw-foundation. The pw-core pin is the version of the checkout running `bin/new-consumer`.
+A template file with a base-only twin — `cli_base.py`, `config_base.py`, `test_smoke_base.py`, `CLAUDE.base.md`, `README.base.md` — replaces its sibling under `--base-only`, so a foundation-only project says only what is true of pw-foundation. The pw-core pin is `~=<major>.<minor>` of the checkout running `bin/new-consumer`, so the project takes every later release of that major.
 
 ## Conventions baked in
 

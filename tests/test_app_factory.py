@@ -374,3 +374,72 @@ class TestFlowExceptionInsideValidation:
         assert TestClient(app, raise_server_exceptions=False).get("/count?n=x").status_code == 500
         with pytest.raises(ValidationError):
             TestClient(app).get("/count?n=x")
+
+
+class TestHttpExceptionHeaders:
+    """Headers an ``HTTPException`` carries reach the client on every response shape."""
+
+    @pytest.fixture
+    def app(self):
+        from fastapi import HTTPException
+
+        app = create_app(title="Test", log_requests=False)
+
+        @app.get("/slow-down")
+        async def slow_down():
+            raise HTTPException(status_code=429, detail="later", headers={"Retry-After": "7"})
+
+        return app
+
+    @pytest.mark.parametrize("accept", ["application/json", "text/html"])
+    def test_retry_after_survives(self, app, accept):
+        r = TestClient(app).get("/slow-down", headers={"accept": accept})
+        assert (r.status_code, r.headers.get("retry-after")) == (429, "7")
+
+    def test_retry_after_survives_a_project_error_template(self, app, tmp_path):
+        from fastapi.templating import Jinja2Templates
+
+        (tmp_path / "shared").mkdir()
+        (tmp_path / "shared" / "error.html").write_text("{{ code }} {{ message }}")
+        app.state.templates = Jinja2Templates(directory=str(tmp_path))
+        r = TestClient(app).get("/slow-down", headers={"accept": "text/html"})
+        assert (r.status_code, r.text, r.headers.get("retry-after")) == (429, "429 later", "7")
+
+    @pytest.mark.parametrize(
+        ("accept", "template"),
+        [("application/json", False), ("text/html", False), ("text/html", True)],
+    )
+    def test_body_headers_from_the_exception_do_not_override_the_page(
+        self, tmp_path, accept, template
+    ):
+        from fastapi import HTTPException
+        from fastapi.templating import Jinja2Templates
+        from starlette.datastructures import Headers
+
+        app = create_app(title="Test", log_requests=False)
+        if template:
+            (tmp_path / "shared").mkdir()
+            (tmp_path / "shared" / "error.html").write_text("{{ code }} {{ message }}")
+            app.state.templates = Jinja2Templates(directory=str(tmp_path))
+
+        @app.get("/odd")
+        async def odd():
+            raw = [
+                (b"content-type", b"text/plain"),
+                (b"content-length", b"0"),
+                (b"content-encoding", b"gzip"),
+                (b"transfer-encoding", b"chunked"),
+                (b"x-keep", b"1"),
+                (b"x-keep", b"2"),
+            ]
+            raise HTTPException(status_code=400, detail="odd", headers=Headers(raw=raw))
+
+        r = TestClient(app).get("/odd", headers={"accept": accept})
+        assert accept.split("/")[1] in r.headers["content-type"]
+        assert int(r.headers["content-length"]) == len(r.content) > 0
+        assert "content-encoding" not in r.headers and "transfer-encoding" not in r.headers
+        assert r.headers.get_list("x-keep") == ["1", "2"]
+
+    def test_method_not_allowed_keeps_allow(self, app):
+        r = TestClient(app).post("/slow-down")
+        assert (r.status_code, r.headers.get("allow")) == (405, "GET")

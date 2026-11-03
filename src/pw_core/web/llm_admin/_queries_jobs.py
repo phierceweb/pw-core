@@ -37,6 +37,7 @@ def count_jobs(*, status: str | None = None, kind: str | None = None) -> int:
 
 
 def job_detail(job_id: int) -> dict | None:
+    """The job row plus its steps, newest 200 events and run count/cost; ``None`` if unknown."""
     with transaction() as conn:
         row = conn.execute(select(jobs).where(jobs.c.id == job_id)).mappings().fetchone()
         if row is None:
@@ -56,7 +57,7 @@ def job_detail(job_id: int) -> dict | None:
             conn.execute(
                 select(job_events)
                 .where(job_events.c.job_id == job_id)
-                .order_by(desc(job_events.c.created_at))
+                .order_by(desc(job_events.c.created_at), desc(job_events.c.id))
                 .limit(200)
             )
             .mappings()

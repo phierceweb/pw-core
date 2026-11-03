@@ -49,7 +49,7 @@ Two placeholder styles are supported. Choose based on what your prompts contain.
 
 ### Brace style (default)
 
-Uses Python's `str.format_map` with `{variable}` placeholders. Literal curly braces must be escaped as `{{` and `}}`.
+Uses Python's `str.format_map` with `{variable}` placeholders. Literal curly braces must be escaped as `{{` and `}}` — but an escaped word on its own (`{{name}}`) still counts as a reference to `name`: it raises `InvalidInputError` unless you pass `name=…`, and then renders as the literal `{name}`. Use `style="@@"` for a template with literal `{word}` text.
 
 **Best for:** Simple prompts without JSON or code examples.
 
@@ -162,13 +162,19 @@ system_text, version = render_spec(spec)
 # → ("You are a summarizer. Summarize the text.\n...", 7)
 ```
 
-`render_spec()` returns a `(text, version)` tuple, so a run logger that records the prompt version gets both in one step:
+`render_spec()` returns a `(text, version)` tuple. With no variables it returns the part unrendered — `{{`/`}}` are not unescaped and placeholders are not checked. The version reaches a tracked run through its prompt id:
 
 ```python
-log_run(
+from pw_core.llm.tracking import LlmRunRepo, resolve_agent_type_id, resolve_prompt_id
+
+agent_type_id = resolve_agent_type_id("summarizer")
+system_prompt_id = resolve_prompt_id(
+    agent_type_id=agent_type_id, part="system", version=version, content=system_text
+)
+LlmRunRepo().record(
     agent_type="summarizer",
     model=model,
-    prompt_version=version,
+    system_prompt_id=system_prompt_id,
     rendered_prompts=(system_text, user_text),
 )
 ```
@@ -189,7 +195,7 @@ spec = load_prompt(  # packaged tool with overrides:
 )
 ```
 
-`dir=` and `bundled_dir=` are mutually exclusive (fixed directory vs. override chain — the chain composes [`resolve_config_path`](https://github.com/phierceweb/pw-foundation/blob/main/src/pw_foundation/docs/config-path.md)). Pass `cache=False` to re-read on every call; `clear_prompt_cache()` resets the cache (tests that edit YAML in place).
+`dir=` and `bundled_dir=` are mutually exclusive (fixed directory vs. override chain — the chain composes [`resolve_config_path`](https://github.com/phierceweb/pw-foundation/blob/main/src/pw_foundation/docs/config-path.md)). `cwd_subdir=` (default `config/prompts`) names the working-directory step of that chain. Pass `cache=False` to re-read on every call; `clear_prompt_cache()` resets the cache (tests that edit YAML in place).
 
 ### Registering in the DB
 

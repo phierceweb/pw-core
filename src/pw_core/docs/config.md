@@ -36,7 +36,7 @@ On top of the base's `LOG_LEVEL`, `LOG_FILE`, `APP_NAME` and `APP_URL`:
 
 ## Framework env vars (not AppConfig fields)
 
-These are read directly from the environment by framework modules — not declared on `AppConfig`:
+These are read directly from the environment by framework modules — not declared on `AppConfig`. The tables here list the cross-cutting ones; a module's own variables (router, clients, URLs, jobs, eval, database connection) are documented with that module:
 
 | Variable | Default | Module | Description |
 |----------|---------|--------|-------------|
@@ -45,27 +45,22 @@ These are read directly from the environment by framework modules — not declar
 | `BUDGET_CONFIG` | `config/budgets.yaml` | `pw_core.budget` | Path to the budget config YAML |
 | `BUDGET_CONFIG_RELOAD_SECONDS` | `300` | `pw_core.budget` | How often to reload the budget config |
 | `BUDGET_ENFORCEMENT_DISABLED` | *unset* | `pw_core.budget` | When `true`, `check_budget()` short-circuits to always-pass (incident kill-switch) |
+| `ANTHROPIC_CONNECT_TIMEOUT_S` | `10` | `pw_core.clients.anthropic` | Seconds allowed to connect, within the request timeout; `0` or less = no separate bound |
 
-## Renamed env vars (`PF_*` fallback until 1.0)
+## Framework `PW_*` env vars
 
-These framework vars were `PF_*` before 0.27.0. pw-core reads the `PW_*` name first and falls back
-to the `PF_*` spelling, emitting one `FutureWarning` (shown under Python's default filters) per
-variable per process. `pw-doctor`'s `env.pw-core` row reports `PW_VERIFY_TLS`, the only renamed
-variable it lists: a value read from `PF_VERIFY_TLS`, an empty one included, shows as
-`PW_VERIFY_TLS=… (read from PF_VERIFY_TLS, deprecated)`, a `PW_VERIFY_TLS` set empty while
-`PF_VERIFY_TLS` is set non-empty shows as `PW_VERIFY_TLS= (set empty, PF_VERIFY_TLS ignored)`,
-and either turns the row WARN. The fallback goes away at 1.0 (`pw_core._env_compat`).
+The `PF_*` spellings of these names are not read; `pw-doctor` flags a still-set one for every name pw-core reads (all but `PW_JOB_ID`, which it only exports).
 
-| `PW_*` name | Read by | Fallback |
-|---|---|---|
-| `PW_VERIFY_TLS` | outbound HTTP (`pw_core.utils.http_tls`, `pw_core.fetch`) | `PF_VERIFY_TLS` |
-| `PW_FETCH_UA` | `pw_core.fetch` User-Agent | `PF_FETCH_UA` |
-| `PW_ARTICLE_WAYBACK_FALLBACK` | `pw_core.utils.article_fetch` | `PF_ARTICLE_WAYBACK_FALLBACK` |
-| `PW_ARTICLE_EXTRACTOR_LOG_LEVEL` | `pw_core.utils.article_fetch` | `PF_ARTICLE_EXTRACTOR_LOG_LEVEL` |
-| `PW_CORE_CLAUDE_CODE_MODEL` | `pw_core.clients.claude_code` | `PF_CORE_CLAUDE_CODE_MODEL` |
-| `PW_TEST_DATABASE_URL` | the pytest plugin's server-database fixtures | `PF_TEST_DATABASE_URL` |
-| `PW_TEST_LOCK_TIMEOUT_S` | the pytest plugin's server-database fixtures | `PF_TEST_LOCK_TIMEOUT_S` |
-| `PW_JOB_ID` | exported to job subprocesses, under both spellings | `PF_JOB_ID` |
+| Name | Read by |
+|---|---|
+| `PW_VERIFY_TLS` | outbound HTTP (`pw_core.utils.http_tls`, `pw_core.fetch`) |
+| `PW_FETCH_UA` | `pw_core.fetch` User-Agent |
+| `PW_ARTICLE_WAYBACK_FALLBACK` | `pw_core.utils.article_fetch` |
+| `PW_ARTICLE_EXTRACTOR_LOG_LEVEL` | `pw_core.utils.article_fetch` |
+| `PW_CORE_CLAUDE_CODE_MODEL` | `pw_core.clients.claude_code` |
+| `PW_TEST_DATABASE_URL` | the pytest plugin's server-database fixtures |
+| `PW_TEST_LOCK_TIMEOUT_S` | the pytest plugin's server-database fixtures |
+| `PW_JOB_ID` | exported to job subprocesses |
 
 `pw-doctor`'s `env.pw-core` row reports the effective values ([doctor.md](doctor.md)).
 

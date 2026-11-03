@@ -2,8 +2,7 @@
 Redis-backed caching via dogpile.cache.
 
 Provides ``create_region()`` to build configured cache regions and a
-backward-compatible ``RedisCache`` wrapper for projects that haven't
-migrated to regions yet.
+``RedisCache`` wrapper with a string get/set/delete interface over one.
 
 Usage::
 
@@ -184,12 +183,8 @@ def create_region(
 
 
 class RedisCache:
-    """Backward-compatible wrapper around a dogpile.cache region.
-
-    New code should use ``create_region()`` directly. This class exists
-    so projects that already import ``RedisCache`` keep working during
-    migration.
-    """
+    """A string get/set/delete wrapper around a dogpile.cache region; use
+    ``create_region()`` directly for anything richer."""
 
     def __init__(
         self,

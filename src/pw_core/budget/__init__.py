@@ -10,7 +10,7 @@ budget guard itself and YAML config loading:
         load_yaml, clear_config_cache,
     )
 
-The DB-backed surface (requires ``pw-core[db]``) is loaded lazily — the
+The DB-backed surface (requires ``pw-core[tracking]``) is loaded lazily — the
 import only triggers SQLAlchemy when an attribute is first accessed:
 
     from pw_core.budget import (

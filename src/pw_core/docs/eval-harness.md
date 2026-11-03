@@ -294,8 +294,8 @@ pw-eval run --version golden_v1 --agent-type summarizer \
     [--target model=<slug>] [--target backend=<name>] \
     [--tag-as experiment:<name>] [--output report.html] [--config path/to/eval.yaml]
 pw-eval compare --baseline experiment:<a> --candidate experiment:<b> --agent-type summarizer
-pw-eval list-golden --version golden_v1 [--agent-type summarizer]
-pw-eval seed --version golden_v1 --outcome-kind <kind> [--agent-type <slug>] [--dry-run]
+pw-eval list-golden --version golden_v1 [--agent-type summarizer] [--limit N]
+pw-eval seed --version golden_v1 --outcome-kind <kind> [--agent-type <slug>] [--limit N] [--dry-run]
 pw-eval promote <run_id> --version golden_v1 [--notes "..."]
 pw-eval demote <run_id> --version golden_v1
 ```
@@ -371,12 +371,13 @@ agents:
 ### From production outcomes
 
 ```python
-from pw_core.eval import GoldenSetRepo
-from pw_core.llm.tracking import LlmRunRepo, LlmRunOutcomeRepo
 from sqlalchemy import select
+
+from pw_core.db import transaction
+from pw_core.eval import GoldenSetRepo
 from pw_core.llm.tracking import schema as s
 
-# Find human-accepted summary runs from the last 90 days
+# Find human-accepted summary runs
 # (outcome_kind='summary_accepted' written by your review action)
 with transaction() as conn:
     rows = conn.execute(
@@ -627,7 +628,18 @@ Add a workflow step that runs `pw-eval` on router/prompt changes — the full ex
 
 ---
 
+## Other public names
+
+From `pw_core.eval`:
+
+- `EvalConfig` — a parsed `eval.yaml`.
+- `AgentEvalConfig` — one agent's policy from its `agents.<slug>` block.
+- `MetricGate` — a hard gate on a named `llm_run_metrics` value.
+- `get_comparator(name)` — a registered comparator; `list_comparators()` lists the names.
+- `clear_config_cache()` — drop the cached eval config (tests).
+- `pw_core.eval.cli.main(args=None)` — the `pw-eval` console entry; `app` is its Typer app.
+
 ## See also
 
 - `docs/llm-tracking.md` — the tracking tables eval reads from and writes to
-- `docs/jobs.md` — the `eval_replay` job kind
+- [jobs.md](jobs.md) — the `jobs` tables and `pw-jobs show`, where an `eval_replay` job appears

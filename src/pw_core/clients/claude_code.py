@@ -21,7 +21,6 @@ from collections.abc import Sequence
 from contextlib import ExitStack
 from typing import Any
 
-from pw_core._env_compat import getenv
 from pw_core.clients._claude_code_wire import (
     SESSION_CONTINUATION_FLAGS,
     TOOLS_FLAG,
@@ -129,7 +128,7 @@ class ClaudeCodeClient:
         self.timeout = timeout
         self.binary = binary
         self.extra_args = list(extra_args or [])
-        self.model = model if model is not None else getenv(_MODEL_ENV_VAR) or None
+        self.model = model if model is not None else os.environ.get(_MODEL_ENV_VAR) or None
         self.retry = retry
         self.isolate = isolate
         self.persist_session = persist_session

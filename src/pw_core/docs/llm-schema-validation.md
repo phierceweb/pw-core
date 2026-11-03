@@ -4,7 +4,7 @@ Declarative shape, semantic, and cross-field validation for parsed LLM responses
 
 This module is **not** [`llm-validation.md`](llm-validation.md). That doc covers `pw_core.llm.url_check` — a pluggable dispatcher for URL hallucination rules (no schema, no registry, no DB integration; rules are consumer-owned). This module (`pw_core.llm.validate`) validates one parsed JSON response against a registered Pydantic model or JSON Schema, runs domain-content checks, and writes every signal as a tracked row. The two are complementary; the `url_sanity` semantic validator here delegates to the consumer-registered rule set from there.
 
-> **Install:** Pydantic shapes require the `[validate]` extra (`pip install 'pw-core[validate]'` → `json-repair` + `pydantic`, no httpx/client stack). `JsonSchemaValidator` requires `pip install pw-core[jsonschema]` — without it the constructor raises `ConfigurationError` naming the extra. Persisting signals to `llm_run_validations` (the "DB integration" section) needs `[tracking]`. Importing `pw_core.llm.validate` without `[validate]` raises a friendly `ImportError`.
+> **Install:** Pydantic shapes require the `[validate]` extra (`pip install 'pw-core[validate]'` → `json-repair` + `pydantic`, no httpx/client stack). `JsonSchemaValidator` requires `pip install 'pw-core[jsonschema]'` — without it the constructor raises `ConfigurationError` naming the extra. Persisting signals to `llm_run_validations` (the "DB integration" section) needs `[tracking]`. Importing `pw_core.llm.validate` without `[validate]` raises a friendly `ImportError`.
 
 ---
 
@@ -21,6 +21,7 @@ This module is **not** [`llm-validation.md`](llm-validation.md). That doc covers
 - [Query recipes](#query-recipes)
 - [Adding a new semantic validator](#adding-a-new-semantic-validator)
 - [Adding a new agent type pipeline](#adding-a-new-agent-type-pipeline)
+- [Other public names](#other-public-names)
 
 ---
 
@@ -106,7 +107,7 @@ register(
 |----------|-------------|
 | `agent_type` | Agent slug. Must match `llm_agent_types.slug`. |
 | `shape` | A Pydantic `BaseModel` subclass (auto-wrapped), a pre-built `PydanticValidator`/`JsonSchemaValidator`, or any `Validator`-protocol object. `None` skips shape. |
-| `semantic` | Built-in semantic validator config strings (see below). |
+| `semantic` | Built-in semantic validator config strings (see below). An unknown string raises `ConfigurationError` at register time. |
 | `cross_field` | Names registered via `@cross_field_validator`. Raises `KeyError` at register time if unknown. |
 | `schema_version` | Integer written as `schema:<agent>_v<n>` into `llm_run_tags`. Bump when the schema changes materially. |
 
@@ -163,7 +164,7 @@ Each entry in `semantic=[...]` is a colon-delimited config string. The optional 
 | `field_non_empty` | `field_non_empty:<f1>,<f2>,...` | Named string fields are non-empty after `.strip()`. |
 | `min_items` | `min_items:<field>:<n>` | Named list has at least `n` items. |
 | `no_duplicate_urls` | `no_duplicate_urls` | URLs across all fields are unique. |
-| `date_range` | `date_range:<field>:<start>:<end>` | Date is within `[start, end]`. Bounds accept ISO dates; `today` resolves per-call. |
+| `date_range` | `date_range:<field>:<start>:<end>` | Date is within `[start, end]`. Bounds accept ISO dates or `today`; a `today` start is fixed when `register()` runs, a `today` end resolves on each call. |
 
 ### Severity overrides
 
@@ -544,3 +545,12 @@ If the check turns out to be useful across projects, propose promoting it to pw-
 3. **Call `parse_and_validate(content, agent_type="reviewer", run_id=usage["_llm_run_id"])` from the service.** The shape signal will land as `reviewer_shape`; the run is tagged `schema:reviewer_v1` in `llm_run_tags`.
 
 4. **Bump `schema_version`** the next time the model changes materially. Old runs keep their old tag — analytics compare cohorts cleanly.
+
+## Other public names
+
+From `pw_core.llm.validate`:
+
+- `ValidatorPipeline` — one agent's pipeline as `register()` built it; `get_pipeline(agent_type)` returns it or `None`.
+- `get_cross_field_validator(name)` — a registered cross-field validator (`KeyError` if unknown); `list_cross_field_validators()` lists the names.
+- `clear_cross_field_validators()` — drop every cross-field registration (tests).
+- `pw_core.llm.register_validator` — `pw_core.llm.validate.register`, re-exported at the package root.

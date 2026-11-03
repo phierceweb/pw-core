@@ -23,7 +23,7 @@ Usage::
     from pw_core.llm.router import get_agent_config
     from pw_core.clients import openrouter
 
-    @track_run(agent_type="drafter")
+    @track_run(agent_type="drafter", provider="openrouter")
     def tracked_chat(*, model, messages, **sampling):
         return openrouter.get_client().chat(model=model, messages=messages, **sampling)
 
@@ -40,7 +40,6 @@ from __future__ import annotations
 
 import functools
 import time
-import warnings
 from typing import Any, Callable
 
 from pw_core.llm.tracking.repo import LlmRunRepo, compute_input_hash
@@ -50,41 +49,23 @@ _SAMPLING_KWARGS = ("temperature", "top_p", "max_tokens", "seed", "stop_sequence
 
 _MAX_ERROR_LEN = 10_000
 
-# Sentinel distinguishing "caller omitted provider=" from an explicit None
-# (None already means "skip the label"). The implicit "openrouter" default
-# is deprecated; the backend should be passed explicitly — e.g. the
-# ``backend`` field of pw_core.llm.router.resolve_agent's result.
-_PROVIDER_UNSET: Any = object()
-
 
 def track_run(
     *,
     agent_type: str,
-    provider: str | None = _PROVIDER_UNSET,
+    provider: str | None = None,
     repo: LlmRunRepo | None = None,
 ) -> Callable:
     """Return a decorator that records one ``llm_runs`` row per wrapped call.
 
     Args:
         agent_type: slug for ``llm_agent_types`` (e.g. ``"drafter"``).
-        provider: label written to ``llm_runs.provider``. Pass the backend
-            name (e.g. ``ResolvedAgent.backend``) or ``None`` to skip.
-            Omitting it currently falls back to ``"openrouter"`` with a
-            ``DeprecationWarning``; the implicit default is removed in v1.0.
+        provider: label written to ``llm_runs.provider`` — the backend name
+            (e.g. ``ResolvedAgent.backend``). ``None`` leaves it unset.
         repo: optional ``LlmRunRepo`` instance. Defaults to a fresh one per
             call. Inject a custom instance to share a transaction or route
             writes during testing.
     """
-    if provider is _PROVIDER_UNSET:
-        warnings.warn(
-            "track_run() without provider= currently defaults the llm_runs "
-            "label to 'openrouter'; this implicit default is deprecated and "
-            "will be removed in v1.0 — pass the backend explicitly (e.g. "
-            "resolve_agent(...).backend) or provider=None to skip",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        provider = "openrouter"
 
     def decorator(func: Callable) -> Callable:
         @functools.wraps(func)

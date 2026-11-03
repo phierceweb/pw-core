@@ -2,7 +2,7 @@
 
 Turn a system-of-record (a database, a parsed corpus) into a tree of markdown files for RAG ingestion or portable review — **incrementally**, so a downstream index re-imports only what actually changed.
 
-Foundation module, stdlib-only (`pw_core.export`), built on [atomic file writes](https://github.com/phierceweb/pw-foundation/blob/main/src/pw_foundation/docs/io.md). No extra required.
+A stdlib-only pw-core module (`pw_core.export`), built on [atomic file writes](https://github.com/phierceweb/pw-foundation/blob/main/src/pw_foundation/docs/io.md). No extra required.
 
 ## Why
 
@@ -12,7 +12,6 @@ Exporting a corpus to per-file markdown on every run is cheap to write but expen
 - **atomic** — each write goes through `atomic_write_text`, so a crash mid-export never leaves a torn file.
 - **prune** — files the exporter previously produced but no longer yields are deleted, scoped to the managed suffixes (`.md` by default) and only within the directories it writes into. Hand-placed files and unrelated directories are never touched.
 
-A markdown-export orchestrator base any project can subclass.
 
 ## Usage
 

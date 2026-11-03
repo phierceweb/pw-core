@@ -60,12 +60,14 @@ _QUERY_DIGEST_LEN = 10
 # a DOCTYPE plus an embedded license header.
 _SVG_SCAN_BYTES = 4096
 
+_MD_REF_END = r"""(?:\s+(?:"[^"]*"|'[^']*'|\([^()]*\)))?\s*\)"""
+
 # Remote refs only — local paths and other schemes (data:, file:) never match.
-_MD_REMOTE_RE = re.compile(r"!\[[^\]]*\]\((https?://[^)\s]+)\)")
+_MD_REMOTE_RE = re.compile(r"!\[[^\]]*\]\((https?://[^)\s]++)" + _MD_REF_END)
 
 # Relative refs, resolved only against a caller-supplied base_url. The lookahead
 # excludes already-localized ``images/`` refs, absolute paths, and data: URIs.
-_MD_RELATIVE_RE = re.compile(r"!\[[^\]]*\]\((?!https?://|images/|/|data:)([^)\s]+)\)")
+_MD_RELATIVE_RE = re.compile(r"!\[[^\]]*\]\((?!https?://|images/|/|data:)([^)\s]++)" + _MD_REF_END)
 
 _HTML_REMOTE_RE = re.compile(r"""<img\b[^>]*?\bsrc=["'](https?://[^"']+)["']""", re.IGNORECASE)
 
@@ -296,9 +298,16 @@ def _is_image_url(url: str) -> bool:
 
     ``Path.suffix`` is not the test: a dot in an extensionless CDN basename
     (``.../asset-v3.1-large``, ``.../asset.jpg-1``) would read as an extension
-    and skip a real image.
+    and skip a real image. A URL with an unreadable host or port (``https://[x/b.png``,
+    ``…:99999/``) does not qualify.
     """
-    match = _EXTENSION_RE.search(Path(urlparse(url).path.rstrip("/")).name)
+    try:
+        parts = urlparse(url)
+        _ = parts.port
+    except ValueError:
+        return False
+    path = parts.path
+    match = _EXTENSION_RE.search(Path(path.rstrip("/")).name)
     return match is None or match.group(0).lower() in _IMAGE_EXTENSIONS
 
 
@@ -378,7 +387,10 @@ def _claim_name(name: str, used: set[str]) -> str:
 
 
 def _retarget(text: str, ref: str, local: str) -> str:
-    """Anchor-safe rewrite of every occurrence in both syntaxes — never the bare URL."""
-    text = text.replace(f"]({ref})", f"]({local})")
-    text = text.replace(f'src="{ref}"', f'src="{local}"')
-    return text.replace(f"src='{ref}'", f"src='{local}'")
+    """Anchor-safe rewrite of every ref the finders match, in both syntaxes — never the bare URL."""
+    text = re.sub(r"\]\(" + re.escape(ref) + f"(?={_MD_REF_END})", lambda _: f"]({local}", text)
+    return re.sub(
+        r"""((?i:src)=)(["'])""" + re.escape(ref) + r"\2",
+        lambda m: f"{m[1]}{m[2]}{local}{m[2]}",
+        text,
+    )

@@ -37,7 +37,7 @@ The client is injected, never coded in. Bake per-stage options (model pin, `tool
 def chat(self, messages: list[dict], model: str = ..., **kwargs) -> tuple[str, dict]: ...
 ```
 
-Both `pw_core.clients.claude_code.ClaudeCodeClient` and `pw_core.clients.openrouter.OpenRouterClient` satisfy it. The returned `usage` dict is recorded as-is except for two keys: `system_fingerprint` is mapped to `llm_runs.model_fingerprint`, and `duration_ms` is read for logging.
+The three built-in clients (`ClaudeCodeClient`, `OpenRouterClient`, `AnthropicClient`) satisfy it. The returned `usage` dict is recorded as-is, except that `system_fingerprint` is mapped to `llm_runs.model_fingerprint`.
 
 ---
 
@@ -80,7 +80,7 @@ With `expect_json=True` the response is parsed via `parse_llm_json(recover=True,
 
 **Truncation.** `on_truncation` defaults to `"raise"` here (the parser's own default is `"warn"`), so a response the model cut short is surfaced as `LlmJsonError` instead of returning a short list or a sealed partial record. `tracked_call` reads the client's `usage["finish_reason"]` and passes it to `parse_llm_json` as the authoritative [`truncated=` flag](llm-parse.md#detecting-truncation-truncated-not-the-text), so a payload that `json_repair` would otherwise seal into a plausible answer still fails.
 
-**A known-truncated response does not spend the retry.** The retry resends the same prompt under the same token cap, so it truncates again and fails identically — at twice the price. `json_retry` therefore applies only when truncation is unknown or ruled out; a `usage["finish_reason"]` in the truncation vocabulary short-circuits straight to `LlmJsonError` after exactly one client call. Raise the cap (or shorten the prompt) rather than retrying. OpenRouter and Anthropic always report a finish reason; [Claude Code](claude-code.md) reports one whenever its envelope carries it.
+**A known-truncated response does not spend the retry.** The retry resends the same prompt under the same token cap, so it truncates again and fails identically — at twice the price. `json_retry` therefore applies only when truncation is unknown or ruled out; a `usage["finish_reason"]` in the truncation vocabulary short-circuits straight to `LlmJsonError` after exactly one client call. Raise the cap (or shorten the prompt) rather than retrying. OpenRouter and Anthropic report a finish reason whenever the route returns one; [Claude Code](claude-code.md) reports one whenever its envelope carries it.
 
 ---
 

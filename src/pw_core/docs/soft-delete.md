@@ -29,9 +29,10 @@ with transaction() as conn:
 
 ### `restore(conn, table_name, id_column, id_value)`
 
-Restore a soft-deleted row by clearing `deleted_at` (and `deleted_reason` if present).
+Restore a soft-deleted row by clearing `deleted_at` and the reason column (`deleted_reason` by default). On a table without a reason column pass `reason_column=None`, or the UPDATE fails.
 
 ```python
+from pw_core.db import transaction
 from pw_core.db.soft_delete import restore
 
 with transaction() as conn:

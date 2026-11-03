@@ -24,7 +24,7 @@ def main():
 
 Returns a `typer.Typer` with:
 
-- `--verbose / -v` flag that sets `LOG_LEVEL=DEBUG`
+- `--verbose / -v` flag that sets the console log level to DEBUG for the run (`setup_logging(level="DEBUG")`)
 - Automatic `setup_logging()` on every invocation
 - Shell completion disabled (cleaner `--help`)
 
@@ -38,7 +38,7 @@ Wraps `app()` with standardized exception handling:
 |-----------|----------|
 | `typer.Exit(N)` | Exits with code `N`. See note below. |
 | `ClickException` | Show the usage/error message, exit with the exception's own `exit_code` |
-| `InvalidInputError` raised in a typer `parser=` | That error's message, exit 1, as for `FlowException`. click catches it as a `ValueError` and would print a usage error naming only the raw value; a `FlowException` that is a `ValueError` in its own right keeps that usage error, as it always did |
+| `InvalidInputError` raised in a typer `parser=` | That error's message, exit 1, as for `FlowException`. click catches it as a `ValueError` and would print a usage error naming only the raw value; a `FlowException` that is a `ValueError` in its own right keeps that usage error |
 | `FlowException` | Print message to stderr (red), exit 1 |
 | pydantic `ValidationError` wrapping a validator's `InvalidInputError` | That error's message, exit 1, as for `FlowException` — whatever else the `ValidationError` holds (see [exceptions.md](https://github.com/phierceweb/pw-foundation/blob/main/src/pw_foundation/docs/exceptions.md)); any other `ValidationError` propagates |
 | `AppError` | `log_exception()` + print to stderr, exit 1 |
@@ -52,7 +52,7 @@ Wraps `app()` with standardized exception handling:
 
 `standalone_mode=False` also means typer re-raises usage errors instead of printing them, so `run_cli` handles them: an unknown option, a missing required argument, or a `typer.BadParameter` raised in a command body prints the short click message and exits `2` (`UsageError.exit_code`); a plain `ClickException` exits `1`. Without this the user would get a rich traceback.
 
-typer `>= 0.26` vendors its own copy of click under `typer._click`, so `typer.BadParameter` and `typer.Abort` are **not** subclasses of the installed `click`'s classes. `run_cli` resolves both hierarchies at import time and catches both, which keeps behavior identical across the supported typer range. Catching only `click.exceptions.*` in your own code will silently miss typer's exceptions on 0.26+.
+typer vendors its own copy of click under `typer._click` (every supported version), so `typer.BadParameter` and `typer.Abort` are **not** subclasses of the installed `click`'s classes. `run_cli` resolves both hierarchies at import time and catches both. Catching only `click.exceptions.*` in your own code will silently miss typer's exceptions.
 
 The `args` parameter is for testing — pass a list of CLI args instead of reading `sys.argv`.
 

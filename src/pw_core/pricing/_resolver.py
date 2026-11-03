@@ -25,6 +25,8 @@ _unknown_warned: set[str] = set()
 def register_rates(provider: str, model_prefix: str, rates: ModelRates) -> None:
     """Register a model's rates, overriding any built-in with the same prefix.
 
+    A dashed prefix also matches the dotted spelling of an id; a dotted one matches only dotted ids.
+
     Lets a consumer price models pw-core doesn't ship (or correct a stale
     built-in) at startup, without editing the framework::
 
@@ -61,17 +63,20 @@ def get_rates(provider: str, model: str) -> ModelRates | None:
     """Return the :class:`ModelRates` for ``model``, or ``None`` if unpriced.
 
     Registered rates win over built-ins; within a table the first
-    prefix match (insertion order) wins. A provider that has no table of
-    its own — including none given — searches every table.
+    prefix match (insertion order) wins. A prefix matches the id as written or
+    with its dots read as dashes (``claude-opus-4.5`` → ``claude-opus-4-5``).
+    A provider that has no table of its own — including none given — searches
+    every table.
     """
     provider, model = _normalize(provider, model)
+    dashed = model.replace(".", "-")
     if provider in _REGISTERED or provider in _BUILTIN:
         tables = [_REGISTERED.get(provider, {}), _BUILTIN.get(provider, {})]
     else:
         tables = [*_REGISTERED.values(), *_BUILTIN.values()]
     for table in tables:
         for prefix, rates in table.items():
-            if model.startswith(prefix):
+            if model.startswith(prefix) or dashed.startswith(prefix):
                 return rates
     return None
 
@@ -93,7 +98,8 @@ def price_call(
     it. Cache token costs are added only when the model's
     :class:`ModelRates` defines cache rates. ``cache_ttl="1h"`` prices cache
     writes at the model's ``cache_write_1h`` rate when defined (falling back
-    to ``cache_write``); any other value uses ``cache_write``.
+    to ``cache_write``); any other value uses ``cache_write``. A prompt over the
+    model's ``long_prompt_threshold`` is priced at its ``long_prompt`` rates.
     """
     rates = get_rates(provider, model)
     if rates is None:
@@ -110,6 +116,9 @@ def price_call(
                 ),
             )
         return None
+    prompt_length = prompt_tokens + cache_read_tokens + cache_write_tokens
+    if rates.long_prompt is not None and prompt_length > (rates.long_prompt_threshold or 0):
+        rates = rates.long_prompt
     cost = prompt_tokens * rates.input / 1_000_000 + completion_tokens * rates.output / 1_000_000
     if rates.cache_read is not None:
         cost += cache_read_tokens * rates.cache_read / 1_000_000

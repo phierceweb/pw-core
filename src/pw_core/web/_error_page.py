@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from html import escape as _html_escape
 
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse
+from starlette.datastructures import Headers
 
 _ERROR_PAGE = """\
 <!DOCTYPE html>
@@ -93,6 +95,11 @@ STATUS_MESSAGES = {
 }
 
 
+_BODY_HEADERS = frozenset(
+    {"content-type", "content-length", "content-encoding", "transfer-encoding"}
+)
+
+
 def render_error(
     request: Request,
     code: int,
@@ -100,9 +107,19 @@ def render_error(
     message: str,
     *,
     app: FastAPI,
+    headers: Mapping[str, str] | None = None,
 ) -> HTMLResponse | JSONResponse:
-    """Render an error as HTML or JSON based on Accept header."""
+    """Render an error as HTML or JSON based on Accept header, carrying ``headers``
+    apart from those that describe a body, since the rendered page has its own."""
     accept = request.headers.get("accept", "")
+    if headers:
+        headers = Headers(
+            raw=[
+                (k.lower().encode("latin-1"), v.encode("latin-1"))
+                for k, v in headers.items()
+                if k.lower() not in _BODY_HEADERS
+            ]
+        )
 
     # If the project has a custom error template, use it
     if "text/html" in accept and hasattr(app.state, "templates"):
@@ -112,6 +129,7 @@ def render_error(
                 "shared/error.html",
                 {"title": heading, "code": code, "heading": heading, "message": message},
                 status_code=code,
+                headers=headers,
             )
         except Exception:
             pass  # Template missing or broken — fall through to built-in
@@ -125,7 +143,7 @@ def render_error(
             heading=_html_escape(heading),
             message=_html_escape(message),
         )
-        return HTMLResponse(html, status_code=code)
+        return HTMLResponse(html, status_code=code, headers=headers)
 
     # JSON for API clients
-    return JSONResponse({"detail": message}, status_code=code)
+    return JSONResponse({"detail": message}, status_code=code, headers=headers)

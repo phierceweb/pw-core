@@ -71,9 +71,12 @@ class TestRunSubprocessJob:
         job_id = JobRepo().create(kind=KIND, created_by="test")
         row = JobRepo().get(job_id)
         out = tmp_path / "envdump"
-        code = f"import os, pathlib; pathlib.Path({str(out)!r}).write_text(os.environ.get('PW_JOB_ID', ''))"
+        code = (
+            f"import os, pathlib; pathlib.Path({str(out)!r}).write_text("
+            "os.environ.get('PW_JOB_ID', '') + '|' + str('PF_JOB_ID' in os.environ))"
+        )
         run_subprocess_job(row, _spec(tmp_path, _py(code)))
-        assert out.read_text() == str(job_id)
+        assert out.read_text() == f"{job_id}|False"
 
 
 class TestTerminate:
@@ -292,13 +295,3 @@ class TestTailLog:
         text, offset = tail_log(p, since_byte=0, max_bytes=4)
         assert text == "abcd"
         assert offset == 4
-
-
-def test_job_id_env_is_mirrored_under_the_pf_spelling(tmp_path):
-    """Until 1.0 a child sees PF_JOB_ID beside PW_JOB_ID (CHANGELOG v0.27.0)."""
-    job_id = JobRepo().create(kind=KIND, created_by="test")
-    row = JobRepo().get(job_id)
-    out = tmp_path / "envdump"
-    code = f"import os, pathlib; pathlib.Path({str(out)!r}).write_text(os.environ.get('PW_JOB_ID', '') + '|' + os.environ.get('PF_JOB_ID', ''))"
-    run_subprocess_job(row, _spec(tmp_path, _py(code)))
-    assert out.read_text() == f"{job_id}|{job_id}"

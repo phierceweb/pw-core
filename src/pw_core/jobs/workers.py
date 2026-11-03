@@ -198,8 +198,6 @@ def run_subprocess_job(job_row: dict, spec: SubprocessJobSpec) -> None:
     cmd = spec.argv(job_row)
     env = dict(os.environ)
     env[spec.job_id_env] = str(job_id)
-    if spec.job_id_env.startswith("PW_"):  # the PF_ spelling too, until 1.0
-        env["PF_" + spec.job_id_env[3:]] = str(job_id)
 
     repo = JobRepo()
     with Job(job_id, repo=repo) as job:

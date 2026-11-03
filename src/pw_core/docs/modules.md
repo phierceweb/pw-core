@@ -6,6 +6,8 @@ The foundation layer — logging, exceptions, the config base, console output, p
 
 This file is the navigational index. It describes responsibilities, not APIs — for API-level detail (function signatures, parameters, examples) see the linked module doc. For the extras matrix and install/release/update flows, see [INSTALLATION.md](INSTALLATION.md).
 
+**Stability.** The pages indexed here define pw-core's public API under semantic versioning: the modules they document and the names they show, imported from the paths they show. Anything they don't show — an undocumented submodule, a `_`-prefixed module or name — can change in any release, and so can a page marked **Experimental**. A deprecated API keeps working and emits a `DeprecationWarning` naming its replacement until the next major release; [CONTRIBUTING.md](https://github.com/phierceweb/pw-core/blob/main/CONTRIBUTING.md#versioning--deprecations) lists the named exceptions.
+
 ---
 
 ## Table of Contents
@@ -40,7 +42,7 @@ Persist and inspect every LLM call so cost, prompts, validations, and outcomes a
 | [Prompts](prompts.md) | Load prompts from YAML, version them, and register them in the database so every tracked run links back to the prompt that produced it. |
 | [Model router](model-router.md) | Per-agent model, sampling, and backend configuration loaded from YAML with live reload. Swap an agent's model — or which client serves it (`resolve_agent`, nested per-backend blocks, opt-in availability fallback, custom backends via the client registry) — without code changes or restarts. |
 | [LLM admin dashboard](llm-admin.md) | Mountable FastAPI sub-app showing runs, costs, jobs, cache stats, and budgets. |
-| [OpenTelemetry export](otel.md) | `pw-export otel` — backfill `llm_runs` to any OTLP/HTTP backend (Phoenix, Langfuse, a Collector) as GenAI spans: one trace per job, deterministic ids so a re-export repeats rather than duplicates, bodies opt-in per agent (`[otel]`). |
+| [OpenTelemetry export](otel.md) | **Experimental.** `pw-export otel` — backfill `llm_runs` to any OTLP/HTTP backend (Phoenix, Langfuse, a Collector) as GenAI spans: one trace per job, deterministic ids so a re-export repeats rather than duplicates, bodies opt-in per agent (`[otel]`). |
 
 ## AI-quality guards
 
@@ -109,7 +111,7 @@ Coordinate multi-step work across services and persist progress so jobs survive 
 | [Jobs](jobs.md) | Generic job tracker with state machine, idempotent step history, worker-claim leases, and automatic LLM-run attribution. Includes a `pw-jobs` CLI. |
 | [Jobs runtime](jobs-runtime.md) | The execution layer: polling worker pool over `claim_next` (stale-lease reclaim on start), tracked subprocess runner (`SubprocessJobSpec` — argv/log/outputs hooks, job-id env injection, escalating group cancel, byte-offset log tail), and the background thread submitter (`submit_tracked`/`submit_detached`, injectable dedup scope, `wait_all` test drain). |
 | [Jobs admin dashboard](jobs-admin.md) | Mountable jobs list/detail pages + polling JSON API + soft-cancel endpoint (409 on terminal, optional terminate hook) — the jobs sibling of the LLM admin dashboard. |
-| [Orchestrators](orchestrators.md) | Base class for multi-step workflows that coordinate several services. Enforces the layered architecture. |
+| [Orchestrators](orchestrators.md) | **Experimental.** Base class for multi-step workflows that coordinate several services. Enforces the layered architecture. |
 | [Services](https://github.com/phierceweb/pw-foundation/blob/main/src/pw_foundation/docs/services.md) | Base class for single-domain business logic. Standard hooks for repos, logging, and configuration. |
 
 ## Web & API
@@ -132,7 +134,7 @@ Make architecture violations and bloated files fail the build, not a code review
 | [Doctor — pw-core's rows](doctor.md) | What pw-core adds to `pw-doctor`: extras present, pw-core's env vars (redacted), router-config validity, dependency versions; `--db` adds a read-only connectivity + migration check. |
 | [Linting](https://github.com/phierceweb/pw-foundation/blob/main/src/pw_foundation/docs/linting.md) | Layer import linter (enforces the call direction in the repo's `layering` rule) and file-size linter (per-layer line budgets with project overrides). |
 | [CLI](cli.md) | Typer scaffold with consistent verbose flag and exception-to-exit-code mapping. |
-| [Testing](testing.md) | Pytest fixtures auto-registered as a plugin: isolated per-test SQLite database (file-backed, concurrency-safe; `PW_TEST_DATABASE_URL` for Postgres/MySQL), savepoint-per-test, FastAPI test client, framework-table DDL helpers, budget-guard silencing, hermetic-env conftest helpers. |
+| [Testing](testing.md) | Pytest fixtures auto-registered as a plugin: isolated per-test SQLite database (file-backed, concurrency-safe; `PW_TEST_DATABASE_URL` for Postgres/MySQL), a rolled-back connection per test, FastAPI test client, framework-table DDL helpers, budget-guard silencing, hermetic-env conftest helpers. |
 | [New-consumer scaffold](scaffold.md) | `bin/new-consumer` — stamp a runnable, conformant consumer skeleton (lib or app layout) from the pw-core checkout's templates. From-checkout dev tool; not shipped in the wheel. |
 | [Test migration](test-migration.md) | Checklist for verifying a consumer after a pw-core upgrade or a migration onto framework APIs — classify each change by test impact, fix imports and mock targets, run the steps in order. |
 | [Output reporters](https://github.com/phierceweb/pw-foundation/blob/main/src/pw_foundation/docs/output.md) | Reporter protocol for batch progress, with console (Rich) and structlog implementations. |
@@ -146,7 +148,7 @@ Make architecture violations and bloated files fail the build, not a code review
 | [Logging](https://github.com/phierceweb/pw-foundation/blob/main/src/pw_foundation/docs/logging.md) | structlog setup with colored console for development and JSON-lines for production ingestion. |
 | [Cache](cache.md) | Redis-backed regions with graceful degradation when Redis is unavailable. |
 | [Reload cache](https://github.com/phierceweb/pw-foundation/blob/main/src/pw_foundation/docs/reload-cache.md) | TTL hot-reload cache for config loaders — double-checked lock, per-call TTL read, key invalidation, optional serve-stale-on-error. |
-| [Project portability](project-portability.md) | The rule that keeps pw-core consumable: zero hardcoded project names, organizations, jurisdictions, or domains in framework code. |
+| [Project portability](project-portability.md) | Keep a consumer app portable: no hardcoded project names, organizations, jurisdictions or domains in its code — bind them through config. |
 
 ## Pipeline ergonomics
 
@@ -176,7 +178,7 @@ Small, focused helpers used across the framework.
 | [Dates](https://github.com/phierceweb/pw-foundation/blob/main/src/pw_foundation/docs/dates.md) | Stable parsing, formatting, and range generation for ISO dates and YYYY-MM month labels. |
 | [Relative dates](relative-dates.md) | Resolve LLM-emitted phrases like "yesterday" or "Tuesday" against a known reference date. |
 | [Periods](https://github.com/phierceweb/pw-foundation/blob/main/src/pw_foundation/docs/periods.md) | Resolve named period presets (`yesterday`, `last_7d`, `day:2026-05-12`) into `(start, end, label)` tuples — one shared label convention so period labels stay consistent cohort keys across reporting CLIs. |
-| [URLs](urls.md) | Domain extraction, canonical URL forms, suspicious-archive-timestamp detection. |
+| [URLs](urls.md) | Domain extraction, canonical URLs, liveness checks with a cached variant, SSRF-guarded fetch, Wayback snapshot checks, path-date and article-metadata sniffing. |
 | [JSON utils](https://github.com/phierceweb/pw-foundation/blob/main/src/pw_foundation/docs/json-utils.md) | Tolerant JSON parsing for database columns that may already be parsed, plus `canonical_json` — sorted-key serialization so equal objects compare and hash identically. |
 | [YAML utils](https://github.com/phierceweb/pw-foundation/blob/main/src/pw_foundation/docs/yaml-utils.md) | `safe_load` / `UniqueKeyLoader` — a drop-in for `yaml.safe_load` that raises on a repeated mapping key instead of silently keeping the last value. Every pw-core config loader reads YAML through it. |
 | [Content hashing](https://github.com/phierceweb/pw-foundation/blob/main/src/pw_foundation/docs/hashing.md) | `content_hash` — stable hex digest of text or a structured object (via `canonical_json`) for change-detection and cache keys. Not a security primitive. |

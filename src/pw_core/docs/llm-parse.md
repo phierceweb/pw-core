@@ -67,7 +67,7 @@ parse_llm_json(content, on_truncation="raise", truncated=truncated_from_usage(us
 | `stop`, `end_turn`, `stop_sequence`, `eos`, `tool_use`, `tool_calls`, `function_call` | `False` |
 | anything else, or absent / `None` | `None` |
 
-An unrecognised reason is **unknown, not complete** — answering `False` would assert completeness on a token no backend here has ever emitted. All three clients report a reason: [OpenRouter](openrouter.md) passes the route's through, [Anthropic](anthropic.md) and [Claude Code](claude-code.md) normalise their `stop_reason` onto `"length"`. [`tracked_call`](llm-tracked.md) and [`llm_step`](llm-step.md) wire this through for you.
+An unrecognised reason is **unknown, not complete** — answering `False` would assert completeness on a token no backend here has ever emitted. [OpenRouter](openrouter.md) passes the route's reason through; [Anthropic](anthropic.md) and [Claude Code](claude-code.md) normalise their `stop_reason` onto `"length"`. Claude Code reports none for an error result or when its JSON envelope is suppressed, which reads as unknown. [`tracked_call`](llm-tracked.md) and [`llm_step`](llm-step.md) wire this through for you.
 
 ```python
 # Parse any JSON

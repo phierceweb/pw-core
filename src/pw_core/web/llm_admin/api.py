@@ -17,7 +17,7 @@ from pw_core.web.llm_admin import queries as q
 def register_api_routes(router: APIRouter) -> None:
     """Attach all JSON endpoints to *router*."""
 
-    @router.get("/api/dashboard.json")
+    @router.get("/api/dashboard.json", name="llm_admin_dashboard_json")
     def dashboard_json(since: str | None = None, until: str | None = None):
         s, u = q.parse_window(since, until, default_days=7)
         return {
@@ -29,7 +29,7 @@ def register_api_routes(router: APIRouter) -> None:
             "meta": {"since": s.isoformat(), "until": u.isoformat()},
         }
 
-    @router.get("/api/runs.json")
+    @router.get("/api/runs.json", name="llm_admin_runs_json")
     def runs_json(
         since: str | None = None,
         until: str | None = None,
@@ -74,14 +74,14 @@ def register_api_routes(router: APIRouter) -> None:
             },
         }
 
-    @router.get("/api/run/{run_id}.json")
+    @router.get("/api/run/{run_id}.json", name="llm_admin_run_detail_json")
     def run_detail_json(run_id: int):
         detail = q.run_detail(run_id)
         if detail is None:
             raise HTTPException(status_code=404, detail="run not found")
         return {"data": detail, "meta": {"run_id": run_id}}
 
-    @router.get("/api/cost-by-model.json")
+    @router.get("/api/cost-by-model.json", name="llm_admin_cost_by_model_json")
     def cost_by_model_json(since: str | None = None, until: str | None = None):
         s, u = q.parse_window(since, until, default_days=7)
         return {
@@ -89,7 +89,7 @@ def register_api_routes(router: APIRouter) -> None:
             "meta": {"since": s.isoformat(), "until": u.isoformat()},
         }
 
-    @router.get("/api/cost-by-agent.json")
+    @router.get("/api/cost-by-agent.json", name="llm_admin_cost_by_agent_json")
     def cost_by_agent_json(since: str | None = None, until: str | None = None):
         s, u = q.parse_window(since, until, default_days=7)
         return {
@@ -97,7 +97,7 @@ def register_api_routes(router: APIRouter) -> None:
             "meta": {"since": s.isoformat(), "until": u.isoformat()},
         }
 
-    @router.get("/api/jobs.json")
+    @router.get("/api/jobs.json", name="llm_admin_jobs_json")
     def jobs_json(
         status: str | None = None,
         kind: str | None = None,
@@ -116,14 +116,14 @@ def register_api_routes(router: APIRouter) -> None:
             },
         }
 
-    @router.get("/api/job/{job_id}.json")
+    @router.get("/api/job/{job_id}.json", name="llm_admin_job_detail_json")
     def job_detail_json(job_id: int):
         detail = q.job_detail(job_id)
         if detail is None:
             raise HTTPException(status_code=404, detail="job not found")
         return {"data": detail, "meta": {"job_id": job_id}}
 
-    @router.post("/api/job/{job_id}/cancel")
+    @router.post("/api/job/{job_id}/cancel", name="llm_admin_cancel_job")
     def cancel_job(
         job_id: int,
         body: dict | None = Body(default=None),
@@ -159,7 +159,7 @@ def register_api_routes(router: APIRouter) -> None:
         detail = q.job_detail(job_id)
         return {"data": detail, "meta": {"job_id": job_id}}
 
-    @router.get("/api/cache.json")
+    @router.get("/api/cache.json", name="llm_admin_cache_json")
     def cache_json(since: str | None = None, until: str | None = None):
         s, u = q.parse_window(since, until, default_days=7)
         return {
@@ -171,7 +171,7 @@ def register_api_routes(router: APIRouter) -> None:
             "meta": {"since": s.isoformat(), "until": u.isoformat()},
         }
 
-    @router.get("/api/budgets.json")
+    @router.get("/api/budgets.json", name="llm_admin_budgets_json")
     def budgets_json():
         return {
             "data": q.list_budgets_with_spend(),

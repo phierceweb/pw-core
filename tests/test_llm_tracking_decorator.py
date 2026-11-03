@@ -28,25 +28,6 @@ def _clear_caches_between_tests():
     clear_resolver_caches()
 
 
-# ---------------------------------------------------------------------------
-# provider= label default deprecation
-# ---------------------------------------------------------------------------
-
-
-def test_track_run_without_provider_warns_deprecation():
-    """The silent provider="openrouter" label default is deprecated — the
-    label should be passed explicitly (e.g. the backend from resolve_agent)
-    or None to skip."""
-    with pytest.warns(DeprecationWarning, match="provider"):
-        track_run(agent_type="drafter")
-
-
-def test_track_run_with_explicit_provider_does_not_warn(recwarn):
-    track_run(agent_type="drafter", provider="anthropic")
-    track_run(agent_type="drafter", provider=None)
-    assert not [w for w in recwarn if issubclass(w.category, DeprecationWarning)]
-
-
 @pytest.fixture()
 def tracking_db(pw_engine):
     metadata.create_all(pw_engine)
@@ -92,7 +73,7 @@ def test_decorator_records_run_on_success(tracking_db):
         },
     )
 
-    @track_run(agent_type="drafter")
+    @track_run(agent_type="drafter", provider="openrouter")
     def tracked_chat(*, model, messages, **sampling):
         return fake.chat(model=model, messages=messages, **sampling)
 
@@ -239,6 +220,19 @@ def test_decorator_records_custom_provider(tracking_db):
     _, usage = tracked_chat(model="claude-opus-4-7", messages=[])
     row = LlmRunRepo().get(usage["_llm_run_id"])
     assert row["provider"] == "claude_cli"
+
+
+def test_decorator_without_provider_leaves_label_unset(tracking_db, recwarn):
+    fake = _FakeOpenRouterClient(content="x", usage={})
+
+    @track_run(agent_type="drafter")
+    def tracked_chat(*, model, messages):
+        return fake.chat(model=model, messages=messages)
+
+    _, usage = tracked_chat(model="claude-opus-4-7", messages=[])
+    row = LlmRunRepo().get(usage["_llm_run_id"])
+    assert row["provider"] is None
+    assert not [w for w in recwarn if issubclass(w.category, DeprecationWarning)]
 
 
 # ---------------------------------------------------------------------------

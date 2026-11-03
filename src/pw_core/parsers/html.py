@@ -145,7 +145,7 @@ class BodyExtractor(HTMLParser):
 def normalize_plain_text(text: str) -> str:
     """Trim and collapse excessive blank lines.
 
-    Three or more consecutive blank lines collapse to one blank line
+    Two or more consecutive blank lines collapse to one blank line
     (i.e. paragraph breaks survive, but giant gaps from nested empty
     blocks don't). Leading and trailing whitespace is stripped.
     """

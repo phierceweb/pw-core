@@ -25,6 +25,7 @@ with transaction() as conn:
 
 - **`conflict`** — the columns of the unique/primary-key constraint to conflict on. On MySQL/MariaDB the conflict target is implicit (`ON DUPLICATE KEY UPDATE` keys off any duplicate key), so the argument is accepted for a uniform call site but not emitted into the SQL — see the caveat below.
 - **`update`** (upsert only) — the columns to overwrite from the incoming row when it already exists.
+- `upsert` returns `None` and raises `InvalidInputError` when `conflict` or `update` is empty.
 - `insert_ignore` returns `1` if a row was inserted, `0` if a conflicting row already existed — reliable on every supported backend. On SQLite/Postgres the count comes from `RETURNING` (because `ON CONFLICT DO NOTHING` reports `rowcount = -1` on psycopg). On MySQL/MariaDB it comes from `lastrowid`: the no-op update sets `LAST_INSERT_ID` to a sentinel (max `BIGINT UNSIGNED`) only when the row was a duplicate. `rowcount` can't tell the two apart there, because SQLAlchemy's MySQL drivers enable `CLIENT_FOUND_ROWS`, which counts an unchanged duplicate as 1.
 
 ## Dialects

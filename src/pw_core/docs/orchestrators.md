@@ -1,5 +1,7 @@
 # Orchestrators
 
+**Experimental:** outside the 1.0 stability promise; its API can change in any release.
+
 An **Orchestrator** coordinates multiple services to accomplish a multi-step workflow — exporting records, running a review pass, scanning a catalog.
 
 ## Why use the Orchestrator base class?

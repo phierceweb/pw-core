@@ -1,5 +1,7 @@
 # OpenTelemetry Export
 
+**Experimental:** outside the 1.0 stability promise; its API can change in any release.
+
 Send tracked LLM runs (`llm_runs`) to any OTLP/HTTP backend — Phoenix, Langfuse, Jaeger, an OpenTelemetry Collector — as GenAI client spans, with `pw-export otel` or `pw_core.llm.tracking.otel.export_runs`.
 
 This is a **backfill from the database**, not live instrumentation: pw-core emits no spans while calls run. It reads the same rows the [LLM admin dashboard](llm-admin.md) reads ([llm-tracking.md](llm-tracking.md) owns the schema). It is unrelated to structured logging ([logging.md](https://github.com/phierceweb/pw-foundation/blob/main/src/pw_foundation/docs/logging.md)).
@@ -18,6 +20,7 @@ This is a **backfill from the database**, not live instrumentation: pw-core emit
 - [From Python](#from-python)
 - [Mounting in a project CLI](#mounting-in-a-project-cli)
 - [Adding a new attribute](#adding-a-new-attribute)
+- [Other public names](#other-public-names)
 
 ---
 
@@ -142,7 +145,7 @@ summary = export_runs(
 print(summary.spans, summary.traces, summary.with_bodies)
 ```
 
-Pass `resource=` to set the resource (and so the id scope) explicitly instead of from `OTEL_SERVICE_NAME` / `OTEL_RESOURCE_ATTRIBUTES`. A passed-in exporter is left open; the default one is shut down on return. In tests, `InMemorySpanExporter` collects the spans.
+`export_runs` takes the CLI's filters as keywords — `since`, `until`, `agent_type`, `job_id`, `include_bodies` — plus `dry_run=True` to build and count the spans without sending. Pass `resource=` to set the resource (and so the id scope) explicitly instead of from `OTEL_SERVICE_NAME` / `OTEL_RESOURCE_ATTRIBUTES`. A passed-in exporter is left open; the default one is shut down on return. In tests, `InMemorySpanExporter` collects the spans.
 
 ---
 
@@ -165,3 +168,9 @@ app.add_typer(export_app, name="export")  # myapp export otel --dry-run
 3. Add the row to the [mapping table](#attribute-mapping).
 
 When moving to a newer conventions release, change `SEMCONV_SCHEMA_URL`, re-check every name against that release, and update the version stated above.
+
+## Other public names
+
+From `pw_core.llm.tracking.otel`:
+
+- `OtelExportSummary` — what one `export_runs` call sent, or on a dry run would send.

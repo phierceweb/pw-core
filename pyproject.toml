@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pw-core"
-version = "0.28.0"
-description = "Python foundation for LLM apps whose prompts and spend you can actually see — versioned prompts, every call recorded and replayable, budgets, evals, and resumable jobs on one schema; opt-in LLM, database, and FastAPI layers"
+version = "1.0.0"
+description = "Python foundation for LLM apps whose prompts and spend you can see — versioned prompts, every call recorded and replayable, budgets, evals, and resumable jobs on one schema; opt-in LLM, database, and FastAPI layers"
 readme = "README.md"
 requires-python = ">=3.12"
 license = "Apache-2.0"
@@ -26,11 +26,12 @@ keywords = [
     "background-jobs",
 ]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Typing :: Typed",
 ]
 dependencies = [
@@ -86,8 +87,8 @@ llm = [
     "tenacity>=9.1",
 ]
 
-# Database layer: pw_core.db.*, pw_core.alembic, fully-functional cost guards
-# (BudgetRepo / CostRateRepo). Without [db], pw_core.budget.check_budget still
+# Database layer: pw_core.db.*, pw_core.alembic (the DB-backed cost guards
+# need [tracking]). Without [db], pw_core.budget.check_budget still
 # imports and short-circuits gracefully; pw_core.db.* and pw_core.alembic
 # raise ImportError. SQLite needs no driver extra (stdlib).
 db = [
@@ -126,7 +127,7 @@ admin = ["pw-core[web,tracking]"]
 # jinja2 renders the HTML report (EvalReport.write_html, pw-eval run --output).
 eval = ["pw-core[tracking,jobs]", "jinja2>=3.1.6"]
 
-# OpenTelemetry export: pw_core.llm.tracking.otel and the pw-export CLI send
+# OpenTelemetry export (experimental): pw_core.llm.tracking.otel and the pw-export CLI send
 # llm_runs to any OTLP/HTTP backend as GenAI spans. Requires [tracking] (the
 # runs) and [cli] (pw-export). Opt-in tooling, so [full] does not include it.
 otel = [
@@ -162,7 +163,7 @@ jsonschema = ["jsonschema>=4.26"]
 
 # Article fetch + extract: pw_core.utils.article_fetch (title, body,
 # publish-date with Wayback Machine fallback for paywalled URLs). tenacity
-# drives the Wayback retry loop.
+# drives the Wayback retry loop. The module also needs [http]; [crawl] has both.
 articles = [
     "trafilatura>=2.2",
     "htmldate>=1.10",

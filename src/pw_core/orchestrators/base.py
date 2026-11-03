@@ -1,5 +1,6 @@
 """
-Base orchestrator class for multi-step workflow coordination.
+Base orchestrator class for multi-step workflow coordination. Experimental: outside the 1.0
+stability promise; its API can change in any release.
 
 An orchestrator coordinates services to accomplish a multi-step task —
 exporting records, running a review pass, scanning a catalog.  It never
@@ -58,7 +59,8 @@ class Orchestrator:
 
     Orchestrators MUST NOT:
         - Import or instantiate repositories directly.
-        - Call ``transaction()`` — services own data access.
+        - Call ``transaction()`` — services own data access — except to open one
+          shared transaction passed to services via ``conn=``.
         - Contain domain logic — delegate to services.
     """
 

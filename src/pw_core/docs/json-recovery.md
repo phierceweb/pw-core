@@ -1,6 +1,6 @@
 # JSON Recovery
 
-Extract and recover JSON from messy text — markdown fences, trailing commentary, or truncation mid-object. Generic and stdlib-only: the functions operate on plain strings with no LLM coupling, so they live in the foundation `utils` package (`pw_core.utils.json_recovery`) and import on the base install. A common source of messy JSON is LLM output, but nothing here is LLM-specific.
+Extract and recover JSON from messy text — markdown fences, trailing commentary, or truncation mid-object. Generic and stdlib-only: the functions operate on plain strings with no LLM coupling, so they live in `pw_core.utils` (`pw_core.utils.json_recovery`) and import on the base install. A common source of messy JSON is LLM output, but nothing here is LLM-specific.
 
 ## Functions
 

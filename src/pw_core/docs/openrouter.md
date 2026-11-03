@@ -33,7 +33,7 @@ Plus a constructor / `get_client()` kwarg:
 
 | Kwarg | Default | Description |
 |---|---|---|
-| `retry` | `0` | Auto-retry count for transient failures (timeout, 429, 5xx). `retry=0` raises on the first failure. `retry=1` makes up to 2 total attempts. 4xx other than 429 are caller errors and NOT retried. |
+| `retry` | `0` | Auto-retry count for transient failures (timeout, 429, 500/502/503/504). `retry=0` raises on the first failure. `retry=1` makes up to 2 total attempts. 4xx other than 429 are caller errors and NOT retried. |
 
 ## chat()
 
@@ -68,7 +68,7 @@ content, usage = client.chat(
     "cost_usd": 0.0023,  # from OpenRouter's reported `cost` field
     "duration_ms": 3400,
     "system_fingerprint": None,
-    "finish_reason": "stop",  # all three clients report one
+    "finish_reason": "stop",  # None when the route omits it
 }
 ```
 
@@ -80,7 +80,7 @@ content, usage = client.chat(
 
 ```python
 content, usage = client.chat(messages, model=model, max_tokens=4096)
-if usage["finish_reason"] == "length":
+if usage.get("finish_reason") == "length":
     ...  # retry with a larger max_tokens, or continue the completion
 ```
 
@@ -134,7 +134,7 @@ except OpenRouterError as e:
 
 ## Retry on transient failure
 
-`retry=N` on the constructor / `get_client()` enables auto-retry on transient failures. Retried: `httpx.TimeoutException`, status 429 (rate limit), status 5xx. NOT retried: 4xx other than 429 (caller errors that won't get better on the next try).
+`retry=N` on the constructor / `get_client()` enables auto-retry on transient failures. Retried: `httpx.TimeoutException` and status 429, 500, 502, 503, 504. NOT retried: any other status — 4xx other than 429 (caller errors that won't get better on the next try) and other 5xx such as 501/505/507.
 
 ```python
 client = get_client(retry=2)  # up to 3 total attempts
@@ -148,7 +148,7 @@ content, usage = client.chat(messages, model="...")
 Every re-attempt sleeps first — an unpaced retry budget would burn all its attempts inside a millisecond, while the rate-limit window that rejected the first call is still saturated.
 
 - **429 with a numeric `Retry-After`** — sleeps for that many seconds, clamped to 0–30. A malformed or absent header (an HTTP-date form, or a `NaN`) falls back to backoff; a negative value floors to no wait rather than reaching `time.sleep`, which rejects it.
-- **Everything else** (5xx, timeout, 429 without the header) — `0.5 s × attempt number` (0.5 s, 1.0 s, 1.5 s …) plus up to 25% jitter, so parallel workers don't re-hit the same window in lockstep.
+- **Everything else** (500/502/503/504, timeout, 429 without the header) — `0.5 s × attempt number` (0.5 s, 1.0 s, 1.5 s …) plus up to 25% jitter, so parallel workers don't re-hit the same window in lockstep.
 - **The final attempt never sleeps** — the error raises immediately once the budget is spent.
 
 `Retry-After` is honoured on 429 only; on 5xx it is ignored, matching [`pw_core.fetch`](fetch.md).
@@ -161,7 +161,7 @@ There is no separate wall-clock cap. Python threads can't be cancelled, so a syn
 
 ## Error handling
 
-All errors raise `OpenRouterError` (a subclass of `ClientError` → `AppError`):
+Timeouts, non-200 statuses, an `error` body and a response with no `choices` raise `OpenRouterError` (a subclass of `ClientError` → `AppError`). In `chat()` a non-timeout transport failure (DNS, connection refused or reset) propagates as the underlying `httpx.HTTPError`, so catch both around a batch; `preflight()` wraps it:
 
 ```python
 from pw_core.clients.openrouter import OpenRouterError
@@ -253,3 +253,9 @@ def test_summarize():
 ```
 
 The `ChatClient` protocol is `@runtime_checkable`, so `isinstance(fake, ChatClient)` works if you need it — but prefer static type-checking over runtime checks.
+
+## Other public names
+
+From `pw_core.clients.openrouter`:
+
+- `DEFAULT_PREFLIGHT_TIMEOUT_SECONDS` — `preflight()`'s default timeout.

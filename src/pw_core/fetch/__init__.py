@@ -10,6 +10,7 @@ propagate so callers can branch on ``HTTPError.code``.
 from __future__ import annotations
 
 import http.client
+import re
 import ssl
 import time
 import urllib.error
@@ -17,21 +18,21 @@ import urllib.request
 from collections.abc import Mapping
 from email.message import Message
 from typing import Any, NamedTuple, TypedDict
-from urllib.parse import urlencode, urljoin
+from urllib.parse import quote, urlencode, urljoin, urlsplit
 
-from pw_core._env_compat import env_name
 from pw_foundation.exceptions import ClientError, InvalidInputError
 from pw_core.fetch._connect import RacingHTTPHandler, RacingHTTPSHandler
 from pw_core.fetch._decode import decode_body
+from pw_core.fetch._host import encode_host
 from pw_foundation.utils.env import resolve_str
 from pw_core.utils.http_tls import verify_tls as _resolve_verify_tls
 from pw_foundation.utils.throttle import Throttle
 from pw_core.utils.url_safety import _REDIRECT_CODES, assert_public_url
 
 try:
-    from pw_core import __version__ as _PF_VERSION
+    from pw_core import __version__ as _PW_VERSION
 except ImportError:  # pragma: no cover
-    _PF_VERSION = "0.0.0+unknown"
+    _PW_VERSION = "0.0.0+unknown"
 
 __all__ = [
     "Body",
@@ -51,7 +52,7 @@ _RETRY_AFTER_CAP = 30.0  # seconds — don't let a server's Retry-After park a c
 _FORM_CONTENT_TYPE = "application/x-www-form-urlencoded; charset=UTF-8"
 
 _UA_ENV_VAR = "PW_FETCH_UA"
-_UA_DEFAULT = f"pw-core-fetch/{_PF_VERSION} (+https://github.com/phierceweb/pw-core)"
+_UA_DEFAULT = f"pw-core-fetch/{_PW_VERSION} (+https://github.com/phierceweb/pw-core)"
 
 _BROWSER_UA = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
@@ -90,10 +91,13 @@ class Body(NamedTuple):
 
 
 class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
-    """Refuse to follow redirects so every 3xx surfaces as an HTTPError."""
+    """Leave every 3xx to surface as an HTTPError, ``Location`` unread — urllib's handler would
+    parse it first and can raise on a hostile one."""
 
-    def redirect_request(self, req, fp, code, msg, headers, newurl):
+    def http_error_302(self, req, fp, code, msg, headers):
         return None
+
+    http_error_301 = http_error_303 = http_error_307 = http_error_308 = http_error_302
 
 
 def _build_opener(verify: bool | None = None) -> urllib.request.OpenerDirector:
@@ -104,6 +108,67 @@ def _build_opener(verify: bool | None = None) -> urllib.request.OpenerDirector:
     return urllib.request.build_opener(
         _NoRedirectHandler, RacingHTTPHandler, RacingHTTPSHandler(context=ctx)
     )
+
+
+_UNSENDABLE = re.compile(r"[^\x21-\x7e]")
+_PRINTABLE_ASCII = "".join(map(chr, range(0x21, 0x7F)))
+_AUTHORITY = re.compile(r"([A-Za-z][A-Za-z0-9+.-]*://)([^/?#]*)")
+
+
+def _sendable(url: str) -> str:
+    """``url`` trimmed, its host IDNA-encoded as a browser sends it (``_host.encode_host``), and each
+    space, control or non-ASCII character after the host percent-encoded as UTF-8; escapes are kept.
+
+    Raises:
+        InvalidInputError: the host cannot be encoded as a browser would or holds a ``%``, the
+            authority holds a space, control or non-ASCII character, the port is unreadable, or
+            the URL holds a character UTF-8 cannot encode (a lone surrogate).
+    """
+    url = url.strip()
+    match = _AUTHORITY.match(url)
+    if match is None:
+        return _percent_encode(url)
+    scheme, authority = match[1], _sendable_authority(match[2])
+    try:
+        _ = urlsplit(scheme + authority).port
+    except ValueError as exc:
+        raise InvalidInputError(f"unreadable host or port in URL: {url[:200]!r}") from exc
+    return scheme + authority + _percent_encode(url[match.end() :])
+
+
+def _percent_encode(text: str) -> str:
+    try:
+        return _UNSENDABLE.sub(lambda m: quote(m[0], safe=""), text)
+    except UnicodeEncodeError as exc:
+        raise InvalidInputError(
+            f"URL holds a character UTF-8 cannot encode: {text[:200]!r}"
+        ) from exc
+
+
+def _sendable_authority(authority: str) -> str:
+    userinfo, at, hostport = authority.rpartition("@")
+    if not hostport.isascii():
+        host, colon, port = hostport.partition(":")
+        hostport = encode_host(host) + colon + port
+    if "%" in hostport and not hostport.startswith("["):
+        raise InvalidInputError(f"host holds a percent-escape: {hostport[:100]!r}")
+    authority = userinfo + at + hostport
+    if _UNSENDABLE.search(authority):
+        raise InvalidInputError(f"URL authority holds an unsendable character: {authority[:100]!r}")
+    return authority
+
+
+def _header_text(value: str) -> str:
+    """A header value as UTF-8 text, or its bytes percent-encoded when they are not UTF-8;
+    http.client hands it over decoded as latin-1."""
+    try:
+        raw = value.encode("latin-1")
+    except UnicodeEncodeError:
+        return value
+    try:
+        return raw.decode("utf-8")
+    except UnicodeDecodeError:
+        return quote(raw, safe=_PRINTABLE_ASCII)
 
 
 def _retry_after(exc: urllib.error.HTTPError, attempt: int) -> float:
@@ -225,6 +290,7 @@ class Fetcher:
         if last_modified:
             extra["If-Modified-Since"] = last_modified
         try:
+            url = _sendable(url)
             if self._require_public:
                 assert_public_url(url)
             if self._throttle is not None:
@@ -252,9 +318,7 @@ class Fetcher:
         self, url: str, extra: dict[str, str] | None = None, *, form: bytes | None = None
     ) -> urllib.request.Request:
         """A GET, or with ``form`` a POST of that urlencoded body."""
-        ua = (
-            resolve_str(self._user_agent, env_name(_UA_ENV_VAR), default=_UA_DEFAULT) or _UA_DEFAULT
-        )
+        ua = resolve_str(self._user_agent, _UA_ENV_VAR, default=_UA_DEFAULT) or _UA_DEFAULT
         headers = {
             "User-Agent": ua,
             "Accept": "*/*",
@@ -264,7 +328,7 @@ class Fetcher:
         }
         if form is not None:
             headers["Content-Type"] = _FORM_CONTENT_TYPE
-        return urllib.request.Request(url, data=form, headers=headers)
+        return urllib.request.Request(_sendable(url), data=form, headers=headers)
 
     def _attempt(self, url: str, timeout_s: float, *, form: bytes | None = None) -> Any:
         """Retry loop for one hop URL. Permanent 4xx (except 408) fail fast with
@@ -299,9 +363,9 @@ class Fetcher:
         """GET with manual redirect walking, or POST ``form`` with none; returns
         ``(final_url, body, headers)`` where final_url is the URL of the last hop
         actually fetched."""
+        cur = _sendable(url)
         if self._require_public:
-            assert_public_url(url)
-        cur = url
+            assert_public_url(cur)
         hops = 0
         while True:
             try:
@@ -315,7 +379,15 @@ class Fetcher:
                 if not location:
                     raise
                 hops += 1
-                cur = urljoin(cur, location)  # 303 included — only a GET walks hops
+                # 303 included — only a GET walks hops
+                try:
+                    cur = _sendable(urljoin(cur, _header_text(location).strip()))
+                except ValueError as err:
+                    raise InvalidInputError(
+                        f"unreadable redirect Location: {_header_text(location)[:200]!r} ({err})"
+                    ) from err
+                if urlsplit(cur).scheme.lower() not in ("http", "https"):
+                    raise InvalidInputError(f"redirect to a non-HTTP URL refused: {cur[:200]!r}")
                 if self._require_public:
                     assert_public_url(cur)
                 continue

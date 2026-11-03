@@ -15,13 +15,13 @@ This module bundles that. It's the deterministic counterpart to LLM content-matc
 
 ## Installation
 
-Requires the `articles` optional extra (heavy deps not in base pw-core):
+Requires the `crawl` extra — `[http]` (httpx, for the fetch) plus `[articles]` (trafilatura, htmldate and tenacity, for extraction):
 
 ```bash
-pip install 'pw-core[articles]'
+pip install 'pw-core[crawl]'
 ```
 
-This pulls in `trafilatura` (extraction) and `htmldate` (date fallback). Without them, the module imports successfully but `fetch_article()` raises `ImportError` with a helpful message on first call.
+Without httpx or tenacity, importing the module raises an `ImportError` naming the extra; without trafilatura or htmldate the module imports and `fetch_article()` raises `ImportError` on its first call.
 
 ## Usage
 
@@ -148,7 +148,7 @@ The body/title/date extraction runs a fallback chain:
 3. **htmldate** — aggressive publish-date detection when trafilatura missed.
 4. **URL path date** (`/YYYY/MM/DD/` pattern) — last resort for sites that bury the date in metadata.
 
-Body is trimmed to 8000 characters by default (enough for downstream content matching; fewer tokens for LLM consumers).
+Body is trimmed to 8000 characters (enough for downstream content matching; fewer tokens for LLM consumers).
 
 `trafilatura` and `htmldate` both log `ERROR` for the ordinary unparseable-body case, so pw-core caps them at `CRITICAL` when the extractor imports. Raise it when debugging extraction:
 
@@ -203,7 +203,7 @@ def cached_fetch(url: str, *, event_date=None, use_cache=True):
 
 ## Never raises
 
-The "never raises" contract is load-bearing. Callers branch on `fetch_status`, not exception handling. Internal exceptions (trafilatura parse failures, network errors, invalid HTML) all map to the appropriate status value. The only exception path is `ImportError` at first call when the `articles` extra isn't installed — and that's at the import boundary, not the call boundary, in spirit.
+The "never raises" contract is load-bearing. Callers branch on `fetch_status`, not exception handling. Internal exceptions (trafilatura parse failures, network errors, invalid HTML) all map to the appropriate status value. The only exceptions are `ImportError`s for a missing extra: at import when httpx or tenacity is absent, and on the first call when trafilatura or htmldate is.
 
 ## See also
 

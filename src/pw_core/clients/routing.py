@@ -33,7 +33,6 @@ choose their own lifecycle (construct fresh per call, cache, pool).
 
 from __future__ import annotations
 
-import warnings
 from typing import Any, Callable
 
 from pw_core.clients import ChatClient
@@ -43,11 +42,8 @@ BUILTIN_BACKENDS = ("anthropic", "claude_code", "openrouter")
 
 _registry: dict[str, Callable[..., ChatClient]] = {}
 
-# Built-in instances constructed with non-empty client_kwargs, keyed by
-# (backend, kwargs signature). Keeps "different agents, different tuning"
-# from colliding on the module singletons (whose first call's kwargs win),
-# while repeated resolution of the same agent reuses one instance instead
-# of constructing per call.
+# Built-ins made with client_kwargs, one per (backend, kwargs): differently tuned agents
+# must not share the first-call-wins module singleton.
 _instances: dict[tuple[str, str], ChatClient] = {}
 
 
@@ -145,23 +141,3 @@ def clear_client_cache() -> None:
     ``reset_client()`` for those.
     """
     _instances.clear()
-
-
-def get_routed_client(use_claude_code: bool) -> ChatClient:
-    """Deprecated boolean dispatch — OpenRouter unless ``use_claude_code``.
-
-    **Deprecated** — a thin compatibility shim, to be removed before 1.0.
-    The boolean shape bakes in OpenRouter as the silent default and has
-    no slot for other backends. Declare backends in ``model_router.yaml``
-    and use :func:`pw_core.llm.router.resolve_agent`, or call
-    :func:`get_client_for_backend` directly.
-    """
-    warnings.warn(
-        "get_routed_client(bool) is deprecated and will be removed in v1.0 — "
-        "declare backends in model_router.yaml and use "
-        "pw_core.llm.router.resolve_agent (or get_client_for_backend for "
-        "direct acquisition)",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    return get_client_for_backend("claude_code" if use_claude_code else "openrouter")

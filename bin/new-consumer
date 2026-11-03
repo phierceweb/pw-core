@@ -31,9 +31,10 @@ _BASE_TWIN = re.compile(r"^(?P<stem>.+?)(?:_base(?P<py>\.py)|\.base(?P<ext>\.[A-
 
 
 def core_pin(extras: str) -> str:
-    """pw-core at this checkout's version, so a version bump moves the scaffold with it."""
+    """pw-core on this checkout's ``major.minor``, admitting every later release of that major."""
     meta = tomllib.loads((PW_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
-    return f"pw-core[{extras}]~={meta['project']['version']}"
+    major, minor = meta["project"]["version"].split(".")[:2]
+    return f"pw-core[{extras}]~={major}.{minor}"
 
 
 def _twin_name(name: str) -> str | None:
@@ -90,7 +91,7 @@ def main(argv: list[str] | None = None) -> int:
     pins = [BASE_PIN] + ([] if args.base_only else [core_pin(extras)])
     note = "pw-foundation is 1.x (minor releases are additive)"
     if not args.base_only:
-        note += "; the pw-core pin takes patch releases only"
+        note += "; the pw-core pin takes every later release of its major"
     deps = "\n".join([f"    # {note}.", *(f'    "{pin}",' for pin in pins)])
     tokens = {
         "__NAME__": name,

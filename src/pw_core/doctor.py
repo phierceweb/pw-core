@@ -14,7 +14,6 @@ from pathlib import Path
 
 from pw_foundation.doctor import CheckResult, redact_value
 
-from pw_core._env_compat import env_name
 
 _PROBE_CONNECT_TIMEOUT_S = 5
 
@@ -34,6 +33,16 @@ _ENV_VARS = (
     "PW_VERIFY_TLS",
     "URL_CHECK_VERIFY_TLS",
     "URL_FETCH_ALLOW_PRIVATE",
+)
+# Variables whose old PF_ spelling is not read; one still set is flagged.
+_RENAMED = (
+    "PW_VERIFY_TLS",
+    "PW_FETCH_UA",
+    "PW_ARTICLE_WAYBACK_FALLBACK",
+    "PW_ARTICLE_EXTRACTOR_LOG_LEVEL",
+    "PW_CORE_CLAUDE_CODE_MODEL",
+    "PW_TEST_DATABASE_URL",
+    "PW_TEST_LOCK_TIMEOUT_S",
 )
 
 # Marker import -> extra it indicates (find_spec only; nothing is imported).
@@ -89,26 +98,22 @@ def check_env() -> list[CheckResult]:
         load_dotenv(dotenv_path)
         source = f".env loaded from {dotenv_path}"
     lines = [source]
-    warn = False
     for var in _ENV_VARS:
-        read_from = env_name(var)
-        value = os.environ.get(read_from, "")
-        hidden = "PF_" + var[3:] if var.startswith("PW_") else ""
-        if read_from == var and not value:
-            if var not in os.environ:
-                lines.append(f"{var} unset")
-            elif hidden and os.environ.get(hidden):
-                warn = True
-                lines.append(f"{var}= (set empty, {hidden} ignored)")
-            else:
-                lines.append(f"{var}= (set empty)")
-            continue
-        line = f"{var}={redact_value(var, value)}"
-        if read_from != var:
-            warn = True
-            line += f" (read from {read_from}, deprecated)"
-        lines.append(line)
-    return [CheckResult("env", "pw-core", "WARN" if warn else "PASS", "; ".join(lines))]
+        value = os.environ.get(var)
+        if value is None:
+            lines.append(f"{var} unset")
+        elif not value:
+            lines.append(f"{var}= (set empty)")
+        else:
+            lines.append(f"{var}={redact_value(var, value)}")
+    stale = [(f"PF_{n[3:]}", n) for n in _RENAMED if f"PF_{n[3:]}" in os.environ]
+    lines += [
+        f"{old} is set but not read ({new} is set, so remove {old})"
+        if new in os.environ
+        else f"{old} is set but not read (use {new})"
+        for old, new in stale
+    ]
+    return [CheckResult("env", "pw-core", "WARN" if stale else "PASS", "; ".join(lines))]
 
 
 def check_router() -> list[CheckResult]:

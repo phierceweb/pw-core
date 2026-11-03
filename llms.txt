@@ -1,8 +1,8 @@
 # pw-core
 
-> A Python foundation for building LLM applications whose prompts and spend you can actually see: every prompt lives in versioned configuration, and every call is recorded — prompt version, model, provider, response, tokens, cost — and replayable, in SQLite, MySQL, or Postgres. Each piece exists elsewhere as a separate product; pw-core integrates them, one schema underneath. The dependency-light base install carries logging, exceptions, config, and a service/repo architecture; opt-in extras add the LLM clients (OpenRouter / Anthropic SDK / Claude Code), output validation and JSON recovery, cost budgets, an eval harness, and a FastAPI + SQLAlchemy app framework. Built to be worked on by AI coding agents: file-size and import-layering conventions are CI-enforced, and every module has a one-file reference doc.
+> A Python foundation for building LLM applications whose prompts and spend you can see: every prompt lives in versioned configuration, and every call is recorded — prompt version, model, provider, response, tokens, cost — and replayable, in SQLite, MySQL, or Postgres. Each piece exists elsewhere as a separate product; pw-core integrates them, one schema underneath. The dependency-light base install carries logging, exceptions, config, and a service/repo architecture; opt-in extras add the LLM clients (OpenRouter / Anthropic SDK / Claude Code), output validation and JSON recovery, cost budgets, an eval harness, and a FastAPI + SQLAlchemy app framework. Built to be worked on by AI coding agents: file-size and import-layering conventions are CI-enforced, and every module has a one-file reference doc.
 
-Published to PyPI as `pw-core` (Python 3.12+); pin a compatible release (`pw-core[llm]~=<current minor>`). Docs ship inside the package under `pw_core/docs/`, so an installed copy always matches its version — in a consumer repo, `pw-setup` links them at `docs/pw-core/`. The URLs below render `main`, the development line. Current release and history: see the changelog.
+Published to PyPI as `pw-core` (Python 3.12+); pin a compatible release (`pw-core[llm]~=1.0`). Docs ship inside the package under `pw_core/docs/`, so an installed copy always matches its version — in a consumer repo, `pw-setup` links them at `docs/pw-core/`. The URLs below render `main`, the development line. Current release and history: see the changelog.
 
 ## Start here
 
@@ -51,8 +51,8 @@ Published to PyPI as `pw-core` (Python 3.12+); pin a compatible release (`pw-cor
 - [model-router](https://raw.githubusercontent.com/phierceweb/pw-core/main/src/pw_core/docs/model-router.md)
 - [modules](https://raw.githubusercontent.com/phierceweb/pw-core/main/src/pw_core/docs/modules.md)
 - [openrouter](https://raw.githubusercontent.com/phierceweb/pw-core/main/src/pw_core/docs/openrouter.md)
-- [orchestrators](https://raw.githubusercontent.com/phierceweb/pw-core/main/src/pw_core/docs/orchestrators.md)
-- [otel](https://raw.githubusercontent.com/phierceweb/pw-core/main/src/pw_core/docs/otel.md)
+- [orchestrators](https://raw.githubusercontent.com/phierceweb/pw-core/main/src/pw_core/docs/orchestrators.md) (experimental)
+- [otel](https://raw.githubusercontent.com/phierceweb/pw-core/main/src/pw_core/docs/otel.md) (experimental)
 - [pagination](https://raw.githubusercontent.com/phierceweb/pw-core/main/src/pw_core/docs/pagination.md)
 - [parsers](https://raw.githubusercontent.com/phierceweb/pw-core/main/src/pw_core/docs/parsers.md)
 - [phash](https://raw.githubusercontent.com/phierceweb/pw-core/main/src/pw_core/docs/phash.md)

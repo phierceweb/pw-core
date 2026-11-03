@@ -4,7 +4,7 @@ Records every LLM invocation a project makes — one row per call, plus optional
 
 This module replaces the ad-hoc per-project run-tracking tables a project tends to grow. The replacement is the `llm_runs` table plus seven sidecar tables, all prefixed `llm_` to signal framework ownership.
 
-This doc is the implementation reference. The column-by-column schema definitions live in [`pw_core.llm.tracking.schema`](../llm/tracking/schema.py). To send the runs to an OpenTelemetry backend as GenAI spans, see [otel.md](otel.md).
+This doc is the implementation reference. The column-by-column schema definitions live in [`pw_core.llm.tracking.schema`](../llm/tracking/schema.py). To send the runs to an OpenTelemetry backend as GenAI spans, see [otel.md](otel.md) (experimental).
 
 ---
 
@@ -25,6 +25,7 @@ This doc is the implementation reference. The column-by-column schema definition
 - [Adding a new project FK column](#adding-a-new-project-fk-column)
 - [Adding a new validator or metric](#adding-a-new-validator-or-metric)
 - [Adding a new agent type](#adding-a-new-agent-type)
+- [Other public names](#other-public-names)
 
 ---
 
@@ -99,6 +100,8 @@ run_id = LlmRunRepo().record(
     },
     items_out=7,
     status="success",  # 'success' | 'failed' | 'partial' | 'filtered' | …
+    job_id=None,  # defaults to the active Job context
+    error=None,  # with error_class, error_code, http_status: for a failed run
     # Sidecars — all optional
     configs={"prompt_variant": variant_id, "task_config": task_config_id},
     validations=[
@@ -181,7 +184,7 @@ content, usage = tracked_chat(messages=msgs, **cfg)
 run_id = usage["_llm_run_id"]
 ```
 
-Pass `provider=` explicitly — the backend name written to `llm_runs.provider`. With the router, use `resolve_agent(...).backend`. Pass `provider=None` to skip the label. Omitting `provider=` falls back to `"openrouter"` with a `DeprecationWarning`; the implicit default is removed in v1.0.
+Pass `provider=` — the backend name written to `llm_runs.provider`. With the router, use `resolve_agent(...).backend`. Without it the label is left unset.
 
 **Do:** pair `@track_run(agent_type="X")` with `get_agent_config("X")` so intent (router YAML) and actuals (tracking row) use the same slug.
 
@@ -293,6 +296,7 @@ from pw_core.llm.tracking import purge_old_payloads
 
 purge_old_payloads(older_than_days=90)  # default: keep flagged runs
 purge_old_payloads(older_than_days=30, keep_flagged=False)
+# A negative age raises ValueError; now= pins the clock in tests.
 ```
 
 Drops `llm_run_payloads` rows only — analytics columns on `llm_runs` are preserved forever. Returns the count of deleted payload rows.
@@ -376,7 +380,7 @@ GROUP BY llm_run_id
 HAVING COUNT(DISTINCT tag) = 2;
 ```
 
-`LlmRunStatsRepo` exposes the first three of these as Python methods. Hand-written SQL belongs in admin routes, not in services.
+`LlmRunStatsRepo` exposes all four of these as Python methods. Hand-written SQL belongs in admin routes, not in services.
 
 ---
 
@@ -459,3 +463,11 @@ LlmRunRepo().record(agent_type="critic_v2", model="...", ...)
 ```
 
 To pre-seed slugs (e.g. for an admin UI dropdown) write them in your project's data-migration step. Keep `description` short and operator-facing.
+
+## Other public names
+
+From `pw_core.llm.tracking`:
+
+- `resolve_llm_model_id(name)` — the `llm_models.id` for a model name, inserting the row if needed.
+- `ALL_TABLES` — the tracking tables' SQLAlchemy `Table` objects, for DDL in tests and migrations.
+- `clear_resolver_caches()` — drop the cached model and agent-type ids (tests).

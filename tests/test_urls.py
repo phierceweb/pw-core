@@ -458,6 +458,15 @@ class TestCheckUrl:
         check_url("https://example.com")
         assert captured["verify"] is False
 
+    def test_the_pf_spelling_is_not_read(self, monkeypatch):
+        monkeypatch.delenv("URL_CHECK_VERIFY_TLS", raising=False)
+        monkeypatch.delenv("PW_VERIFY_TLS", raising=False)
+        monkeypatch.setenv("PF_VERIFY_TLS", "0")
+        mock = MockClient(head_response=MockResponse(200))
+        captured = self._patch_client(monkeypatch, mock)
+        check_url("https://example.com")
+        assert captured["verify"] is True
+
     # -- SSRF guard wiring ------------------------------------------------
 
     def test_blocked_url_returns_error(self, monkeypatch):

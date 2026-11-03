@@ -698,3 +698,72 @@ class TestNonImageBodies:
         )
         assert result.failed == 0
         assert [p.name for p in result.saved] == ["v2-chart.avif"]
+
+
+class TestRefEdgeShapes:
+    GOOD = "https://example.com/images/a/one.png"
+
+    @pytest.mark.parametrize(
+        "bad",
+        ["https://[x/b.png", "https://example.com:99999/b.png", "https://example.com:abc/b.png"],
+    )
+    def test_unparseable_host_is_skipped_not_fatal(self, tmp_path, bad):
+        fetcher = FakeFetcher()
+        md = f"![bad]({bad})\n![good]({self.GOOD})"
+        assert count_remote_images(md) == 1
+        result = localize_images(md, tmp_path / "images", fetcher=fetcher)
+        assert fetcher.calls == [self.GOOD]
+        assert result.markdown == f"![bad]({bad})\n![good](images/a-one.png)"
+
+    def test_unparseable_host_does_not_end_a_file_pass(self, tmp_path):
+        doc = tmp_path / "doc.md"
+        doc.write_text(f'<img src="https://[x/b.png">\n![good]({self.GOOD})', encoding="utf-8")
+        assert localize_file(doc, tmp_path / "images", fetcher=FakeFetcher()) == 1
+        assert "![good](images/a-one.png)" in doc.read_text(encoding="utf-8")
+
+    @pytest.mark.parametrize("title", ['"Fig 1"', "'Fig 1'", "(Fig 1)"])
+    def test_titled_remote_ref_is_localized_and_keeps_its_title(self, tmp_path, title):
+        fetcher = FakeFetcher()
+        md = f"![x]({self.GOOD} {title})"
+        assert count_remote_images(md) == 1
+        result = localize_images(md, tmp_path / "images", fetcher=fetcher)
+        assert fetcher.calls == [self.GOOD]
+        assert result.markdown == f"![x](images/a-one.png {title})"
+
+    def test_titled_relative_ref_is_localized(self, tmp_path):
+        fetcher = FakeFetcher()
+        md = '![fig](assets/inline-figure.png "Figure")'
+        result = localize_images(
+            md, tmp_path / "images", base_url="https://example.com/docs/", fetcher=fetcher
+        )
+        assert fetcher.calls == ["https://example.com/docs/assets/inline-figure.png"]
+        assert result.markdown == '![fig](images/assets-inline-figure.png "Figure")'
+
+    def test_titled_retarget_is_anchor_safe(self):
+        text = f'![a]({self.GOOD} "t") ![b]({self.GOOD}-2 "t") ![c]({self.GOOD})'
+        assert images_mod._retarget(text, self.GOOD, "images/x.png") == (
+            f'![a](images/x.png "t") ![b]({self.GOOD}-2 "t") ![c](images/x.png)'
+        )
+
+    def test_retarget_leaves_a_ref_followed_by_prose_alone(self):
+        text = f"see ]({self.GOOD} in prose and `]({self.GOOD} `"
+        assert images_mod._retarget(text, self.GOOD, "images/x.png") == text
+
+    def test_a_run_of_unterminated_refs_stays_fast(self):
+        import time
+
+        start = time.perf_counter()
+        count_remote_images("![x](https://a" * 4000)
+        assert time.perf_counter() - start < 2.0
+
+    def test_uppercase_src_is_repointed(self, tmp_path):
+        doc = f'<IMG SRC="{self.GOOD}" ALT="one">'
+        result = localize_images(doc, tmp_path / "images", fetcher=FakeFetcher())
+        assert result.markdown == '<IMG SRC="images/a-one.png" ALT="one">'
+        assert count_remote_images(result.markdown) == 0
+
+    def test_src_retarget_matches_the_url_exactly(self):
+        text = "<img src=\"https://e.com/a.png\"> <IMG Src='https://e.com/A.png'>"
+        assert images_mod._retarget(text, "https://e.com/A.png", "images/x.png") == (
+            "<img src=\"https://e.com/a.png\"> <IMG Src='images/x.png'>"
+        )

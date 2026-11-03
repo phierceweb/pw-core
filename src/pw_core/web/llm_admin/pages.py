@@ -17,7 +17,7 @@ from pw_core.web.llm_admin import queries as q
 def register_page_routes(router: APIRouter, templates: Jinja2Templates) -> None:
     """Attach all HTML endpoints to *router*."""
 
-    @router.get("/", response_class=HTMLResponse)
+    @router.get("/", response_class=HTMLResponse, name="llm_admin_dashboard")
     def dashboard(
         request: Request,
         since: str | None = None,
@@ -38,7 +38,7 @@ def register_page_routes(router: APIRouter, templates: Jinja2Templates) -> None:
             },
         )
 
-    @router.get("/runs", response_class=HTMLResponse)
+    @router.get("/runs", response_class=HTMLResponse, name="llm_admin_runs_list")
     def runs_list(
         request: Request,
         since: str | None = None,
@@ -95,14 +95,14 @@ def register_page_routes(router: APIRouter, templates: Jinja2Templates) -> None:
             },
         )
 
-    @router.get("/run/{run_id}", response_class=HTMLResponse)
+    @router.get("/run/{run_id}", response_class=HTMLResponse, name="llm_admin_run_detail")
     def run_detail(request: Request, run_id: int):
         detail = q.run_detail(run_id)
         if detail is None:
             raise HTTPException(status_code=404, detail="run not found")
         return templates.TemplateResponse(request, "run_detail.html", {"run": detail})
 
-    @router.get("/cost-by-model", response_class=HTMLResponse)
+    @router.get("/cost-by-model", response_class=HTMLResponse, name="llm_admin_cost_by_model")
     def cost_by_model(request: Request, since: str | None = None, until: str | None = None):
         s, u = q.parse_window(since, until, default_days=7)
         return templates.TemplateResponse(
@@ -111,7 +111,7 @@ def register_page_routes(router: APIRouter, templates: Jinja2Templates) -> None:
             {"rows": q.cost_by_model(since=s, until=u), "since": s, "until": u},
         )
 
-    @router.get("/cost-by-agent", response_class=HTMLResponse)
+    @router.get("/cost-by-agent", response_class=HTMLResponse, name="llm_admin_cost_by_agent")
     def cost_by_agent(request: Request, since: str | None = None, until: str | None = None):
         s, u = q.parse_window(since, until, default_days=7)
         return templates.TemplateResponse(
@@ -120,7 +120,7 @@ def register_page_routes(router: APIRouter, templates: Jinja2Templates) -> None:
             {"rows": q.cost_by_agent(since=s, until=u), "since": s, "until": u},
         )
 
-    @router.get("/jobs", response_class=HTMLResponse)
+    @router.get("/jobs", response_class=HTMLResponse, name="llm_admin_jobs_list")
     def jobs_list(
         request: Request,
         status: str | None = None,
@@ -145,14 +145,14 @@ def register_page_routes(router: APIRouter, templates: Jinja2Templates) -> None:
             },
         )
 
-    @router.get("/job/{job_id}", response_class=HTMLResponse)
+    @router.get("/job/{job_id}", response_class=HTMLResponse, name="llm_admin_job_detail")
     def job_detail(request: Request, job_id: int):
         detail = q.job_detail(job_id)
         if detail is None:
             raise HTTPException(status_code=404, detail="job not found")
         return templates.TemplateResponse(request, "job_detail.html", {"job": detail})
 
-    @router.get("/cache", response_class=HTMLResponse)
+    @router.get("/cache", response_class=HTMLResponse, name="llm_admin_cache_page")
     def cache_page(request: Request, since: str | None = None, until: str | None = None):
         s, u = q.parse_window(since, until, default_days=7)
         return templates.TemplateResponse(
@@ -167,7 +167,7 @@ def register_page_routes(router: APIRouter, templates: Jinja2Templates) -> None:
             },
         )
 
-    @router.get("/budgets", response_class=HTMLResponse)
+    @router.get("/budgets", response_class=HTMLResponse, name="llm_admin_budgets_page")
     def budgets_page(request: Request):
         return templates.TemplateResponse(
             request,

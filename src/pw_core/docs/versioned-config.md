@@ -104,4 +104,4 @@ append_version(
 
 ## Safety
 
-Table and column **names** are caller-supplied identifiers, validated against `^[A-Za-z_][A-Za-z0-9_]*$` and never interpolated from user input. Scope filters and inserted **values** are always bound parameters, so values are never a SQL-injection vector.
+Table and column **names** are caller-supplied identifiers, validated against `^[A-Za-z_][A-Za-z0-9_]*$` and never interpolated from user input. Scope filters and inserted **values** are always bound parameters, so values are never a SQL-injection vector. An identifier that fails the pattern raises `InvalidInputError`.

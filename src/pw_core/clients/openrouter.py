@@ -164,8 +164,8 @@ class OpenRouterClient:
         url = f"{self.base_url}/chat/completions"
         headers = self._headers()
 
-        # Retryable: timeout, 429, 5xx. Other 4xx are caller errors — retrying
-        # one just burns budget on a deterministic failure.
+        # Retryable: timeout and _RETRYABLE_STATUS_CODES. Any other status is deterministic —
+        # retrying it just burns budget.
         resp = None
         elapsed_ms = 0
         for attempt in range(self.retry + 1):

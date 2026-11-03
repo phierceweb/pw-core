@@ -51,6 +51,12 @@ def _timeout(cause: Exception) -> APITimeoutError:
     return err
 
 
+def _connection_error(cause: Exception | None) -> APIConnectionError:
+    err = APIConnectionError(request=_request())
+    err.__cause__ = cause
+    return err
+
+
 def _ok_response():
     block = MagicMock()
     block.text = "ok"
@@ -111,9 +117,9 @@ class TestSdkRetriesDoNotMultiply:
             assert mock_sdk.call_args.kwargs["max_retries"] == 0
 
 
-class TestReadTimeoutNotRetried:
-    """A read timeout means the request reached the server: the completion may
-    already be generated and billed. A connect timeout never left the client."""
+class TestOnlyUnsentRequestsRetried:
+    """A failure once the request is sent may leave a completion generated and
+    billed; only one before it left the client is retried."""
 
     def test_read_timeout_attempted_once(self):
         with patch("anthropic.Anthropic") as mock_sdk:
@@ -136,16 +142,78 @@ class TestReadTimeoutNotRetried:
             assert content == "ok"
             assert mock_sdk.return_value.messages.create.call_count == 2
 
-    def test_connection_error_is_retried(self):
+    @pytest.mark.parametrize(
+        "failure",
+        [
+            _connection_error(httpx.ConnectError("connection refused")),
+            _timeout(httpx.PoolTimeout("no free connection")),
+        ],
+    )
+    def test_a_failure_before_sending_is_retried(self, failure):
         with patch("anthropic.Anthropic") as mock_sdk:
-            mock_sdk.return_value.messages.create.side_effect = [
-                APIConnectionError(request=_request()),
-                _ok_response(),
-            ]
+            mock_sdk.return_value.messages.create.side_effect = [failure, _ok_response()]
             client = AnthropicClient(api_key="k", model="m", retry=1)
             content, _ = client.chat(messages=[{"role": "user", "content": "x"}])
             assert content == "ok"
             assert mock_sdk.return_value.messages.create.call_count == 2
+
+    @pytest.mark.parametrize(
+        "cause",
+        [
+            httpx.ReadError("connection reset mid-response"),
+            httpx.RemoteProtocolError("peer closed connection"),
+            None,
+        ],
+    )
+    def test_a_failure_after_sending_is_attempted_once(self, cause):
+        with patch("anthropic.Anthropic") as mock_sdk:
+            mock_sdk.return_value.messages.create.side_effect = _connection_error(cause)
+            client = AnthropicClient(api_key="k", model="m", retry=3)
+            with pytest.raises(AnthropicError):
+                client.chat(messages=[{"role": "user", "content": "x"}])
+            assert mock_sdk.return_value.messages.create.call_count == 1
+
+
+class TestConnectTimeout:
+    """A whole-number timeout would also bound the connect, so a dead network holds every
+    attempt for the full request timeout."""
+
+    def _sdk_timeout(self, **kwargs):
+        with patch("anthropic.Anthropic") as mock_sdk:
+            AnthropicClient(api_key="k", **kwargs)
+            return mock_sdk.call_args.kwargs["timeout"]
+
+    def test_connect_is_bounded_separately(self, monkeypatch):
+        monkeypatch.delenv("ANTHROPIC_CONNECT_TIMEOUT_S", raising=False)
+        assert self._sdk_timeout(request_timeout=120) == httpx.Timeout(120, connect=10)
+
+    def test_env_sets_the_connect_bound(self, monkeypatch):
+        monkeypatch.setenv("ANTHROPIC_CONNECT_TIMEOUT_S", "3")
+        assert self._sdk_timeout(request_timeout=120) == httpx.Timeout(120, connect=3)
+
+    def test_connect_never_exceeds_the_request_timeout(self, monkeypatch):
+        monkeypatch.setenv("ANTHROPIC_CONNECT_TIMEOUT_S", "30")
+        assert self._sdk_timeout(request_timeout=5) == httpx.Timeout(5)
+
+    def test_no_request_timeout_keeps_the_connect_bound(self, monkeypatch):
+        monkeypatch.delenv("ANTHROPIC_CONNECT_TIMEOUT_S", raising=False)
+        assert self._sdk_timeout(request_timeout=None) == httpx.Timeout(None, connect=10)
+
+    @pytest.mark.parametrize("value", ["0", "-5"])
+    def test_zero_or_less_turns_the_separate_bound_off(self, monkeypatch, value):
+        monkeypatch.setenv("ANTHROPIC_CONNECT_TIMEOUT_S", value)
+        assert self._sdk_timeout(request_timeout=120) == httpx.Timeout(120)
+
+    def test_a_per_call_timeout_keeps_the_connect_bound(self, monkeypatch):
+        monkeypatch.delenv("ANTHROPIC_CONNECT_TIMEOUT_S", raising=False)
+        with patch("anthropic.Anthropic") as mock_sdk:
+            derived = mock_sdk.return_value.with_options.return_value
+            derived.messages.create.return_value = _ok_response()
+            client = AnthropicClient(api_key="k", model="m")
+            client.chat(messages=[{"role": "user", "content": "x"}], timeout=30)
+            mock_sdk.return_value.with_options.assert_called_once_with(
+                timeout=httpx.Timeout(30, connect=10)
+            )
 
 
 class TestRetryBacksOff:

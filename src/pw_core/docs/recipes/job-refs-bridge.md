@@ -1,6 +1,6 @@
 # Recipe: Bridging pw-core jobs to project entities
 
-Pattern for linking `pw_core.jobs.jobs.id` to a project-owned domain entity (e.g. `summary_pass.id`) when the domain entity is conceptually one job-worth of work.
+Pattern for linking `jobs.id` to a project-owned domain entity (e.g. `summary_pass.id`) when the domain entity is conceptually one job-worth of work.
 
 ## When to use
 
@@ -32,6 +32,9 @@ Composite PK allows historical retry chains (one `summary_pass` → N jobs over 
 ```python
 # app/repo/job_refs.py
 from functools import lru_cache
+
+from sqlalchemy import text
+
 from pw_core.db.connection import transaction
 from pw_core.jobs.repo import JobRepo
 
@@ -43,7 +46,7 @@ def create_summary_job(*, summary_pass_id: int, kind: str = "summary_pass") -> i
     job_id = JobRepo().create(kind=kind, inputs={"summary_pass_id": summary_pass_id})
     with transaction() as conn:
         conn.execute(
-            "INSERT INTO summary_job_refs (summary_pass_id, job_id) VALUES (:p, :j)",
+            text("INSERT INTO summary_job_refs (summary_pass_id, job_id) VALUES (:p, :j)"),
             {"p": summary_pass_id, "j": job_id},
         )
     _DOMAIN_CACHE[summary_pass_id] = job_id
@@ -56,8 +59,10 @@ def current_job_id(summary_pass_id: int) -> int | None:
         return _DOMAIN_CACHE[summary_pass_id]
     with transaction() as conn:
         row = conn.execute(
-            "SELECT job_id FROM summary_job_refs "
-            "WHERE summary_pass_id=:p ORDER BY created_at DESC LIMIT 1",
+            text(
+                "SELECT job_id FROM summary_job_refs "
+                "WHERE summary_pass_id=:p ORDER BY created_at DESC LIMIT 1"
+            ),
             {"p": summary_pass_id},
         ).fetchone()
     if row:
@@ -72,7 +77,10 @@ def all_job_ids(summary_pass_id: int) -> list[int]:
         return [
             int(r[0])
             for r in conn.execute(
-                "SELECT job_id FROM summary_job_refs WHERE summary_pass_id=:p ORDER BY created_at",
+                text(
+                    "SELECT job_id FROM summary_job_refs "
+                    "WHERE summary_pass_id=:p ORDER BY created_at"
+                ),
                 {"p": summary_pass_id},
             ).fetchall()
         ]

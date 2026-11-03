@@ -35,6 +35,7 @@ from pw_core.fetch._decode import decode_body
 URL = "https://example.com/docs/page"
 
 _PRIVATE_HOSTS = {"internal.example"}
+_REAL_GETADDRINFO = socket.getaddrinfo
 
 
 @pytest.fixture(autouse=True)
@@ -286,6 +287,219 @@ class TestRedirects:
         with pytest.raises(urllib.error.HTTPError) as exc_info:
             Fetcher().get_bytes(URL)
         assert exc_info.value is err
+
+
+class TestUrlEncoding:
+    """URLs go out trimmed, with an IDNA host and the rest percent-encoded as UTF-8."""
+
+    def test_non_ascii_location_is_sent_percent_encoded(self, monkeypatch):
+        # http.client decodes header bytes as latin-1, so a UTF-8 Location arrives as mojibake.
+        wire = "/doc/\u00fc/a b".encode().decode("latin-1")
+        calls = _script_open(monkeypatch, [_http_error(302, {"Location": wire}), _Resp(b"ok")])
+        final_url, _ = Fetcher().get_bytes(URL)
+        assert calls[1][0].full_url == "https://example.com/doc/%C3%BC/a%20b"
+        assert final_url == "https://example.com/doc/%C3%BC/a%20b"
+
+    def test_non_ascii_url_is_sent_percent_encoded_with_escapes_kept(self, monkeypatch):
+        calls = _script_open(monkeypatch, [_Resp(b"ok")])
+        final_url, _ = Fetcher().get_bytes(
+            "https://example.com/r\u00e9sum\u00e9%2F?q=\u00fc#\u00e9"
+        )
+        sent = "https://example.com/r%C3%A9sum%C3%A9%2F?q=%C3%BC#%C3%A9"
+        assert (calls[0][0].full_url, final_url) == (sent, sent)
+
+    def test_a_conditional_get_sends_a_non_ascii_url_encoded(self, monkeypatch):
+        calls = _script_open(monkeypatch, [_http_error(304)])
+        assert Fetcher().not_modified("https://example.com/\u00fc", etag='"v1"', last_modified=None)
+        assert calls[0][0].full_url == "https://example.com/%C3%BC"
+
+    @pytest.mark.parametrize("url", [URL + "\n", URL + " ", " " + URL])
+    def test_surrounding_whitespace_is_dropped_not_encoded(self, monkeypatch, url):
+        calls = _script_open(monkeypatch, [_Resp(b"ok")])
+        final_url, _ = Fetcher().get_bytes(url)
+        assert (calls[0][0].full_url, final_url) == (URL, URL)
+
+    def test_a_location_that_is_not_utf8_keeps_its_bytes(self, monkeypatch):
+        wire = b"/caf\xe9".decode("latin-1")
+        calls = _script_open(monkeypatch, [_http_error(302, {"Location": wire}), _Resp(b"ok")])
+        final_url, _ = Fetcher().get_bytes(URL)
+        assert (calls[1][0].full_url, final_url) == ("https://example.com/caf%E9",) * 2
+
+    def test_control_characters_are_sent_percent_encoded(self, monkeypatch):
+        calls = _script_open(monkeypatch, [_Resp(b"ok")])
+        Fetcher().get_bytes("https://example.com/a\tb\x7fc\x00d")
+        assert calls[0][0].full_url == "https://example.com/a%09b%7Fc%00d"
+
+    @pytest.mark.parametrize(
+        "url",
+        ["https://example.com ", "https://example.com\u00a0", "\u00a0https://example.com"],
+    )
+    def test_the_guard_checks_the_trimmed_url(self, monkeypatch, url):
+        real = socket.getaddrinfo
+
+        def strict(host, *args, **kwargs):
+            if host != host.strip():
+                raise socket.gaierror("untrimmed host")
+            return real(host, *args, **kwargs)
+
+        monkeypatch.setattr(socket, "getaddrinfo", strict)
+        calls = _script_open(monkeypatch, [_Resp(b"ok"), _http_error(304)])
+        Fetcher().get_bytes(url)
+        assert Fetcher().not_modified(url, etag='"v1"', last_modified=None)
+        assert [c[0].full_url for c in calls] == ["https://example.com"] * 2
+
+    def test_a_padded_location_is_trimmed(self, monkeypatch):
+        script = [_http_error(302, {"Location": " /next/a b "}), _Resp(b"ok")]
+        calls = _script_open(monkeypatch, script)
+        Fetcher().get_bytes(URL)
+        assert calls[1][0].full_url == "https://example.com/next/a%20b"
+
+    @pytest.mark.parametrize(
+        ("url", "sent"),
+        [
+            ("https://b\u00fccher.example/\u00fc", "https://xn--bcher-kva.example/%C3%BC"),
+            ("https://B\u00dcCHER.example:8443/", "https://xn--bcher-kva.example:8443/"),
+            ("https://\u4f8b\u3048.test/ok", "https://xn--r8jz45g.test/ok"),
+            ("https://B\u00fccher.EXAMPLE/", "https://xn--bcher-kva.example/"),
+            ("https://\U0001f4a9.example/", "https://xn--ls8h.example/"),
+        ],
+    )
+    def test_a_non_ascii_host_is_sent_idna_encoded(self, monkeypatch, url, sent):
+        calls = _script_open(monkeypatch, [_Resp(b"ok")])
+        final_url, _ = Fetcher().get_bytes(url)
+        assert (calls[0][0].full_url, final_url) == (sent, sent)
+
+    @pytest.mark.parametrize(
+        "host",
+        [
+            "stra\u00dfe.de",  # a browser keeps the sharp s; the codec sends strasse.de
+            "fa\u00df.de",
+            "\u03c3\u03bf\u03c2.example",  # final sigma
+            "a\u200db.example",  # zero-width joiner
+            "\u2488example.com",  # one label that NFKC turns into two
+            "a\u3164b.example",  # Hangul filler
+            "a\u1dc0b.example",  # a mark newer than Unicode 3.2
+            "a\u1806b.example",  # Mongolian soft hyphen: the codec drops it
+            "\uab70.example",  # Cherokee small letter: the codec keeps it, a browser maps it
+            "\u1d2c.example",
+            "\u023a.example",
+        ],
+    )
+    def test_a_host_a_browser_could_send_elsewhere_is_refused(self, monkeypatch, host):
+        calls = _script_open(monkeypatch, [])
+        with pytest.raises(InvalidInputError, match="browser"):
+            Fetcher().get_bytes(f"https://{host}/a")
+        assert calls == []
+
+    @pytest.mark.parametrize(
+        "host",
+        [
+            "good.example\uff0f.evil.test",  # fullwidth solidus encodes to "/"
+            "trusted.example\uff20internal.test",  # fullwidth "@"
+            "a\u2047b.example",  # "??"
+            "127.0.0.1\uff1a8080",  # fullwidth colon
+            "[\uff1a\uff1a1]",
+            "a\u3000b.example",  # ideographic space
+            "a\u00a0b.example",
+        ],
+    )
+    def test_a_host_that_encodes_to_a_delimiter_or_space_is_refused(self, monkeypatch, host):
+        calls = _script_open(monkeypatch, [])
+        with pytest.raises(InvalidInputError, match="DNS name"):
+            Fetcher().get_bytes(f"https://{host}/a")
+        assert calls == []
+
+    def test_non_ascii_outside_the_host_is_not_held_to_host_rules(self, monkeypatch):
+        calls = _script_open(monkeypatch, [_Resp(b"ok")])
+        Fetcher().get_bytes("https://example.com/stra\u00dfe?q=\u03c3\u03bf\u03c2")
+        assert calls[0][0].full_url == "https://example.com/stra%C3%9Fe?q=%CF%83%CE%BF%CF%82"
+
+    def test_a_lone_surrogate_raises_invalid_input_before_any_request(self, monkeypatch):
+        calls = _script_open(monkeypatch, [])
+        with pytest.raises(InvalidInputError):
+            Fetcher().get_bytes("https://example.com/a\ud800")
+        assert calls == []
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "https://u\ud800@example.com/a",  # surrogate in the userinfo
+            "https://u\x00@example.com/a",  # control character in the userinfo
+            "https://exa\tmple.com/a",  # tab in an ASCII host
+            "https://exa mple.com/a",
+            "https://example.com/a?q=\ud800",
+            "https://example.com/a#\ud800",
+        ],
+    )
+    def test_an_unsendable_character_raises_invalid_input_before_any_request(
+        self, monkeypatch, url
+    ):
+        calls = _script_open(monkeypatch, [])
+        with pytest.raises(InvalidInputError):
+            Fetcher().get_bytes(url)
+        assert calls == []
+
+    @pytest.mark.parametrize(
+        ("url", "sent"),
+        [
+            ("https://ä_x.example./", "https://xn--_x-uia.example./"),
+            ("https://Ä.Example/", "https://xn--4ca.example/"),
+        ],
+    )
+    def test_the_dns_name_check_accepts_underscores_trailing_dots_and_case(
+        self, monkeypatch, url, sent
+    ):
+        calls = _script_open(monkeypatch, [_Resp(b"ok")])
+        Fetcher().get_bytes(url)
+        assert calls[0][0].full_url == sent
+
+    def test_a_location_naming_such_a_host_is_refused_not_followed(self, monkeypatch):
+        wire = "https://fa\u00df.de/x".encode().decode("latin-1")
+        calls = _script_open(monkeypatch, [_http_error(302, {"Location": wire})])
+        with pytest.raises(InvalidInputError, match="browser"):
+            Fetcher().get_bytes(URL)
+        assert len(calls) == 1
+
+    def test_a_non_ascii_host_in_a_location_is_sent_idna_encoded(self, monkeypatch):
+        wire = "https://\u4f8b\u3048.test/ok".encode().decode("latin-1")
+        calls = _script_open(monkeypatch, [_http_error(302, {"Location": wire}), _Resp(b"ok")])
+        Fetcher().get_bytes(URL)
+        assert calls[1][0].full_url == "https://xn--r8jz45g.test/ok"
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "https://example.com:99999/a",
+            "https://example.com:abc/a",
+            "https://b\u00fc..example/a",
+            "https://caf%E9.example/a",
+        ],
+    )
+    def test_an_unsendable_host_or_port_raises_before_any_request(self, monkeypatch, url):
+        calls = _script_open(monkeypatch, [])
+        with pytest.raises(InvalidInputError):
+            Fetcher().get_bytes(url)
+        assert calls == []
+
+    @pytest.mark.parametrize(
+        "location",
+        [
+            "//[bad/x",
+            "https://example.com:99999/x",
+            "https://example.com:abc/x",
+            b"https://caf\xe9.example/x".decode("latin-1"),
+        ],
+    )
+    def test_an_unreadable_location_raises_invalid_input(self, monkeypatch, location):
+        _script_open(monkeypatch, [_http_error(302, {"Location": location})])
+        with pytest.raises(InvalidInputError, match="Location"):
+            Fetcher().get_bytes(URL)
+
+    def test_an_unreadable_location_is_quoted_short(self, monkeypatch):
+        _script_open(monkeypatch, [_http_error(302, {"Location": "//[" + "a" * 10_000})])
+        with pytest.raises(InvalidInputError) as exc_info:
+            Fetcher().get_bytes(URL)
+        assert len(str(exc_info.value)) < 300
 
 
 class TestSsrfGuard:
@@ -894,3 +1108,50 @@ class TestTlsVerification:
     def test_unrecognized_value_fails_safe(self, monkeypatch, var):
         monkeypatch.setenv(var, "maybe")
         assert self._verify_mode(Fetcher()) == ssl.CERT_REQUIRED
+
+
+class TestRedirectsOverTheWire:
+    """Through urllib's real handler chain, not the patched ``_open``."""
+
+    @pytest.fixture
+    def server(self, tmp_path, monkeypatch):
+        import http.server
+        import threading
+
+        monkeypatch.setattr(socket, "getaddrinfo", _REAL_GETADDRINFO)
+        secret = tmp_path / "secret.txt"
+        secret.write_text("LOCAL-FILE-CONTENTS")
+        locations = {
+            "/bad-host": "//[：：1]/",
+            "/bad-ipv6": "//[abc]/",
+            "/file": secret.as_uri(),
+        }
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                self.send_response(302)
+                self.send_header("Location", locations[self.path])
+                self.end_headers()
+
+            def send_header(self, key, value):
+                if key == "Location":  # raw UTF-8, as a real server sends it
+                    self._headers_buffer.append(f"{key}: ".encode() + value.encode() + b"\r\n")
+                    return
+                super().send_header(key, value)
+
+            def log_message(self, *args):
+                pass
+
+        srv = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        yield f"http://127.0.0.1:{srv.server_port}"
+        srv.shutdown()
+
+    @pytest.mark.parametrize("path", ["/bad-host", "/bad-ipv6"])
+    def test_an_unreadable_location_raises_invalid_input(self, server, path):
+        with pytest.raises(InvalidInputError, match="Location"):
+            Fetcher(require_public=False, retries=0).get_bytes(server + path)
+
+    def test_a_redirect_to_a_non_http_url_is_refused(self, server):
+        with pytest.raises(InvalidInputError, match="non-HTTP"):
+            Fetcher(require_public=False, retries=0).get_text(server + "/file")

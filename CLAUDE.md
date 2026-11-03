@@ -34,13 +34,13 @@ The foundation layer (logging, exceptions, the config base, utils, `Service` bas
 
 ```bash
 pip install -e ../pw-core                  # editable install — base only (pw-foundation comes with it)
-pip install pw-core[llm]                   # LLM clients + anti-slop guards (httpx, json-repair, pydantic)
-pip install pw-core[redis]                 # with optional Redis support
-pip install pw-core[articles]              # trafilatura + htmldate for article_fetch
-pip install pw-core[dev]                   # with pytest fixtures
+pip install 'pw-core[llm]'                 # LLM clients + anti-slop guards (httpx, json-repair, pydantic)
+pip install 'pw-core[redis]'               # with optional Redis support
+pip install 'pw-core[crawl]'               # httpx, trafilatura, htmldate, tenacity for article_fetch
+pip install 'pw-core[dev]'                 # pytest, ruff, mypy, pre-commit
 ```
 
-A bare `pip install pw-core` no longer ships the LLM stack. Importing `pw_core.clients.*` / `pw_core.llm.*` without `[llm]` (or `pw_core.utils.urls` without `[http]`) raises a friendly `ImportError` naming the extra.
+A bare `pip install pw-core` ships the dependency-light core only. Importing a gated module without its extra (`pw_core.clients.openrouter` / `brave` need `[llm]`, `pw_core.clients.anthropic` needs `[anthropic]`, `pw_core.llm.parse` / `validate` need `[validate]`, `pw_core.utils.urls` needs `[http]`) raises an `ImportError` naming the extra.
 
 ## Testing
 

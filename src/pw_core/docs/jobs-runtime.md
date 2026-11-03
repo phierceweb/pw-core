@@ -11,6 +11,7 @@ The execution layer for [jobs](jobs.md): a polling worker pool, a tracked subpro
 - [Cancellation](#cancellation)
 - [Thread submitter](#thread-submitter)
 - [Test-suite integration](#test-suite-integration)
+- [Other public names](#other-public-names)
 
 ## Which piece do I need?
 
@@ -30,6 +31,7 @@ spec = SubprocessJobSpec(
     log_path=lambda job: out_dir(job) / f"job-{job['id']}.log",
     outputs=lambda job, rc: {"returncode": rc},
     job_id_env="MYAPP_JOB_ID",  # default: PW_JOB_ID
+    cwd=None,  # child working directory; None inherits
 )
 handle = start_workers(
     kinds=["myapp_convert"], run=partial(run_subprocess_job, spec=spec), concurrency=cfg.concurrency
@@ -38,7 +40,7 @@ handle = start_workers(
 stop_workers(handle)  # stops claiming; live subprocesses keep running
 ```
 
-- `start_workers` sweeps `reclaim_stale()` first (disable with `reclaim_on_start=False`) so jobs stranded `running` by a killed worker re-enter the queue. Poll cadence: `poll_seconds=` or the `JOB_POLL_SECONDS` env var (default 1).
+- `start_workers` sweeps `reclaim_stale()` first (disable with `reclaim_on_start=False`) so jobs stranded `running` by a killed worker re-enter the queue. Poll cadence: `poll_seconds=` or the `JOB_POLL_SECONDS` env var (default 1; whole seconds, so use `poll_seconds=` for a sub-second cadence).
 - The claim loop never dies on an error — claim and run failures log (`worker_claim_failed` / `worker_run_failed`) and the loop continues.
 - `run_subprocess_job` runs the child in its own session, merges stderr into the spec's log file (with a `$ argv` header), exports the job id as `spec.job_id_env` — so tracked LLM calls inside the child attribute their runs — and maps exit 0 → `succeeded` (with `spec.outputs`), nonzero → `failed` naming the code and log path. While the child runs it renews the job's lease on a timer (a fraction of `JOB_LEASE_SECONDS`), so a long job is never reclaimed and run a second time.
 
@@ -61,7 +63,7 @@ job_id = submit_tracked(
 ```
 
 - `submit_tracked` creates the row, returns its id immediately, and runs the work on a daemon thread inside a `Job` window: `running` → your `run(progress_callback)` → `succeeded` (failures are recorded by the `Job` context manager). The callback signature is `(done, total, message=None)`.
-- `submit_detached` is for services that create and manage their own job: it runs them on a thread and resolves the new job's id (or `None` when the service had nothing to do).
+- `submit_detached` is for services that create and manage their own job: it runs them on a thread and resolves the new job's id (or `None` when the service had nothing to do), waiting up to `await_timeout` seconds (default 12) for the job row to appear.
 - Dedup is opt-in and scope-blind: `dedup_key` receives each non-terminal same-kind job's parsed `inputs` and returns whether it occupies your scope; a match raises `JobAlreadyRunning`. What "scope" means (a project, a tenant) stays in the consumer.
 
 ## Test-suite integration
@@ -75,3 +77,9 @@ def pw_engine_teardown():
 
     return lambda: wait_all(timeout=10.0)
 ```
+
+## Other public names
+
+From `pw_core.jobs.workers`:
+
+- `WorkerHandle` — the threads and stop signal `start_workers` returns.
